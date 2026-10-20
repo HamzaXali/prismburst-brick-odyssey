@@ -97,6 +97,9 @@
       return 'Your session expired. Sign in again. Progress on this device is unchanged.';
     }
     if (low.indexOf('denied') !== -1 || low.indexOf('cancel') !== -1) return 'Sign-in was cancelled.';
+    if (low.indexOf('redirect') !== -1 || low.indexOf('unauthorized') !== -1) {
+      return 'Sign-in could not return to this page. Progress on this device is unchanged.';
+    }
     if (low.indexOf('weak') !== -1 || (low.indexOf('password') !== -1 && low.indexOf('at least') !== -1)) return 'Use at least 6 characters in the password.';
     if (err.status >= 500) return 'The account server had a problem. Your progress stays on this device.';
     return msg || 'Sign-in failed. Progress on this device is unchanged.';
@@ -152,16 +155,32 @@
     });
   }
 
+  function stripOAuthParams() {
+    var u;
+    try { u = new URL(window.location.href); } catch (e) { return; }
+    var hash = new URLSearchParams((u.hash || '').replace(/^#/, ''));
+    var dirty = false;
+    ['code', 'state', 'error', 'error_description', 'error_code'].forEach(function (key) {
+      if (u.searchParams.has(key)) { u.searchParams.delete(key); dirty = true; }
+    });
+    if (hash.has('access_token') || hash.has('error') || hash.has('error_description') || hash.has('refresh_token')) {
+      u.hash = '';
+      dirty = true;
+    }
+    if (!dirty) return;
+    try { history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (e2) { /* keep the url */ }
+  }
+
   function consumeOAuthError() {
     var u;
     try { u = new URL(window.location.href); } catch (e) { return null; }
     var hash = new URLSearchParams((u.hash || '').replace(/^#/, ''));
     var msg = u.searchParams.get('error_description') || u.searchParams.get('error') || hash.get('error_description') || hash.get('error');
     if (!msg) return null;
-    u.searchParams.delete('error');
-    u.searchParams.delete('error_description');
-    u.searchParams.delete('error_code');
-    if (hash.has('error') || hash.has('error_description')) u.hash = '';
+    ['error', 'error_description', 'error_code', 'code', 'state'].forEach(function (key) {
+      u.searchParams.delete(key);
+    });
+    if (hash.has('error') || hash.has('error_description') || hash.has('access_token')) u.hash = '';
     try { history.replaceState({}, '', u.pathname + u.search + u.hash); } catch (e) { /* keep the url */ }
     return msg;
   }
@@ -174,6 +193,10 @@
     loading: false,
     pending: null,
     recovery: false,
+    accountName: null,
+    nameSuggestion: '',
+    namePrompt: false,
+    nameNote: '',
     readySettled: false,
     _hadSession: false,
     _loggingOut: false,
@@ -191,6 +214,7 @@
       var self = this;
       if (this._started) return;
       this._started = true;
+      try { if (PB.Profile) PB.Profile.ensureGuest(); } catch (e) { /* a name must not block play */ }
       this.ready = new Promise(function (resolve) { self._resolveReady = resolve; });
       var oauthErr = null;
       try { oauthErr = consumeOAuthError(); } catch (e) { oauthErr = null; }
@@ -236,6 +260,8 @@
         this.client.auth.onAuthStateChange(function (event, session) {
           setTimeout(function () { self.handleAuthEvent(event, session); }, 0);
         });
+        var pendingInit = this.client.auth.initializePromise;
+        if (pendingInit && pendingInit.then) pendingInit.then(function () { stripOAuthParams(); }, function () { stripOAuthParams(); });
       } catch (e) {
         this.client = null;
         this.errorText = friendlyError(e);
@@ -271,6 +297,10 @@
       if (event === 'SIGNED_OUT') {
         this.session = null;
         this.pending = null;
+        this.accountName = null;
+        this.nameSuggestion = '';
+        this.namePrompt = false;
+        this.nameNote = '';
         if (this._hadSession && !this._loggingOut) {
           this.errorText = 'Your session expired. Sign in again. Progress on this device is unchanged.';
           this.syncLabel = 'Error';
@@ -289,6 +319,7 @@
         this.session = session && session.user ? session : null;
         if (this.session) {
           this._hadSession = true;
+          this.loadAccountName(this.session);
           this.reconcile(this.session).then(function () { self.settleReady(); }, function () { self.settleReady(); });
         } else {
           this.syncLabel = 'Not signed in';
@@ -345,6 +376,10 @@
         userId: this.session && this.session.user ? this.session.user.id : null,
         email: this.session && this.session.user ? (this.session.user.email || '') : '',
         provider: this.providerName(),
+        displayName: this.accountName || (PB.Profile && PB.Profile.guestName()) || '',
+        nameSuggestion: this.nameSuggestion || '',
+        namePrompt: !!this.namePrompt,
+        nameNote: this.nameNote || '',
         queue: meta.queue,
         pending: this.pending ? { different: !!this.pending.different, hasRemote: !!this.pending.hasRemote } : null,
         backups: keys,
@@ -720,9 +755,11 @@
         return Promise.resolve();
       }
       return this.busy(function () {
+        var options = { redirectTo: pageUrl(), skipBrowserRedirect: false };
+        if (provider === 'google') options.scopes = 'openid email profile';
         return withTimeout(self.client.auth.signInWithOAuth({
           provider: provider,
-          options: { redirectTo: pageUrl(), skipBrowserRedirect: false }
+          options: options
         }), 15000).then(function (res) {
           if (res.error) throw res.error;
         });
@@ -818,6 +855,97 @@
       var self = this;
       return new Promise(function (resolve) { setTimeout(resolve, 0); }).then(function () {
         if (self._reconcilePromise) return self._reconcilePromise;
+      });
+    },
+
+    loadAccountName: function (session) {
+      var self = this;
+      var user = session && session.user;
+      if (!user) return Promise.resolve();
+      return this.fetchProfile(user.id).then(function (row) {
+        if (!self.session || !self.session.user || self.session.user.id !== user.id) return;
+        if (row && row.display_name) {
+          self.accountName = row.display_name;
+          self.nameSuggestion = '';
+          self.namePrompt = false;
+          self.nameNote = '';
+          self.emit();
+          return;
+        }
+        var guest = PB.Profile ? PB.Profile.guestName() : '';
+        var suggested = PB.Profile ? PB.Profile.suggest(user.user_metadata, guest, user.email) : '';
+        self.accountName = null;
+        self.nameSuggestion = suggested;
+        self.namePrompt = true;
+        self.nameNote = suggested
+          ? 'Save a display name for this account. You can edit the suggestion.'
+          : 'Choose a display name for this account. It is not your email.';
+        self.emit();
+        if (PB.Account && PB.Account.open) PB.Account.open();
+      }, function () {
+        if (!self.session || !self.session.user || self.session.user.id !== user.id) return;
+        self.nameNote = 'Could not load the display name. Your progress is unchanged.';
+        self.emit();
+      });
+    },
+
+    fetchProfile: function (userId) {
+      var client = this.client;
+      if (!client) return Promise.resolve(null);
+      return withTimeout(client.from('profiles').select('display_name').eq('id', userId).maybeSingle(), 15000).then(function (res) {
+        if (res.error) {
+          if (res.error.code === 'PGRST116') return null;
+          throw res.error;
+        }
+        return res.data || null;
+      });
+    },
+
+    upsertProfile: function (userId, name) {
+      var client = this.client;
+      return withTimeout(client.from('profiles').update({ display_name: name }).eq('id', userId).select('display_name').maybeSingle(), 15000).then(function (res) {
+        if (res.error && res.error.code !== 'PGRST116') throw res.error;
+        if (res.data && res.data.display_name) return res.data.display_name;
+        return withTimeout(client.from('profiles').insert({ id: userId, display_name: name }).select('display_name').single(), 15000).then(function (ins) {
+          if (ins.error) throw ins.error;
+          var row = ins.data;
+          if (Array.isArray(row)) row = row[0];
+          if (!row || !row.display_name) throw new Error('Name was not saved.');
+          return row.display_name;
+        });
+      });
+    },
+
+    saveDisplayName: function (raw) {
+      var self = this;
+      var checked = PB.Profile.validate(raw);
+      if (!checked.ok) {
+        this.nameNote = checked.error;
+        this.emit();
+        return Promise.resolve();
+      }
+      if (!this.session || !this.session.user) {
+        var local = PB.Profile.writeGuest(checked.name);
+        this.nameNote = local.ok ? 'Name saved on this device.' : local.error;
+        this.namePrompt = false;
+        this.emit();
+        return Promise.resolve();
+      }
+      if (this.loading) return Promise.resolve();
+      this.loading = true;
+      this.nameNote = '';
+      this.emit();
+      return this.upsertProfile(this.session.user.id, checked.name).then(function (saved) {
+        self.accountName = saved;
+        self.nameSuggestion = '';
+        self.namePrompt = false;
+        self.nameNote = 'Name saved.';
+        self.loading = false;
+        self.emit();
+      }, function () {
+        self.loading = false;
+        self.nameNote = 'Could not save the name. Your progress is unchanged.';
+        self.emit();
       });
     },
 

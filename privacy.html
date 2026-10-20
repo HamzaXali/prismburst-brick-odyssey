@@ -25,6 +25,7 @@
 
   <h2>Data on this device</h2>
   <p>The game always saves progress in this browser under the key <code>prismburst.save.v1</code>. That includes unlocked levels, scores, stars, coins, owned and equipped skins, settings (sound, vibration, screen shake), daily reward and mission state, and lifetime stats. A timestamped backup may also be stored on this device before a cloud copy replaces that save. This data stays on the phone until you use Settings → Reset progress or clear the site's data in the browser.</p>
+  <p>A display name is stored separately under <code>prismburst.profile.v1</code>. Guest play creates a name such as PrismPlayer1234 on this device. Reset progress does not remove that name. Clearing the site's data does.</p>
 
   <h2>Data if you create an account</h2>
   <p>Account sign-in is optional. Guest play does not create an account and does not send a save to a server. If you sign in, the game sends the following to the owner's Supabase project:</p>
@@ -32,11 +33,12 @@
     <li>Your email address, if the provider supplies one.</li>
     <li>The sign-in provider (email, Google, or Facebook) and the account id that provider assigns.</li>
     <li>Your game save, a save version, and the time this device last changed it.</li>
+    <li>The display name you save for the account. The game does not use your email address as that name. Google may suggest the name on the Google account; nothing is stored until you confirm it.</li>
   </ul>
   <p>The game does not ask for your contacts, location, photos, or microphone. It does not sell data. The publishable Supabase key in the game can only access the row that belongs to the signed-in account. The secret key never ships in the game.</p>
 
   <h2>How long it is kept</h2>
-  <p>The device copy lasts until you reset it or clear site data. The cloud copy lasts until the account is deleted. Deleting the user in Supabase also deletes that user's cloud save.</p>
+  <p>The device copy lasts until you reset it or clear site data. The display name on the device lasts until you clear site data. The cloud copy of the save, and the account display name, last until the account is deleted. Deleting the user in Supabase also deletes that user's cloud save and display name.</p>
 
   <h2 id="deletion">How to delete your data</h2>
   <p>On this phone: open the game, go to Settings, choose Reset progress, and confirm. That clears the copy stored on this device. It does not delete a cloud account.</p>

@@ -10,7 +10,7 @@ It's built to be hosted free on **GitHub Pages** and wrapped later with **Capaci
 - **Power-ups:** Multi-ball, Fireball, Laser, Blast (explosive) ball, Wide paddle
 - **Progression:** stars, coins, daily reward streak, 3 daily missions, 7 ball skins and 6 paddle skins
 - **Offline:** a service worker caches the game after the first visit. Guest play and gameplay never wait on the network. All graphics are drawn in code and all sound is synthesized with WebAudio.
-- **Optional account:** guest, email, Google, and Facebook. Google and Facebook ship turned off. Progress stays in `prismburst.save.v1` on the device, and a signed-in player can sync that same save. See [docs/CLOUD-SETUP.md](docs/CLOUD-SETUP.md).
+- **Optional account:** guest, email, Google, and Facebook. Google and Facebook ship turned off. Progress stays in `prismburst.save.v1` on the device, and a signed-in player can sync that same save. A display name is separate (`prismburst.profile.v1` on the device, `public.profiles` when signed in). See [docs/CLOUD-SETUP.md](docs/CLOUD-SETUP.md) and [docs/GOOGLE-SIGNIN.md](docs/GOOGLE-SIGNIN.md).
 
 ## How to play
 - **Drag** your finger anywhere on the screen. The paddle follows it.

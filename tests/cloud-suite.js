@@ -88,6 +88,8 @@ function createState() {
       'other@example.com': { id: USER_B, email: 'other@example.com', password: 'secret12', confirmed: true }
     },
     saves: {},
+    profiles: {},
+    profileWrites: [],
     refreshes: {},
     n: 0,
     requests: [],
@@ -101,12 +103,13 @@ function createState() {
 }
 
 function userObj(u) {
+  const provider = (u.app_metadata && u.app_metadata.provider) || 'email';
   return {
     id: u.id, aud: 'authenticated', role: 'authenticated', email: u.email,
     email_confirmed_at: u.confirmed ? '2026-01-01T00:00:00Z' : null,
-    app_metadata: { provider: 'email', providers: ['email'] },
-    user_metadata: {},
-    identities: [{ provider: 'email', identity_id: u.id, id: u.id, user_id: u.id }],
+    app_metadata: u.app_metadata || { provider: 'email', providers: ['email'] },
+    user_metadata: u.user_metadata || {},
+    identities: [{ provider: provider, identity_id: u.id, id: u.id, user_id: u.id }],
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z'
   };
 }
@@ -175,11 +178,38 @@ function installMock(page, state) {
       return send(200, sessionFor(state, u));
     }
     if (url.pathname.endsWith('/auth/v1/token') && url.searchParams.get('grant_type') === 'pkce') {
+      if (posted.auth_code === 'good-code') {
+        const existing = state.users['ali@example.com'] || { id: USER_A, email: 'ali@example.com', password: 'secret12', confirmed: true };
+        existing.user_metadata = { full_name: 'Ali Prism', name: 'Ali Prism' };
+        existing.app_metadata = { provider: 'google', providers: ['google'] };
+        state.users['ali@example.com'] = existing;
+        return send(200, sessionFor(state, existing));
+      }
       return send(400, { error: 'invalid_grant', msg: 'Invalid code', error_description: 'Invalid code' });
     }
     if (url.pathname.endsWith('/auth/v1/settings')) return send(200, { external: { google: true, facebook: false }, disable_signup: false });
     if (url.pathname.endsWith('/auth/v1/health')) return send(200, { ok: true });
 
+    if (url.pathname.endsWith('/rest/v1/profiles')) {
+      const uid = tokenUser && tokenUser.sub;
+      if (!uid) return send(401, { message: 'not authenticated' });
+      if (method === 'GET') {
+        if (!state.profiles[uid]) return send(406, { code: 'PGRST116', message: 'Cannot coerce the result to a single JSON object', details: '0 rows' });
+        return send(200, { id: uid, display_name: state.profiles[uid] });
+      }
+      if (method === 'PATCH' || method === 'PUT') {
+        state.profileWrites.push({ method, id: uid, body: posted });
+        if (!state.profiles[uid]) return send(406, { code: 'PGRST116', message: 'Cannot coerce the result to a single JSON object', details: '0 rows' });
+        state.profiles[uid] = posted.display_name;
+        return send(200, { id: uid, display_name: posted.display_name });
+      }
+      if (method === 'POST') {
+        state.profileWrites.push({ method, id: uid, body: posted });
+        if (posted.id && posted.id !== uid) return send(401, { message: 'not allowed' });
+        state.profiles[uid] = posted.display_name;
+        return send(201, { id: uid, display_name: posted.display_name });
+      }
+    }
     if (url.pathname.endsWith('/rest/v1/player_saves') && method === 'GET') {
       const uid = (tokenUser && tokenUser.sub) || (url.searchParams.get('user_id') || '').replace(/^eq\./, '');
       const row = state.saves[uid];
@@ -601,6 +631,217 @@ async function signIn(page, email, password) {
       record('forgot password calls recover with this page as redirect',
         state.lastRecover && state.lastRecover.email === 'ali@example.com' && String(state.lastRecover.redirect_to || state.lastRecover.gotrue_meta_security || '').length >= 0 && state.requests.some(r => r.includes('/recover')));
       record('oauth and service-worker flow has no page errors', errors.length === 0, errors);
+      await ctx.close();
+    }
+
+    // -------------------------------------------------- names, Google flag off, email still works
+    {
+      const ctx = await phoneContext(browser);
+      const page = await ctx.newPage();
+      const state = createState();
+      await page.context().route('**/config.js', route => route.fulfill({
+        contentType: 'application/javascript',
+        body: configBody({ email: true, google: false, facebook: false })
+      }));
+      await installMock(page, state);
+      const errors = await boot(page);
+      await openAccount(page);
+      const flags = await page.evaluate(() => ({
+        google: document.querySelector('[data-action="google"]').disabled,
+        note: document.getElementById('pb-note-google').textContent,
+        email: document.getElementById('pb-email-input').disabled,
+        svg: !!document.querySelector('[data-action="google"] svg')
+      }));
+      record('Google button is disabled with an inline logo when the flag is false', flags.google && flags.note.includes('Not set up yet') && flags.svg && !flags.email, flags);
+      const guest = await page.evaluate(() => ({
+        name: PB.Cloud.snapshot().displayName,
+        profile: localStorage.getItem('prismburst.profile.v1'),
+        save: localStorage.getItem('prismburst.save.v1'),
+        menu: PB.game.scene.getScene('Menu').children.getByName('playerName').text
+      }));
+      record('a guest gets a PrismPlayer name outside the save', /^PrismPlayer\d{4}$/.test(guest.name) && guest.menu === guest.name && guest.profile.includes(guest.name) && (guest.save == null || guest.save.indexOf(guest.name) === -1), guest);
+
+      await page.fill('#pb-name-input', '<img src=x onerror=alert(1)>');
+      await page.click('[data-action="save-name"]');
+      const xss = await page.evaluate(() => ({
+        msg: document.getElementById('pb-name-msg').textContent,
+        shown: document.getElementById('pb-name-shown').textContent,
+        html: document.getElementById('pb-name-shown').innerHTML,
+        img: document.querySelectorAll('#pb-account img').length
+      }));
+      record('a markup name is rejected and the sheet renders text', /not allowed/i.test(xss.msg) && xss.shown === guest.name && xss.html.indexOf('<img') === -1 && xss.img === 0, xss);
+
+      await page.fill('#pb-name-input', '星の光');
+      await page.click('[data-action="save-name"]');
+      await page.waitForFunction(() => document.getElementById('pb-name-msg').textContent === 'Name saved on this device.');
+      const savedGuest = await page.evaluate(() => localStorage.getItem('prismburst.save.v1'));
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => {
+        if (!window.PB || !PB.Cloud || !PB.Cloud.readySettled || !PB.game) return false;
+        if (PB.Cloud.snapshot().displayName !== '星の光') return false;
+        const menu = PB.game.scene.getScene('Menu');
+        const label = menu && menu.children.getByName('playerName');
+        return !!(label && label.text === '星の光');
+      }, null, { timeout: 20000 });
+      const afterReload = await page.evaluate(() => ({
+        name: PB.Cloud.snapshot().displayName,
+        menu: PB.game.scene.getScene('Menu').children.getByName('playerName').text,
+        save: localStorage.getItem('prismburst.save.v1')
+      }));
+      record('a guest name survives reload and does not rewrite the save', afterReload.name === '星の光' && afterReload.menu === '星の光' && afterReload.save === savedGuest);
+
+      const beforeEmail = await page.evaluate(() => localStorage.getItem('prismburst.save.v1'));
+      await openAccount(page);
+      await signIn(page, 'ali@example.com', 'secret12');
+      await page.waitForFunction(() => PB.Cloud.snapshot().signedIn && PB.Cloud.namePrompt === true, null, { timeout: 10000 });
+      const suggested = await page.evaluate(() => ({
+        input: document.getElementById('pb-name-input').value,
+        email: PB.Cloud.snapshot().email
+      }));
+      record('email sign-in suggests the guest name and never the email', suggested.input === '星の光' && suggested.input !== 'ali' && suggested.input.indexOf('@') === -1, suggested);
+      await page.fill('#pb-name-input', 'Star Pilot');
+      await page.click('[data-action="save-name"]');
+      await page.waitForFunction(() => document.getElementById('pb-name-msg').textContent === 'Name saved.');
+      const named = await page.evaluate(() => ({
+        shown: document.getElementById('pb-name-shown').textContent,
+        who: document.getElementById('pb-acct-who').textContent,
+        save: localStorage.getItem('prismburst.save.v1')
+      }));
+      record('the account name renders as text and the save is untouched', named.shown === 'Star Pilot' && named.who.indexOf('Star Pilot') === 0 && named.save === beforeEmail && state.profiles[USER_A] === 'Star Pilot', named.who);
+      record('a name update sends only display_name', state.profileWrites.some(w => w.method === 'POST' && w.body.display_name === 'Star Pilot' && w.body.id === USER_A) && state.profileWrites.every(w => w.method !== 'PATCH' || Object.keys(w.body).join() === 'display_name'));
+      await page.fill('#pb-name-input', 'Nova Star');
+      await page.click('[data-action="save-name"]');
+      await page.waitForFunction(() => document.getElementById('pb-name-shown').textContent === 'Nova Star');
+      const patched = state.profileWrites.filter(w => w.body && w.body.display_name === 'Nova Star');
+      record('editing a saved name updates only display_name', patched.length === 1 && patched[0].method === 'PATCH' && !('id' in patched[0].body) && state.profiles[USER_A] === 'Nova Star');
+
+      await page.click('[data-action="logout"]');
+      await page.click('[data-action="confirm-logout"]');
+      await page.waitForFunction(() => !PB.Cloud.snapshot().signedIn && PB.Cloud.snapshot().displayName === '星の光');
+      await signIn(page, 'ali@example.com', 'secret12');
+      await page.waitForFunction(() => PB.Cloud.snapshot().displayName === 'Nova Star' && PB.Cloud.namePrompt === false, null, { timeout: 10000 });
+      record('the account name comes back after logout and login', (await page.evaluate(() => document.getElementById('pb-name-shown').textContent)) === 'Nova Star');
+      record('email still works when Google is not configured', errors.length === 0, errors);
+      await ctx.close();
+    }
+
+    // -------------------------------------------------- Google OAuth return, suggestion, merge
+    {
+      const ctx = await phoneContext(browser);
+      const page = await ctx.newPage();
+      const state = createState();
+      await page.context().route('**/config.js', route => route.fulfill({
+        contentType: 'application/javascript',
+        body: configBody({ email: true, google: true, facebook: false })
+      }));
+      await installMock(page, state);
+      const errors = await boot(page);
+      await openAccount(page);
+      const enabled = await page.evaluate(() => ({
+        disabled: document.querySelector('[data-action="google"]').disabled,
+        note: document.getElementById('pb-note-google').textContent
+      }));
+      record('Google button is enabled when the flag is true', enabled.disabled === false && enabled.note === '', enabled);
+
+      const local = legacyObject();
+      local.coins = 10;
+      local.levels = { '0-0': { best: 100, stars: 1 } };
+      local.unlocked = [2, 0, 0, 0, 0];
+      const localRaw = JSON.stringify(local);
+      await page.evaluate(raw => { localStorage.setItem('prismburst.save.v1', raw); PB.Save.load(); }, localRaw);
+      state.saves[USER_A] = {
+        revision: 4,
+        client_updated_at: '2020-01-01T00:00:00.000Z',
+        data: {
+          save_version: 1, client_updated_at: '2020-01-01T00:00:00.000Z', v: 1, coins: 99,
+          unlocked: [1, 2, 0, 0, 0],
+          levels: { '0-0': { best: 40, stars: 3 }, '1-0': { best: 80, stars: 2 } },
+          owned: { ball: ['classic'], paddle: ['classic', 'gold'] },
+          equipped: { ball: 'classic', paddle: 'gold' },
+          settings: { sound: true, vibration: true, shake: true },
+          daily: { last: null, streak: 0 }, missions: { date: null, list: [] },
+          stats: { bricks: 1, played: 1, cleared: 1 }, last: { world: 1, level: 0 }
+        }
+      };
+      await page.evaluate(() => localStorage.setItem('prismburst.cloud.meta.v1', JSON.stringify({
+        lastUserId: null, clientUpdatedAt: new Date().toISOString(), knownRevision: null, queue: null
+      })));
+      const here = await page.evaluate(() => location.origin + location.pathname);
+      const authWait = page.waitForRequest(req => req.url().includes('/auth/v1/authorize'), { timeout: 10000 });
+      await page.evaluate(() => {
+        PB.Cloud.signInOAuth('google');
+        PB.Cloud.signInOAuth('google');
+      });
+      const authReq = await authWait;
+      await sleep(400);
+      const authUrl = new URL(authReq.url());
+      const authHits = state.requests.filter(r => r.includes('/auth/v1/authorize'));
+      record('a double tap starts one Google authorize request',
+        authHits.length === 1 && authUrl.searchParams.get('provider') === 'google' && authUrl.searchParams.get('scopes') === 'openid email profile' && authUrl.searchParams.get('redirect_to') === here && !!authUrl.searchParams.get('code_challenge') && /s256/i.test(authUrl.searchParams.get('code_challenge_method') || ''),
+        { hits: authHits.length, provider: authUrl.searchParams.get('provider'), scopes: authUrl.searchParams.get('scopes'), redirect: authUrl.searchParams.get('redirect_to'), method: authUrl.searchParams.get('code_challenge_method') });
+
+      await page.goto(PAGE_URL + '?code=good-code', { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => window.PB && PB.Cloud && PB.Cloud.snapshot().signedIn, null, { timeout: 20000 });
+      await page.waitForSelector('#pb-migrate:not([hidden])', { timeout: 10000 });
+      await page.waitForFunction(() => PB.Cloud.nameSuggestion === 'Ali Prism');
+      const returned = await page.evaluate(() => ({
+        provider: PB.Cloud.snapshot().provider,
+        suggestion: document.getElementById('pb-name-input').value,
+        shown: document.getElementById('pb-name-shown').textContent,
+        search: location.search,
+        profile: localStorage.getItem('prismburst.profile.v1')
+      }));
+      record('the code callback restores Google and suggests full_name',
+        returned.provider === 'google' && returned.suggestion === 'Ali Prism' && returned.shown !== 'Ali Prism' && returned.search.indexOf('code=') === -1 && state.profiles[USER_A] == null,
+        returned);
+      const rawBefore = await page.evaluate(() => localStorage.getItem('prismburst.save.v1'));
+      await page.click('[data-choice="merge"]');
+      await page.waitForFunction(() => PB.Cloud.snapshot().sync === 'Synced', null, { timeout: 10000 });
+      const merged = await page.evaluate(() => __PB.save());
+      record('guest progress is merged into the Google account instead of being replaced',
+        rawBefore === localRaw && merged.coins === 10 && merged.levels['0-0'].best === 100 && merged.levels['0-0'].stars === 3 && merged.unlocked[1] === 2,
+        { coins: merged.coins, unlocked: merged.unlocked });
+      await page.click('[data-action="save-name"]');
+      await page.waitForFunction(() => document.getElementById('pb-name-msg').textContent === 'Name saved.');
+      record('confirming the Google suggestion writes one profile row', state.profiles[USER_A] === 'Ali Prism' && state.profileWrites.filter(w => w.method === 'POST').length === 1);
+      record('Google sign-in flow has no page errors', errors.length === 0, errors);
+      await ctx.close();
+    }
+
+    // -------------------------------------------------- cancelled OAuth leaves the guest save
+    {
+      const ctx = await phoneContext(browser);
+      const page = await ctx.newPage();
+      const legacy = JSON.stringify(legacyObject());
+      await ctx.addInitScript(raw => { localStorage.setItem('prismburst.save.v1', raw); }, legacy);
+      await page.context().route('**/config.js', route => route.fulfill({
+        contentType: 'application/javascript',
+        body: configBody({ email: true, google: true, facebook: false })
+      }));
+      const state = createState();
+      await installMock(page, state);
+      await page.goto(PAGE_URL + '?error=access_denied&error_description=' + encodeURIComponent('User cancelled'), { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => window.PB && PB.Cloud && PB.Cloud.readySettled, null, { timeout: 20000 });
+      await page.waitForSelector('#pb-account:not([hidden])');
+      const cancelled = await page.evaluate(() => ({
+        msg: document.getElementById('pb-acct-msg').textContent,
+        save: localStorage.getItem('prismburst.save.v1'),
+        search: location.search,
+        signedIn: PB.Cloud.snapshot().signedIn
+      }));
+      record('a cancelled Google return keeps the guest save byte-identical',
+        cancelled.save === legacy && /cancelled/i.test(cancelled.msg) && cancelled.search.indexOf('error') === -1 && cancelled.signedIn === false,
+        { msg: cancelled.msg, search: cancelled.search, same: cancelled.save === legacy });
+
+      await page.goto(PAGE_URL + '?error=server_error&error_description=' + encodeURIComponent('redirect URL not allowed'), { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => window.PB && PB.Cloud && PB.Cloud.readySettled, null, { timeout: 20000 });
+      const blocked = await page.evaluate(() => ({
+        msg: document.getElementById('pb-acct-msg').textContent,
+        save: localStorage.getItem('prismburst.save.v1'),
+        search: location.search
+      }));
+      record('a blocked redirect explains the failure and keeps the save',
+        /could not return/i.test(blocked.msg) && blocked.save === legacy && blocked.search.indexOf('error') === -1, blocked.msg);
       await ctx.close();
     }
     record('cloud suite never calls the real Supabase project', realHits.length === 0, realHits.slice(0, 5));

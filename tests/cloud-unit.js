@@ -4,6 +4,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const sync = require('../js/save-sync');
 const secrets = require('../scripts/check-secrets');
 
@@ -101,7 +102,25 @@ try {
   record('oversized cloud save is rejected', tooBig.ok === false);
 
   const cfg = fs.readFileSync(path.join(root, 'config.js'), 'utf8');
-  record('config ships empty URL and key', /supabaseUrl:\s*''/.test(cfg) && /supabaseAnonKey:\s*''/.test(cfg));
+  const sandbox = { window: {} };
+  vm.runInNewContext(cfg, sandbox);
+  const shipped = sandbox.window.PB_CONFIG || {};
+  const shippedUrl = String(shipped.supabaseUrl || '');
+  const shippedKey = String(shipped.supabaseAnonKey || '');
+  const urlOk = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(shippedUrl);
+  let anonJwt = false;
+  const keyParts = shippedKey.split('.');
+  if (keyParts.length === 3 && keyParts[0].indexOf('eyJ') === 0) {
+    try {
+      const payload = JSON.parse(Buffer.from(keyParts[1], 'base64url').toString('utf8'));
+      anonJwt = !!(payload && payload.role === 'anon');
+    } catch (e) { anonJwt = false; }
+  }
+  const publishable = shippedKey.indexOf('sb_publishable_') === 0 || anonJwt;
+  const secret = shippedKey.indexOf('sb_secret_') === 0 || shippedKey.indexOf(secrets.FORBIDDEN_WORD) !== -1;
+  const shippedProviders = shipped.providers || {};
+  record('shipped config is a public Supabase URL and a publishable key',
+    urlOk && publishable && !secret && shippedProviders.google === false && shippedProviders.facebook === false);
   record('email is allowed in config but google and facebook ship off', /email:\s*true/.test(cfg) && /google:\s*false/.test(cfg) && /facebook:\s*false/.test(cfg));
   record('config.js has no JWT', !/eyJ/.test(cfg));
 

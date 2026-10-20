@@ -9,6 +9,8 @@ const { chromium, devices } = require('playwright-core');
 const fs = require('fs');
 const PAGE_URL = process.env.PB_URL || 'http://127.0.0.1:8090/index.html';
 const ORIGIN = 'https://prismburst-test.supabase.co';
+const REAL_ORIGIN = 'https://qogqnutpqzatxnbhcznc.supabase.co';
+const realHits = [];
 const USER_A = '11111111-1111-4111-8111-111111111111';
 const USER_B = '22222222-2222-4222-8222-222222222222';
 const results = [];
@@ -18,8 +20,13 @@ function record(name, pass, detail) {
   console.log((pass ? 'PASS ' : 'FAIL ') + name + extra);
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-function phoneContext(browser, opts) {
-  return browser.newContext(Object.assign({}, devices['Pixel 5'], { serviceWorkers: 'block' }, opts || {}));
+async function phoneContext(browser, opts) {
+  const ctx = await browser.newContext(Object.assign({}, devices['Pixel 5'], { serviceWorkers: 'block' }, opts || {}));
+  await ctx.route(REAL_ORIGIN + '/**', route => {
+    realHits.push(route.request().method() + ' ' + route.request().url());
+    return route.abort();
+  });
+  return ctx;
 }
 
 function b64url(obj) { return Buffer.from(JSON.stringify(obj)).toString('base64url'); }
@@ -35,6 +42,14 @@ function configBody(providers) {
     supabaseUrl: ORIGIN,
     supabaseAnonKey: 'sb_publishable_test_only_not_a_secret',
     providers: providers
+  }) + ';';
+}
+
+function emptyConfigBody() {
+  return 'window.PB_CONFIG = ' + JSON.stringify({
+    supabaseUrl: '',
+    supabaseAnonKey: '',
+    providers: { email: true, google: false, facebook: false }
   }) + ';';
 }
 
@@ -235,6 +250,10 @@ async function signIn(page, email, password) {
     {
       const ctx = await phoneContext(browser);
       const page = await ctx.newPage();
+      await page.context().route('**/config.js', route => route.fulfill({
+        contentType: 'application/javascript',
+        body: emptyConfigBody()
+      }));
       const errors = await boot(page);
       await openAccount(page);
       const notes = await page.locator('.pb-note').allTextContents();
@@ -584,8 +603,10 @@ async function signIn(page, email, password) {
       record('oauth and service-worker flow has no page errors', errors.length === 0, errors);
       await ctx.close();
     }
+    record('cloud suite never calls the real Supabase project', realHits.length === 0, realHits.slice(0, 5));
   } catch (err) {
     record('cloud suite crashed', false, err.stack);
+    record('cloud suite never calls the real Supabase project', realHits.length === 0, realHits.slice(0, 5));
   }
   const passed = results.filter(r => r.pass).length;
   console.log('\n' + passed + '/' + results.length + ' passed');

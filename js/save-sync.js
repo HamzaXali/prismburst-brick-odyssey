@@ -19,6 +19,11 @@
  * on the newer timestamp and are never added together. A level's doubled
  * coin claim is kept if either side has it. Missing shop or doubled fields
  * on an older save stay absent until something new is stored.
+ * Fields this build does not know are not a reason to reject a save. Known
+ * fields stay strict. Unknown JSON values are copied through load, merge, and
+ * upload so an older build does not drop data a newer build wrote. Functions,
+ * non-finite numbers, and __proto__ / constructor / prototype keys are rejected.
+ * The whole save must stay under 64 KB and within the depth cap.
  * An explicit "use cloud" choice replaces the device save and is not this merge.
  */
 (function (root, factory) {
@@ -30,6 +35,15 @@
   }
 })(typeof window !== 'undefined' ? window : null, function () {
   'use strict';
+
+  var plain = null;
+  if (typeof require === 'function') {
+    try { plain = require('./save-plain.js'); } catch (e) { plain = null; }
+  }
+  if (!plain) {
+    var rootObj = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
+    plain = rootObj.PB && rootObj.PB.SavePlain;
+  }
 
   var SAVE_VERSION = 1;
   var SAVE_KEY = 'prismburst.save.v1';
@@ -89,22 +103,11 @@
     };
   }
 
-  function byteLength(text) {
-    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(text).length;
-    return text.length;
-  }
-
   function isInt(n) {
     return typeof n === 'number' && isFinite(n) && Math.floor(n) === n;
   }
 
   function fail(msg) { return { ok: false, error: msg }; }
-
-  function keysExact(obj, allowed) {
-    var ks = Object.keys(obj);
-    for (var i = 0; i < ks.length; i++) if (allowed.indexOf(ks[i]) < 0) return ks[i];
-    return null;
-  }
 
   function clone(v) { return JSON.parse(JSON.stringify(v)); }
 
@@ -122,11 +125,13 @@
   function validateCloudData(data, opts) {
     var bounds = boundsOf(opts);
     if (!data || typeof data !== 'object' || Array.isArray(data)) return fail('save must be an object');
+    if (!plain) return fail('save checker is missing');
+    var checked = plain.copyValue(data, 0);
+    if (!checked.ok) return checked;
+    data = checked.value;
     var encoded;
     try { encoded = JSON.stringify(data); } catch (e) { return fail('save is not serializable'); }
-    if (byteLength(encoded) >= MAX_BYTES) return fail('save is larger than 64 KB');
-    var extra = keysExact(data, LOCAL_KEYS.concat(['save_version', 'client_updated_at']));
-    if (extra) return fail('unknown field ' + extra);
+    if (plain.byteLength(encoded) >= MAX_BYTES) return fail('save is larger than 64 KB');
     if (data.save_version !== SAVE_VERSION) return fail('save_version must be 1');
     if (data.v !== 1) return fail('v must be 1');
     if (!isInt(data.coins) || data.coins < 0 || data.coins > MAX_COINS) return fail('coins must be an integer from 0 to 1000000000');
@@ -136,37 +141,38 @@
     }
     if (!data.levels || typeof data.levels !== 'object' || Array.isArray(data.levels)) return fail('levels must be an object');
     var levelKeys = Object.keys(data.levels);
-    if (levelKeys.length > bounds.worlds * bounds.perWorld) return fail('too many level records');
+    var idCount = 0;
+    for (var lc = 0; lc < levelKeys.length; lc++) if (/^\d+-\d+$/.test(levelKeys[lc])) idCount++;
+    if (idCount > bounds.worlds * bounds.perWorld) return fail('too many level records');
     var levels = {};
     for (var li = 0; li < levelKeys.length; li++) {
       var key = levelKeys[li];
       var parts = /^(\d+)-(\d+)$/.exec(key);
-      if (!parts) return fail('bad level id ' + key);
+      if (!parts) continue;
       var world = +parts[1], level = +parts[2];
       if (world >= bounds.worlds || level >= bounds.perWorld) return fail('level id out of bounds ' + key);
       var rec = data.levels[key];
       if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return fail('bad level record ' + key);
-      if (keysExact(rec, ['best', 'stars', 'doubled'])) return fail('bad level record ' + key);
       if ('doubled' in rec && rec.doubled !== true) return fail('bad level record ' + key);
       if (!isInt(rec.best) || rec.best < 0 || rec.best > MAX_SCORE) return fail('bad best score ' + key);
       if (!isInt(rec.stars) || rec.stars < 0 || rec.stars > 3) return fail('bad stars ' + key);
       levels[key] = { best: rec.best, stars: rec.stars };
       if (rec.doubled === true) levels[key].doubled = true;
     }
-    if (!data.owned || typeof data.owned !== 'object' || keysExact(data.owned, ['ball', 'paddle'])) return fail('owned skins are invalid');
+    if (!data.owned || typeof data.owned !== 'object' || Array.isArray(data.owned)) return fail('owned skins are invalid');
     var owned = { ball: checkSkins(data.owned.ball, BALLS), paddle: checkSkins(data.owned.paddle, PADDLES) };
     if (!owned.ball || !owned.paddle) return fail('owned skins are invalid');
-    if (!data.equipped || typeof data.equipped !== 'object' || keysExact(data.equipped, ['ball', 'paddle'])) return fail('equipped skins are invalid');
+    if (!data.equipped || typeof data.equipped !== 'object' || Array.isArray(data.equipped)) return fail('equipped skins are invalid');
     if (BALLS.indexOf(data.equipped.ball) < 0 || owned.ball.indexOf(data.equipped.ball) < 0) return fail('equipped ball is invalid');
     if (PADDLES.indexOf(data.equipped.paddle) < 0 || owned.paddle.indexOf(data.equipped.paddle) < 0) return fail('equipped paddle is invalid');
-    if (!data.settings || typeof data.settings !== 'object' || keysExact(data.settings, ['sound', 'vibration', 'shake'])) return fail('settings are invalid');
+    if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) return fail('settings are invalid');
     if (typeof data.settings.sound !== 'boolean' || typeof data.settings.vibration !== 'boolean' || typeof data.settings.shake !== 'boolean') return fail('settings are invalid');
-    if (!data.daily || typeof data.daily !== 'object' || keysExact(data.daily, ['last', 'streak'])) return fail('daily state is invalid');
+    if (!data.daily || typeof data.daily !== 'object' || Array.isArray(data.daily)) return fail('daily state is invalid');
     if (!(data.daily.last === null || (typeof data.daily.last === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.daily.last)))) return fail('daily date is invalid');
     if (!isInt(data.daily.streak) || data.daily.streak < 0 || data.daily.streak > 10000) return fail('daily streak is invalid');
     var missions = checkMissions(data.missions);
     if (!missions) return fail('missions are invalid');
-    if (!data.stats || typeof data.stats !== 'object' || keysExact(data.stats, ['bricks', 'played', 'cleared'])) return fail('stats are invalid');
+    if (!data.stats || typeof data.stats !== 'object' || Array.isArray(data.stats)) return fail('stats are invalid');
     if (!isInt(data.stats.bricks) || !isInt(data.stats.played) || !isInt(data.stats.cleared)) return fail('stats are invalid');
     if (data.stats.bricks < 0 || data.stats.played < 0 || data.stats.cleared < 0) return fail('stats are invalid');
     if (data.stats.bricks > MAX_STAT || data.stats.played > MAX_STAT || data.stats.cleared > MAX_STAT) return fail('stats are invalid');
@@ -184,10 +190,7 @@
     var updated = data.client_updated_at;
     if (!(updated === null || typeof updated === 'string')) return fail('client_updated_at is invalid');
     if (typeof updated === 'string' && !isFinite(Date.parse(updated))) return fail('client_updated_at is invalid');
-    return {
-      ok: true,
-      clientUpdatedAt: typeof updated === 'string' ? updated : null,
-      save: {
+    var save = {
         v: 1,
         coins: data.coins,
         unlocked: padUnlocked(data.unlocked, bounds.worlds),
@@ -201,7 +204,13 @@
         last: last,
         home: homeChecked.home,
         shop: shopChecked ? shopChecked.shop : shopOf(null)
-      }
+    };
+    var absorbed = plain.absorb(save, data, 0, plain.ENVELOPE);
+    if (!absorbed.ok) return absorbed;
+    return {
+      ok: true,
+      clientUpdatedAt: typeof updated === 'string' ? updated : null,
+      save: save
     };
   }
 
@@ -219,14 +228,13 @@
   }
 
   function checkMissions(m) {
-    if (!m || typeof m !== 'object' || Array.isArray(m) || keysExact(m, ['date', 'list'])) return null;
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return null;
     if (!(m.date === null || (typeof m.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.date)))) return null;
     if (!Array.isArray(m.list) || m.list.length > 6) return null;
     var list = [];
     for (var i = 0; i < m.list.length; i++) {
       var item = m.list[i];
       if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-      if (keysExact(item, ['type', 'target', 'reward', 'text', 'progress', 'claimed'])) return null;
       if (typeof item.type !== 'string' || item.type.length < 1 || item.type.length > 40) return null;
       if (typeof item.text !== 'string' || item.text.length > 80) return null;
       if (!isInt(item.target) || item.target < 1 || item.target > MAX_STAT) return null;
@@ -240,7 +248,7 @@
 
   function checkLast(last, bounds) {
     if (last === null) return null;
-    if (!last || typeof last !== 'object' || Array.isArray(last) || keysExact(last, ['world', 'level'])) return false;
+    if (!last || typeof last !== 'object' || Array.isArray(last)) return false;
     if (!isInt(last.world) || !isInt(last.level)) return false;
     if (last.world < 0 || last.world >= bounds.worlds || last.level < 0 || last.level >= bounds.perWorld) return false;
     return { world: last.world, level: last.level };
@@ -256,7 +264,7 @@
   function toLocalSave(save) {
     var src = save || {};
     var bounds = defaultBounds();
-    return {
+    var out = {
       v: 1,
       coins: isInt(src.coins) ? src.coins : 0,
       unlocked: padUnlocked(src.unlocked, bounds.worlds),
@@ -288,6 +296,8 @@
       home: homeOf(src.home),
       shop: shopOf(src.shop)
     };
+    if (plain) plain.absorb(out, src, 0, plain.ENVELOPE);
+    return out;
   }
 
   function sameSave(a, b) {
@@ -370,7 +380,10 @@
       if (seen[id]) continue;
       seen[id] = true;
       var parts = /^(\d+)-(\d+)$/.exec(id);
-      if (!parts || +parts[1] >= bounds.worlds || +parts[2] >= bounds.perWorld) continue;
+      if (!parts || +parts[1] >= bounds.worlds || +parts[2] >= bounds.perWorld) {
+        if (parts) { delete local.levels[id]; delete remote.levels[id]; }
+        continue;
+      }
       var lr = local.levels[id] || { best: 0, stars: 0 };
       var rr = remote.levels[id] || { best: 0, stars: 0 };
       var row = { best: Math.max(lr.best | 0, rr.best | 0), stars: Math.max(0, Math.min(3, Math.max(lr.stars | 0, rr.stars | 0))) };
@@ -386,7 +399,7 @@
       paddle: owned.paddle.indexOf(state.equipped.paddle) >= 0 ? state.equipped.paddle : 'classic'
     };
     var clientUpdatedAt = remoteNewer ? (remoteUpdatedAt || null) : (localUpdatedAt || remoteUpdatedAt || null);
-    return {
+    var merged = {
       client_updated_at: clientUpdatedAt,
       save: {
         v: 1,
@@ -416,12 +429,15 @@
         })()
       }
     };
+    if (plain) plain.mergeUnknown(merged.save, local, remote, remoteNewer, 0);
+    return merged;
   }
 
   return {
     SAVE_VERSION: SAVE_VERSION,
     SAVE_KEY: SAVE_KEY,
     MAX_BYTES: MAX_BYTES,
+    MAX_DEPTH: plain ? plain.MAX_DEPTH : 12,
     BALLS: BALLS,
     PADDLES: PADDLES,
     validateCloudData: validateCloudData,

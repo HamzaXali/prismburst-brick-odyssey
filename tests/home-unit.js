@@ -50,8 +50,10 @@ try {
   const accepted = sync.validateCloudData(oldCloud, { worlds: 5, perWorld: 20 });
   record('a cloud save from before home still validates', accepted.ok === true && accepted.save.home.v === 1 && accepted.save.coins === 0);
   const junk = sync.toCloudData(fresh, '2026-10-20T12:00:00.000Z');
-  junk.home.extra = true;
-  record('an unknown home field is rejected', sync.validateCloudData(junk, { worlds: 5, perWorld: 20 }).ok === false);
+  junk.home.extra = { flag: true };
+  junk.home.powers.nova = 2;
+  const keptHome = sync.validateCloudData(junk, { worlds: 5, perWorld: 20 });
+  record('an unknown home field is kept', keptHome.ok === true && keptHome.save.home.extra.flag === true && keptHome.save.home.powers.nova === 2 && keptHome.save.home.powers.wide === 0 && keptHome.save.home.v === 1);
 
   const bonus = save();
   const first = home.claimBonus(bonus, at(2026, 10, 20, 12));

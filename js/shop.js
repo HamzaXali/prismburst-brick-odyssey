@@ -28,6 +28,16 @@
 })(typeof window !== 'undefined' ? window : null, function () {
   'use strict';
 
+  var plain = null;
+  if (typeof require === 'function') {
+    try { plain = require('./save-plain.js'); } catch (e) { plain = null; }
+  }
+  function plainApi() {
+    if (plain) return plain;
+    var g = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
+    return g.PB && g.PB.SavePlain || null;
+  }
+
   var LOOKS = [
     { id: 'ion-wake', kind: 'trail', name: 'Ion Wake', price: 80, color: 0x22e8ff },
     { id: 'rose-ribbon', kind: 'trail', name: 'Rose Ribbon', price: 120, color: 0xff3df0 },
@@ -99,15 +109,23 @@
         base.boosts[key].push(bid);
       }
     }
+    var api = plainApi();
+    if (api) {
+      var kept = api.absorb(base, raw, 0);
+      if (!kept.ok) return defaultShop();
+    }
     return base;
   }
 
   function validate(raw) {
     if (raw == null) return { ok: true, shop: defaultShop() };
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: 'shop is invalid' };
-    var allowed = ['owned', 'trail', 'paddle', 'boosts', 'spent'];
-    var found = Object.keys(raw);
-    for (var i = 0; i < found.length; i++) if (allowed.indexOf(found[i]) < 0) return { ok: false, error: 'unknown shop field ' + found[i] };
+    var api = plainApi();
+    if (api) {
+      var checked = api.copyValue(raw, 0);
+      if (!checked.ok) return { ok: false, error: checked.error };
+      raw = checked.value;
+    }
     if (!Array.isArray(raw.owned) || raw.owned.length > LOOKS.length) return { ok: false, error: 'shop looks are invalid' };
     var seen = {};
     for (var o = 0; o < raw.owned.length; o++) {
@@ -116,7 +134,7 @@
     }
     if (!(raw.trail === null || (seen[raw.trail] && lookById(raw.trail).kind === 'trail'))) return { ok: false, error: 'equipped trail is invalid' };
     if (!(raw.paddle === null || (seen[raw.paddle] && lookById(raw.paddle).kind === 'paddle'))) return { ok: false, error: 'equipped paddle is invalid' };
-    if (!raw.boosts || typeof raw.boosts !== 'object' || Array.isArray(raw.boosts) || Object.keys(raw.boosts).length !== BOOST_IDS.length) return { ok: false, error: 'boosts are invalid' };
+    if (!raw.boosts || typeof raw.boosts !== 'object' || Array.isArray(raw.boosts)) return { ok: false, error: 'boosts are invalid' };
     var pending = {};
     for (var b = 0; b < BOOST_IDS.length; b++) {
       var list = raw.boosts[BOOST_IDS[b]];

@@ -20,6 +20,16 @@
 })(typeof window !== 'undefined' ? window : null, function () {
   'use strict';
 
+  var plain = null;
+  if (typeof require === 'function') {
+    try { plain = require('./save-plain.js'); } catch (e) { plain = null; }
+  }
+  function plainApi() {
+    if (plain) return plain;
+    var g = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
+    return g.PB && g.PB.SavePlain || null;
+  }
+
   var HOME_VERSION = 1;
   var CLOCK_SKEW_MS = 120000;
   var CLOCK_WRITE_MS = 60000;
@@ -161,20 +171,28 @@
       if (n > highest) highest = n;
     }
     if (base.wheel.date && highest > base.wheel.used) base.wheel.used = highest;
+    var api = plainApi();
+    if (api) {
+      var kept = api.absorb(base, raw, 0);
+      if (!kept.ok) return defaultHome();
+    }
     return base;
   }
 
   function validateHome(raw) {
     if (raw == null) return { ok: true, home: defaultHome() };
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: 'home must be an object' };
-    var keys = ['v', 'lastSeenMs', 'lastSeenDate', 'gems', 'powers', 'bonus', 'wheel', 'tasks'];
-    var found = Object.keys(raw);
-    for (var i = 0; i < found.length; i++) if (keys.indexOf(found[i]) < 0) return { ok: false, error: 'unknown home field ' + found[i] };
+    var api = plainApi();
+    if (api) {
+      var checked = api.copyValue(raw, 0);
+      if (!checked.ok) return { ok: false, error: checked.error };
+      raw = checked.value;
+    }
     if (raw.v !== HOME_VERSION) return { ok: false, error: 'home version must be 1' };
     if (!isInt(raw.lastSeenMs) || raw.lastSeenMs < 0 || raw.lastSeenMs > 1e15) return { ok: false, error: 'home clock is invalid' };
     if (!(raw.lastSeenDate === null || isDateKey(raw.lastSeenDate))) return { ok: false, error: 'home date is invalid' };
     if (!isInt(raw.gems) || raw.gems < 0 || raw.gems > 1000000000) return { ok: false, error: 'gems are invalid' };
-    if (!raw.powers || typeof raw.powers !== 'object' || Object.keys(raw.powers).length !== 2) return { ok: false, error: 'power charges are invalid' };
+    if (!raw.powers || typeof raw.powers !== 'object' || Array.isArray(raw.powers)) return { ok: false, error: 'power charges are invalid' };
     if (!isInt(raw.powers.wide) || !isInt(raw.powers.multi) || raw.powers.wide < 0 || raw.powers.multi < 0 || raw.powers.wide > 99 || raw.powers.multi > 99) return { ok: false, error: 'power charges are invalid' };
     if (!raw.bonus || typeof raw.bonus !== 'object') return { ok: false, error: 'daily bonus is invalid' };
     if (!(raw.bonus.lastClaim === null || isDateKey(raw.bonus.lastClaim))) return { ok: false, error: 'daily bonus date is invalid' };
@@ -187,7 +205,7 @@
     var seen = {};
     for (var p = 0; p < raw.wheel.pending.length; p++) {
       var item = raw.wheel.pending[p];
-      if (!item || typeof item !== 'object' || Object.keys(item).length !== 2) return { ok: false, error: 'wheel reward is invalid' };
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return { ok: false, error: 'wheel reward is invalid' };
       if (typeof item.id !== 'string' || !/^\d{4}-\d{2}-\d{2}:[1-3]$/.test(item.id) || seen[item.id]) return { ok: false, error: 'wheel reward is invalid' };
       if (SEGMENT_IDS.indexOf(item.segment) < 0) return { ok: false, error: 'wheel reward is invalid' };
       seen[item.id] = true;
@@ -200,7 +218,6 @@
       var value = raw.tasks.progress[task.id];
       if (!isInt(value) || value < 0 || value > progressLimit(task)) return { ok: false, error: 'task progress is invalid' };
     }
-    if (Object.keys(raw.tasks.progress).length !== TASKS.length) return { ok: false, error: 'task progress is invalid' };
     if (!Array.isArray(raw.tasks.milestones) || raw.tasks.milestones.length !== 3) return { ok: false, error: 'task rewards are invalid' };
     for (var m = 0; m < 3; m++) if (typeof raw.tasks.milestones[m] !== 'boolean') return { ok: false, error: 'task rewards are invalid' };
     return { ok: true, home: normalize(raw) };
@@ -231,7 +248,12 @@
       home.wheel.used = 0;
     }
     if (!home.wheel.date) home.wheel.date = today;
-    if (home.tasks.date && today > home.tasks.date) home.tasks = emptyTasks(today);
+    if (home.tasks.date && today > home.tasks.date) {
+      var prevTasks = home.tasks;
+      home.tasks = emptyTasks(today);
+      var taskPlain = plainApi();
+      if (taskPlain) taskPlain.absorb(home.tasks, prevTasks, 0);
+    }
     if (!home.tasks.date) home.tasks.date = today;
   }
 

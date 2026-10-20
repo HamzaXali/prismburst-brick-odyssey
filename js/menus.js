@@ -7,7 +7,7 @@
   'use strict';
   var PB = window.PB, L = window.PB_LEVELS, Save = PB.Save, Sfx = PB.Sfx;
   var W = PB.W, H = PB.H;
-  PB.VERSION = '1.1.0';
+  PB.VERSION = '1.3.1';
 
   function backButton(scene, cb) {
     return PB.button(scene, 92, 70, 140, 76, '‹ Back', cb, { size: 30, color: 0x9b6bff });
@@ -73,7 +73,8 @@
       sb.name = 'starBadge';
       var g = this.add.graphics(); g.fillStyle(0x0c1030, 0.85); g.fillRoundedRect(-90, -26, 180, 52, 26); g.lineStyle(2, 0x22e8ff, 0.9); g.strokeRoundedRect(-90, -26, 180, 52, 26);
       sb.add([g, this.add.image(-60, 0, 'star').setScale(0.6).setTint(0xffd166), PB.text(this, 12, 0, String(Save.totalStars()), 30, '#e8fdff')]);
-      PB.text(this, cx, H - 22, 'v' + PB.VERSION + ' · offline ready · progress saved on this device', 18, '#7a80b8', { strokeThickness: 0 });
+      var footer = PB.text(this, cx, H - 22, 'v' + PB.VERSION + ' · offline ready · progress saved on this device', 18, '#7a80b8', { strokeThickness: 0 });
+      footer.name = 'versionFooter';
     }
     update(time) {
       for (var i = 0; i < this.orbit.length; i++) {

@@ -23,7 +23,8 @@
   var HOME_VERSION = 1;
   var CLOCK_SKEW_MS = 120000;
   var CLOCK_WRITE_MS = 60000;
-  var SPINS_PER_DAY = 3;
+  var SPINS_PER_DAY = 1;
+  var WHEEL_HISTORY_MAX = 3;
   var BONUS = [
     { day: 1, coins: 20, gems: 0 },
     { day: 2, coins: 0, gems: 1 },
@@ -46,7 +47,7 @@
     { id: 'clears', target: 10, text: 'Clear 10 levels', live: true },
     { id: 'challenge', target: 1, text: 'Finish 1 challenge level', live: false },
     { id: 'chest', target: 1, text: 'Open a chest', live: false },
-    { id: 'spins', target: 3, text: 'Spin the wheel 3 times', live: true },
+    { id: 'spins', target: 1, text: 'Spin the wheel', live: true },
     { id: 'powerups', target: 3, text: 'Use 3 power-ups', live: true }
   ];
   var MILESTONES = [
@@ -81,6 +82,10 @@
     return n;
   }
 
+  function progressLimit(task) {
+    return task.id === 'spins' ? Math.max(task.target, WHEEL_HISTORY_MAX) : task.target;
+  }
+
   function emptyTasks(date) {
     return {
       date: date || null,
@@ -113,7 +118,7 @@
     var out = [];
     var seen = {};
     if (!Array.isArray(list)) return out;
-    for (var i = 0; i < list.length && out.length < SPINS_PER_DAY; i++) {
+    for (var i = 0; i < list.length && out.length < WHEEL_HISTORY_MAX; i++) {
       var item = list[i];
       if (!item || typeof item !== 'object') continue;
       var id = String(item.id || '');
@@ -139,13 +144,14 @@
     if (!base.bonus.lastClaim) base.bonus.streak = 0;
     var wheel = raw.wheel || {};
     base.wheel.date = isDateKey(wheel.date) ? wheel.date : null;
-    base.wheel.used = clampInt(wheel.used, 0, SPINS_PER_DAY, 0);
+    base.wheel.used = clampInt(wheel.used, 0, WHEEL_HISTORY_MAX, 0);
     base.wheel.pending = normalizePending(wheel.pending);
     var tasks = raw.tasks || {};
     base.tasks.date = isDateKey(tasks.date) ? tasks.date : null;
     var progress = tasks.progress || {};
     TASKS.forEach(function (task) {
-      base.tasks.progress[task.id] = clampInt(progress[task.id], 0, task.target, 0);
+      base.tasks.progress[task.id] = clampInt(progress[task.id], 0, progressLimit(task), 0);
+      if (base.tasks.progress[task.id] > task.target) base.tasks.progress[task.id] = task.target;
     });
     var flags = Array.isArray(tasks.milestones) ? tasks.milestones : [];
     base.tasks.milestones = [0, 1, 2].map(function (i) { return flags[i] === true; });
@@ -176,8 +182,8 @@
     if (!raw.bonus.lastClaim && raw.bonus.streak !== 0) return { ok: false, error: 'daily bonus streak is invalid' };
     if (!raw.wheel || typeof raw.wheel !== 'object') return { ok: false, error: 'wheel is invalid' };
     if (!(raw.wheel.date === null || isDateKey(raw.wheel.date))) return { ok: false, error: 'wheel date is invalid' };
-    if (!isInt(raw.wheel.used) || raw.wheel.used < 0 || raw.wheel.used > SPINS_PER_DAY) return { ok: false, error: 'wheel spins are invalid' };
-    if (!Array.isArray(raw.wheel.pending) || raw.wheel.pending.length > SPINS_PER_DAY) return { ok: false, error: 'wheel reward is invalid' };
+    if (!isInt(raw.wheel.used) || raw.wheel.used < 0 || raw.wheel.used > WHEEL_HISTORY_MAX) return { ok: false, error: 'wheel spins are invalid' };
+    if (!Array.isArray(raw.wheel.pending) || raw.wheel.pending.length > WHEEL_HISTORY_MAX) return { ok: false, error: 'wheel reward is invalid' };
     var seen = {};
     for (var p = 0; p < raw.wheel.pending.length; p++) {
       var item = raw.wheel.pending[p];
@@ -192,7 +198,7 @@
     for (var t = 0; t < TASKS.length; t++) {
       var task = TASKS[t];
       var value = raw.tasks.progress[task.id];
-      if (!isInt(value) || value < 0 || value > task.target) return { ok: false, error: 'task progress is invalid' };
+      if (!isInt(value) || value < 0 || value > progressLimit(task)) return { ok: false, error: 'task progress is invalid' };
     }
     if (Object.keys(raw.tasks.progress).length !== TASKS.length) return { ok: false, error: 'task progress is invalid' };
     if (!Array.isArray(raw.tasks.milestones) || raw.tasks.milestones.length !== 3) return { ok: false, error: 'task rewards are invalid' };
@@ -307,10 +313,39 @@
     return SEGMENTS[SEGMENTS.length - 1];
   }
 
+  function wheelSliceDeg() { return 360 / SEGMENTS.length; }
+
+  function restAngle(index, offsetDeg, turns) {
+    var slice = wheelSliceDeg();
+    var limit = slice / 2 - 8;
+    var off = typeof offsetDeg === 'number' && isFinite(offsetDeg) ? offsetDeg : 0;
+    if (off > limit) off = limit;
+    if (off < -limit) off = -limit;
+    var spinTurns = turns == null ? 5 : turns;
+    return spinTurns * 360 + index * slice + off;
+  }
+
+  function segmentAtPointer(angleDeg) {
+    var slice = wheelSliceDeg();
+    var norm = ((angleDeg % 360) + 360) % 360;
+    var best = 0;
+    var bestDist = 1e9;
+    for (var i = 0; i < SEGMENTS.length; i++) {
+      var center = i * slice;
+      var d = Math.abs(norm - center);
+      if (d > 180) d = 360 - d;
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    return best;
+  }
+
   function beginSpin(data, now, rng) {
+    data.home = normalize(data.home);
+    if (data.home.wheel.pending.length) return { ok: false, reason: 'pending' };
     var left = spinsLeft(data, now);
     if (clockBehind(data.home, now) || dateBehind(data.home, now)) return { ok: false, reason: 'clock' };
     if (left <= 0) return { ok: false, reason: 'none' };
+    if (data.home.wheel.pending.length) return { ok: false, reason: 'pending' };
     var seg = pickSegment(rng);
     data.home.wheel.used += 1;
     var spin = { id: data.home.wheel.date + ':' + data.home.wheel.used, segment: seg.id };
@@ -452,7 +487,7 @@
     for (var p = 0; p < pending.length; p++) {
       if ((base.date || '') === pending[p].id.slice(0, 10)) used = Math.max(used, spinIndex(pending[p].id));
     }
-    if (used > SPINS_PER_DAY) used = SPINS_PER_DAY;
+    if (used > WHEEL_HISTORY_MAX) used = WHEEL_HISTORY_MAX;
     return { date: base.date, used: used, pending: pending };
   }
 
@@ -559,8 +594,12 @@
     ensure: ensure,
     bonusAvailable: bonusAvailable,
     claimBonus: claimBonus,
+    SPINS_PER_DAY: SPINS_PER_DAY,
+    WHEEL_HISTORY_MAX: WHEEL_HISTORY_MAX,
     spinsLeft: spinsLeft,
     pickSegment: pickSegment,
+    restAngle: restAngle,
+    segmentAtPointer: segmentAtPointer,
     beginSpin: beginSpin,
     applyPending: applyPending,
     note: note,

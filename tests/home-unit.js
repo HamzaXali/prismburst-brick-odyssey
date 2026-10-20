@@ -117,9 +117,84 @@ try {
     spins++;
   }
   const blocked = home.beginSpin(spinSave, at(2026, 10, 20, 16), function () { return 0; });
-  record('only 3 free spins are stored for one local day', spins === 3 && blocked.ok === false && spinSave.home.wheel.used === 3);
+  record('only 1 free spin is stored for one local day', spins === 1 && blocked.ok === false && spinSave.home.wheel.used === 1 && blocked.reason === 'none');
   const tomorrowSpins = home.spinsLeft(spinSave, at(2026, 10, 21, 12));
-  record('the free spins return on the next local day', tomorrowSpins === 3 && spinSave.home.wheel.used === 0);
+  record('the free spin returns on the next local day', tomorrowSpins === 1 && spinSave.home.wheel.used === 0);
+
+  const doubleSave = save();
+  const firstTap = home.beginSpin(doubleSave, at(2026, 10, 20, 12), function () { return 0; });
+  const secondTap = home.beginSpin(doubleSave, at(2026, 10, 20, 12), function () { return 0.5; });
+  const grantedOnce = home.applyPending(doubleSave);
+  const grantedTwice = home.applyPending(doubleSave);
+  record('a second spin in the same day is refused and the reward is paid once',
+    firstTap.ok === true && secondTap.ok === false && secondTap.reason === 'pending' && doubleSave.home.wheel.used === 1 && grantedOnce.length === 1 && grantedTwice.length === 0 && doubleSave.coins === 25);
+
+  const samples10k = 10000;
+  const rng10 = mulberry(11);
+  const counts10 = {};
+  home.SEGMENTS.forEach(function (s) { counts10[s.id] = 0; });
+  for (let n = 0; n < samples10k; n++) counts10[home.pickSegment(rng10).id] += 1;
+  const everySegment = home.SEGMENTS.every(function (s) {
+    const expected = s.weight / weightTotal;
+    return counts10[s.id] > 0 && Math.abs(counts10[s.id] / samples10k - expected) < 0.03;
+  });
+  record('every wheel segment appears in 10000 seeded rolls near its weight', everySegment, JSON.stringify(counts10));
+
+  let restOk = true;
+  home.SEGMENTS.forEach(function (seg, index) {
+    [-18, 0, 18].forEach(function (off) {
+      const angle = home.restAngle(index, off, 5);
+      if (home.segmentAtPointer(angle) !== index) restOk = false;
+    });
+  });
+  record('each segment rests under the pointer', restOk);
+
+  let grantOk = true;
+  const weightCursor = [];
+  let weightAt = 0;
+  home.SEGMENTS.forEach(function (seg) { weightCursor.push(weightAt); weightAt += seg.weight; });
+  home.SEGMENTS.forEach(function (seg, index) {
+    const data = save();
+    const roll = (weightCursor[index] + seg.weight / 2) / weightTotal;
+    const spun = home.beginSpin(data, at(2026, 10, 20, 12), function () { return roll; });
+    const before = { coins: data.coins, gems: data.home.gems, wide: data.home.powers.wide, multi: data.home.powers.multi };
+    home.applyPending(data);
+    const delta = {
+      coins: data.coins - before.coins,
+      gems: data.home.gems - before.gems,
+      wide: data.home.powers.wide - before.wide,
+      multi: data.home.powers.multi - before.multi
+    };
+    const expect = {
+      coins: seg.kind === 'coins' ? seg.amount : 0,
+      gems: seg.kind === 'gems' ? seg.amount : 0,
+      wide: seg.power === 'wide' ? seg.amount : 0,
+      multi: seg.power === 'multi' ? seg.amount : 0
+    };
+    if (!spun.ok || spun.segment.id !== seg.id || delta.coins !== expect.coins || delta.gems !== expect.gems || delta.wide !== expect.wide || delta.multi !== expect.multi) grantOk = false;
+  });
+  record('the granted reward equals the chosen segment', grantOk);
+
+  const legacyWheel = home.defaultHome();
+  legacyWheel.wheel = { date: '2026-10-20', used: 3, pending: [{ id: '2026-10-20:2', segment: 'c60' }, { id: '2026-10-20:3', segment: 'g2' }] };
+  legacyWheel.tasks.date = '2026-10-20';
+  legacyWheel.tasks.progress.spins = 3;
+  const legacyCheck = home.validateHome(legacyWheel);
+  const legacySave = save({ home: JSON.parse(JSON.stringify(legacyWheel)), coins: 0 });
+  const legacyApplied = home.ensure(legacySave, at(2026, 10, 20, 18));
+  const legacyAgain = home.ensure(JSON.parse(JSON.stringify(legacySave)), at(2026, 10, 20, 19));
+  record('old wheel saves with used 3 and pending :2/:3 still validate',
+    legacyCheck.ok === true && legacyCheck.home.wheel.used === 3 && legacyCheck.home.wheel.pending.length === 2 && legacyCheck.home.tasks.progress.spins === 1);
+  record('old pending rewards are granted once and do not unlock another spin',
+    legacyApplied.length === 2 && legacySave.coins === 60 && legacySave.home.gems === 2 && legacySave.home.wheel.pending.length === 0 && home.spinsLeft(legacySave, at(2026, 10, 20, 18)) === 0 && legacyAgain.length === 0);
+  const spent = home.defaultHome();
+  spent.wheel = { date: '2026-10-20', used: 3, pending: [] };
+  const stillPending = home.defaultHome();
+  stillPending.wheel = { date: '2026-10-20', used: 2, pending: [{ id: '2026-10-20:2', segment: 'c60' }] };
+  const mergedOld = home.mergeHome(spent, stillPending, true);
+  const mergedPay = save({ home: mergedOld, coins: 5 });
+  home.ensure(mergedPay, at(2026, 10, 20, 12));
+  record('a historical spin already used on one device is not granted again', mergedOld.wheel.used === 3 && mergedOld.wheel.pending.length === 0 && mergedPay.coins === 5);
 
   const tasks = save();
   home.note(tasks, 'clears', 4, at(2026, 10, 20, 12));

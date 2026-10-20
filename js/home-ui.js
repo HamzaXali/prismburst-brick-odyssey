@@ -38,6 +38,39 @@
     parent.add(dot);
   }
 
+  function qty(n, one, many) {
+    return n + ' ' + (n === 1 ? one : many);
+  }
+
+  var DOTS = { 'rail-bonus': 'dot-bonus', 'rail-tasks': 'dot-tasks', 'rail-wheel': 'dot-wheel' };
+
+  function refreshMarks(scene) {
+    if (!scene || !scene.children) return;
+    var now = Date.now();
+    var flags = {
+      'rail-bonus': Home.bonusAvailable(Save.data, now),
+      'rail-tasks': Home.tasksClaimable(Save.data, now) > 0,
+      'rail-wheel': Home.spinsLeft(Save.data, now) > 0
+    };
+    var found = {};
+    var walk = function (list) {
+      (list || []).forEach(function (o) {
+        if (flags[o.name] != null) found[o.name] = o;
+        if (o.list) walk(o.list);
+      });
+    };
+    walk(scene.children.list);
+    Object.keys(flags).forEach(function (name) {
+      var parent = found[name];
+      if (!parent || !parent.list) return;
+      var dotName = DOTS[name];
+      var existing = null;
+      parent.list.forEach(function (child) { if (child.name === dotName) existing = child; });
+      if (existing && !flags[name]) existing.destroy();
+      if (!existing && flags[name]) mark(scene, parent, true, dotName);
+    });
+  }
+
   function comingSoon(scene, title) {
     if (scene._soon) scene._soon.destroy();
     var layer = scene.add.container(0, 0).setDepth(40);
@@ -116,6 +149,8 @@
       return mode.items[mode.index] || 'bonus';
     }
     close() {
+      var menu = this.scene.get('Menu');
+      if (menu) refreshMarks(menu);
       var mode = PB.Home.mode;
       if (!mode || mode.type === 'one') { this.scene.stop(); return; }
       mode.index += 1;
@@ -137,7 +172,8 @@
       if (id === 'tasks') this.tasks();
       else if (id === 'wheel') this.wheel();
       else this.bonus();
-      this.noteText = PB.text(this, W / 2, H - 150, '', 24, '#ffe7a3', { strokeThickness: 0 });
+      var noteY = id === 'bonus' ? 940 : (id === 'wheel' ? 1000 : 1096);
+      this.noteText = PB.text(this, W / 2, noteY, '', 24, '#ffe7a3', { strokeThickness: 0 });
       this.noteText.name = 'popupNote';
       this.root.add(this.noteText);
     }
@@ -147,35 +183,65 @@
       var home = Save.data.home;
       var avail = Home.bonusAvailable(Save.data, now);
       var streak = avail ? (home.bonus.lastClaim && Home.addDays(home.bonus.lastClaim, 1) === Home.dateKey(new Date(now)) ? (home.bonus.streak >= 7 ? 1 : home.bonus.streak + 1) : 1) : (home.bonus.streak || 1);
+      var panel = this.add.zone(W / 2, H / 2 + 10, 640, 980);
+      panel.name = 'bonusPanel';
+      this.root.add(panel);
       this.root.add(PB.text(this, W / 2, 250, 'DAILY BONUS', 46, '#ffe7a3', { glow: '#ffd166' }));
       this.root.add(PB.text(this, W / 2, 310, 'Day ' + streak + ' of 7', 26, '#c9d4ff', { strokeThickness: 0 }));
+      var cardW = 124;
+      var cardH = 118;
+      var gap = 16;
+      var rowW = cardW * 4 + gap * 3;
+      var rowLeft = W / 2 - rowW / 2;
+      var wideW = cardW * 2 + gap;
+      function cardBox(day) {
+        var y = day < 5 ? 470 : 630;
+        var x;
+        var w = cardW;
+        if (day < 5) x = rowLeft + cardW / 2 + (day - 1) * (cardW + gap);
+        else if (day === 5) x = rowLeft + cardW / 2;
+        else if (day === 6) x = rowLeft + cardW / 2 + (cardW + gap);
+        else {
+          w = wideW;
+          x = rowLeft + (cardW + gap) * 2 + wideW / 2;
+        }
+        return { x: x, y: y, w: w };
+      }
       for (var i = 0; i < 7; i++) {
         var spec = Home.BONUS[i];
-        var x = 96 + (i % 4) * 140;
-        var y = i < 4 ? 430 : 560;
-        if (i === 6) x = W / 2;
+        var box = cardBox(spec.day);
         var today = spec.day === streak;
+        var finale = spec.day === 7;
         var g = this.add.graphics();
-        g.fillStyle(today ? 0xffd166 : 0x1c2250, today ? 0.4 : 0.95);
-        g.fillRoundedRect(x - 58, y - 48, 116, 110, 16);
-        g.lineStyle(3, today ? 0xffd166 : 0x3a3f6a, 1);
-        g.strokeRoundedRect(x - 58, y - 48, 116, 110, 16);
+        g.fillStyle(today || finale ? 0xffd166 : 0x1c2250, today ? 0.45 : (finale ? 0.22 : 0.95));
+        g.fillRoundedRect(box.x - box.w / 2, box.y - cardH / 2, box.w, cardH, 16);
+        g.lineStyle(finale || today ? 4 : 3, today || finale ? 0xffd166 : 0x3a3f6a, 1);
+        g.strokeRoundedRect(box.x - box.w / 2, box.y - cardH / 2, box.w, cardH, 16);
         this.root.add(g);
-        this.root.add(PB.text(this, x, y - 24, 'Day ' + spec.day, 18, '#9fa8e0', { strokeThickness: 0 }));
-        var prize = spec.gems ? (spec.gems + ' gems') : (spec.coins + ' coins');
-        this.root.add(PB.text(this, x, y + 12, prize, 18, '#ffe7a3', { strokeThickness: 0, wrap: 100 }));
+        var zone = this.add.zone(box.x, box.y, box.w, cardH);
+        zone.name = 'dayCard' + spec.day;
+        this.root.add(zone);
+        this.root.add(PB.text(this, box.x, box.y - 28, 'Day ' + spec.day, finale ? 22 : 18, '#9fa8e0', { strokeThickness: 0 }));
+        var lines = [];
+        if (spec.coins) lines.push(qty(spec.coins, 'coin', 'coins'));
+        if (spec.gems) lines.push(qty(spec.gems, 'gem', 'gems'));
+        lines.forEach(function (line, n) {
+          self.root.add(PB.text(self, box.x, box.y + (lines.length === 1 ? 8 : n * 22), line, 18, '#ffe7a3', { strokeThickness: 0 }));
+        });
       }
-      var claim = PB.button(this, W / 2 - 140, 760, 250, 84, avail ? 'Claim' : 'Claimed', function () {
+      var claim = PB.button(this, W / 2 - 150, 820, 260, 84, avail ? 'Claim' : 'Claimed', function () {
         var got = Home.claimBonus(Save.data, Date.now());
         if (!got.ok) return;
         Save.persist();
         Sfx.play('coin');
+        var menu = self.scene.get('Menu');
+        if (menu) refreshMarks(menu);
         self.render();
         self.note('Day ' + got.streak + ' saved on this device.');
       }, { color: avail ? 0xffd166 : 0x4a4f78, size: 30, disabled: !avail });
       claim.name = 'claimBonus';
       this.root.add(claim);
-      var doubled = PB.button(this, W / 2 + 140, 760, 250, 84, '2x Claim', function () {
+      var doubled = PB.button(this, W / 2 + 150, 820, 260, 84, '2x Claim', function () {
         self.note('Coming soon');
       }, { color: 0x9b6bff, size: 28 });
       doubled.name = 'claimDouble';
@@ -188,27 +254,36 @@
       this.root.add(PB.text(this, W / 2, 250, 'DAILY TASKS', 46, '#e8fdff', { glow: '#22e8ff' }));
       this.root.add(PB.text(this, W / 2, 308, 'Resets in ' + Home.countdownLabel(now), 24, '#9fe9ff', { strokeThickness: 0 }));
       Home.TASKS.forEach(function (task, i) {
-        var y = 390 + i * 92;
+        var y = 348 + i * 100;
         var progress = Save.data.home.tasks.progress[task.id] | 0;
-        var label = task.text + (task.live ? '' : '  ·  Not in the game yet');
-        self.root.add(PB.text(self, 70, y - 16, label, 22, task.live ? '#ffffff' : '#9aa3d6', { ox: 0, strokeThickness: 0, wrap: 500 }));
+        self.root.add(PB.text(self, 80, y, task.text, 22, task.live ? '#ffffff' : '#c9d2f5', { ox: 0, strokeThickness: 0 }));
+        var barY = y + 22;
+        if (!task.live) {
+          var stub = PB.text(self, 80, y + 24, 'Not in the game yet', 16, '#8d97c9', { ox: 0, strokeThickness: 0 });
+          stub.name = 'stub-' + task.id;
+          self.root.add(stub);
+          barY = y + 48;
+        }
         var bar = self.add.graphics();
         var pct = Math.min(1, progress / task.target);
         bar.fillStyle(0x0a0d26, 1);
-        bar.fillRoundedRect(70, y + 12, 420, 16, 8);
+        bar.fillRoundedRect(80, barY, 420, 16, 8);
         if (pct > 0) {
           bar.fillStyle(task.live ? 0x22e8ff : 0x4a4f78, 1);
-          bar.fillRoundedRect(70, y + 12, Math.max(16, 420 * pct), 16, 8);
+          bar.fillRoundedRect(80, barY, Math.max(16, 420 * pct), 16, 8);
         }
         self.root.add(bar);
-        self.root.add(PB.text(self, 560, y + 8, progress + '/' + task.target, 20, '#c9d4ff', { strokeThickness: 0 }));
+        var barZone = self.add.zone(80 + 210, barY + 8, 420, 16);
+        barZone.name = 'taskBar-' + task.id;
+        self.root.add(barZone);
+        self.root.add(PB.text(self, 560, barY + 8, progress + '/' + task.target, 20, '#c9d4ff', { strokeThickness: 0 }));
       });
       Home.MILESTONES.forEach(function (mile, i) {
         var ready = Home.milestoneReady(Save.data, i, Date.now());
         var claimed = Save.data.home.tasks.milestones[i];
-        var prize = mile.gems ? (mile.gems + ' gems') : (mile.coins + ' coins');
-        var label = claimed ? 'Saved' : (mile.need + ' tasks · ' + prize);
-        var b = PB.button(self, W / 2, 900 + i * 86, 460, 72, label, function () {
+        var prize = mile.gems ? qty(mile.gems, 'gem', 'gems') : qty(mile.coins, 'coin', 'coins');
+        var label = claimed ? 'Saved' : (qty(mile.need, 'task', 'tasks') + ' · ' + prize);
+        var b = PB.button(self, W / 2, 900 + i * 64, 460, 56, label, function () {
           var got = Home.claimMilestone(Save.data, i, Date.now());
           if (!got.ok) return;
           Save.persist();
@@ -224,7 +299,8 @@
       var now = Date.now();
       var left = Home.spinsLeft(Save.data, now);
       this.root.add(PB.text(this, W / 2, 240, 'LUCKY WHEEL', 46, '#ffd6fb', { glow: '#ff3df0' }));
-      this.root.add(PB.text(this, W / 2, 296, left + ' free spin' + (left === 1 ? '' : 's') + ' left today', 24, '#c9d4ff', { strokeThickness: 0 }));
+      var subtitle = left > 0 ? (qty(left, 'free spin', 'free spins') + ' left today') : 'Come back tomorrow';
+      this.root.add(PB.text(this, W / 2, 296, subtitle, 24, '#c9d4ff', { strokeThickness: 0 }));
       if (Home.recovered && Home.recovered.length) {
         var saved = Home.recovered[0].reward && Home.recovered[0].reward.label;
         this.root.add(PB.text(this, W / 2, 340, 'Saved reward: ' + (saved || 'collected'), 22, '#ffe7a3', { strokeThickness: 0 }));
@@ -248,7 +324,8 @@
         var mid = a0 + slice / 2;
         var tx = Math.cos(mid) * 108;
         var ty = Math.sin(mid) * 108;
-        var short = Home.SEGMENTS[i].kind === 'coins' ? String(Home.SEGMENTS[i].amount) : (Home.SEGMENTS[i].kind === 'gems' ? (Home.SEGMENTS[i].amount + ' gems') : Home.SEGMENTS[i].label.split(' ')[0]);
+        var seg = Home.SEGMENTS[i];
+        var short = seg.kind === 'coins' ? String(seg.amount) : (seg.kind === 'gems' ? qty(seg.amount, 'gem', 'gems') : seg.label.split(' ')[0]);
         var label = PB.text(this, tx, ty, short, 18, '#ffffff', { strokeThickness: 0 });
         wheel.add(label);
       }
@@ -259,36 +336,45 @@
       hub.fillStyle(0xffd166, 1);
       hub.fillCircle(0, 0, 18);
       wheel.add(hub);
+      if (self.wheelRest) wheel.angle = ((self.wheelRest % 360) + 360) % 360;
       this.root.add(wheel);
       this.wheelGfx = wheel;
       var pointer = this.add.graphics();
       pointer.fillStyle(0xffd166, 1);
       pointer.fillTriangle(W / 2 - 14, 430, W / 2 + 14, 430, W / 2, 462);
       this.root.add(pointer);
-      var spin = PB.button(this, W / 2, 900, 320, 88, left ? 'Spin' : 'Come back tomorrow', function () {
-        if (self.spinning) return;
+      var spin = PB.button(this, W / 2, 860, 320, 88, left ? 'Spin' : 'Come back tomorrow', function () {
+        if (self.spinning || spin.disabled) return;
+        self.spinning = true;
+        spin.setDisabled(true);
         var result = Home.beginSpin(Save.data, Date.now(), Math.random);
         if (!result.ok) {
+          self.spinning = false;
+          spin.setDisabled(true);
           self.note(result.reason === 'clock' ? 'Clock changed. Spins stay as they were.' : 'No free spins left today.');
           return;
         }
         Save.persist();
-        self.spinning = true;
         var index = 0;
         for (var s = 0; s < Home.SEGMENTS.length; s++) if (Home.SEGMENTS[s].id === result.segment.id) index = s;
-        var turn = 360 * 5 - index * (360 / Home.SEGMENTS.length);
+        var slice = 360 / Home.SEGMENTS.length;
+        var offset = (Math.random() - 0.5) * (slice - 16);
+        var turn = Home.restAngle(index, offset, 5);
         self.tweens.add({
           targets: wheel,
           angle: turn,
           duration: 2400,
           ease: 'Cubic.out',
           onComplete: function () {
+            self.wheelRest = turn;
             Home.applyPending(Save.data);
             Save.persist();
             self.spinning = false;
+            var menu = self.scene.get('Menu');
+            if (menu) refreshMarks(menu);
             if (!self.scene.isActive()) return;
+            self.render();
             self.note(result.segment.label);
-            self.time.delayedCall(30, function () { if (self.scene.isActive()) self.render(); });
           }
         });
       }, { color: left ? 0xff3df0 : 0x4a4f78, size: 30, disabled: !left });
@@ -297,6 +383,6 @@
     }
   }
 
-  PB.HomeUI = { decorate: decorate, gemBadge: gemBadge, comingSoon: comingSoon };
+  PB.HomeUI = { decorate: decorate, gemBadge: gemBadge, comingSoon: comingSoon, refreshMarks: refreshMarks };
   PB.HomePopScene = HomePopScene;
 })();

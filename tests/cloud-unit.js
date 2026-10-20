@@ -272,6 +272,32 @@ try {
     !/\.jks['"]?\s*$/m.test(releaseYml.split('\n').filter(line => /keystoreFile|storeFile/.test(line)).join('\n')));
   const pkg = require('../package.json');
   const appGradle = fs.readFileSync(path.join(root, 'android/app/build.gradle'), 'utf8');
+  const { execFileSync } = require('child_process');
+  const decodeScript = path.join(root, 'scripts/decode-upload-keystore.py');
+  const sample = Buffer.from('throwaway-keystore-bytes');
+  const sampleB64 = sample.toString('base64');
+  const decodedPath = path.join(require('os').tmpdir(), 'pb-keystore-decode-test.bin');
+  const decodeOut = execFileSync('python3', [decodeScript], {
+    env: Object.assign({}, process.env, { KEYSTORE_BASE64: sampleB64, KEYSTORE_PATH: decodedPath }),
+    encoding: 'utf8'
+  });
+  let emptyFailed = false;
+  try {
+    execFileSync('python3', [decodeScript], {
+      env: Object.assign({}, process.env, { KEYSTORE_BASE64: '   ', KEYSTORE_PATH: decodedPath }),
+      encoding: 'utf8',
+      stdio: 'pipe'
+    });
+  } catch (err) {
+    emptyFailed = true;
+  }
+  record('keystore decoder writes the bytes and does not print the secret',
+    releaseYml.includes('python3 scripts/decode-upload-keystore.py') &&
+    fs.readFileSync(decodedPath).equals(sample) &&
+    !decodeOut.includes(sampleB64) &&
+    !decodeOut.includes(sample.toString()) &&
+    emptyFailed);
+  fs.rmSync(decodedPath, { force: true });
   record('release version, R8, and signing env come from package.json without printing secrets',
     pkg.version === '1.3.1' && pkg.androidVersionCode === 1 &&
     appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&

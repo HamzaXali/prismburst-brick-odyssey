@@ -108,15 +108,9 @@ Facebook ships off (`providers.facebook` is `false`). Turn it on only after this
 - Each cloud save must be **under 64 KB**. A normal game save is much smaller.
 - The free database and monthly active users have plan caps. One save row per player is enough for this game.
 
-## 9. Later, if the game is wrapped with Capacitor
+## 9. Android app
 
-Not part of this setup. When that happens:
-
-- The page already skips the service worker when `window.Capacitor` is set, because the files are inside the app.
-- Google and Facebook will not finish inside an embedded webview. Open OAuth in the system browser or a custom tab, then return to the app with a deep link.
-- Add that deep link (for example an Android app link or a custom scheme such as `com.prismburst.odyssey://login-callback`) to Supabase **Redirect URLs** and to the Google and Facebook clients.
-- The game currently sets `redirectTo` to the page URL. A wrapped build has to pass the deep link instead when Capacitor is present.
-- Register the scheme in `AndroidManifest.xml`.
+The debug APK and the extra Supabase redirect are in [ANDROID.md](ANDROID.md). On the website, Google still returns to the page you started on. Inside the Android app, Google opens the system browser and returns to `com.hamzaxali.prismburst://auth`. Add that address (or `com.hamzaxali.prismburst://**`) under Supabase **Redirect URLs**. The service worker is not registered inside the app.
 
 ## Privacy page
 

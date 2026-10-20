@@ -45,6 +45,43 @@
     return u.toString();
   }
 
+  var NATIVE_AUTH_URL = 'com.hamzaxali.prismburst://auth';
+  var nativePlugins = {};
+
+  function isNativeApp() {
+    try {
+      return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+    } catch (e) { return false; }
+  }
+
+  function nativePlugin(name) {
+    if (nativePlugins[name]) return nativePlugins[name];
+    try {
+      if (!isNativeApp() || typeof window.Capacitor.registerPlugin !== 'function') return null;
+      nativePlugins[name] = window.Capacitor.registerPlugin(name);
+      return nativePlugins[name];
+    } catch (e) { return null; }
+  }
+
+  function authRedirectUrl() {
+    return isNativeApp() ? NATIVE_AUTH_URL : pageUrl();
+  }
+
+  function parseNativeAuthUrl(raw) {
+    var url;
+    try { url = new URL(String(raw)); } catch (e) { return null; }
+    if (String(url.protocol || '').toLowerCase() !== 'com.hamzaxali.prismburst:') return null;
+    if (String(url.hostname || '').toLowerCase() !== 'auth') return null;
+    var hash = new URLSearchParams(String(url.hash || '').replace(/^#/, ''));
+    return {
+      code: url.searchParams.get('code') || hash.get('code') || '',
+      error: url.searchParams.get('error_description') || url.searchParams.get('error') || hash.get('error_description') || hash.get('error') || '',
+      type: url.searchParams.get('type') || hash.get('type') || '',
+      accessToken: url.searchParams.get('access_token') || hash.get('access_token') || '',
+      refreshToken: url.searchParams.get('refresh_token') || hash.get('refresh_token') || ''
+    };
+  }
+
   function config() {
     var cfg = window.PB_CONFIG || {};
     return {
@@ -262,6 +299,7 @@
         });
         var pendingInit = this.client.auth.initializePromise;
         if (pendingInit && pendingInit.then) pendingInit.then(function () { stripOAuthParams(); }, function () { stripOAuthParams(); });
+        this.attachNativeAuth();
       } catch (e) {
         this.client = null;
         this.errorText = friendlyError(e);
@@ -755,13 +793,27 @@
         return Promise.resolve();
       }
       return this.busy(function () {
-        var options = { redirectTo: pageUrl(), skipBrowserRedirect: false };
+        var native = isNativeApp();
+        var options = {
+          redirectTo: native ? NATIVE_AUTH_URL : pageUrl(),
+          skipBrowserRedirect: native
+        };
         if (provider === 'google') options.scopes = 'openid email profile';
         return withTimeout(self.client.auth.signInWithOAuth({
           provider: provider,
           options: options
         }), 15000).then(function (res) {
           if (res.error) throw res.error;
+          if (!native) return;
+          var url = res.data && res.data.url;
+          if (!url) throw new Error('Sign-in could not start. Progress on this device is unchanged.');
+          var browser = nativePlugin('Browser');
+          if (!browser || typeof browser.open !== 'function') {
+            throw new Error('The system browser is unavailable. Progress on this device is unchanged.');
+          }
+          self._nativeAuthPending = true;
+          self._nativeAuthHandled = false;
+          return browser.open({ url: url });
         });
       });
     },
@@ -788,7 +840,7 @@
         return withTimeout(self.client.auth.signUp({
           email: email,
           password: password,
-          options: { emailRedirectTo: pageUrl() }
+          options: { emailRedirectTo: authRedirectUrl() }
         }), 15000).then(function (res) {
           if (res.error) throw res.error;
           var session = res.data && res.data.session;
@@ -807,7 +859,7 @@
       if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
       if (!email || email.indexOf('@') < 1) { this.setError('Enter the email for that account.'); return Promise.resolve(); }
       return this.busy(function () {
-        return withTimeout(self.client.auth.resetPasswordForEmail(email, { redirectTo: pageUrl() }), 15000).then(function (res) {
+        return withTimeout(self.client.auth.resetPasswordForEmail(email, { redirectTo: authRedirectUrl() }), 15000).then(function (res) {
           if (res.error) throw res.error;
           self.errorText = 'Password reset email sent. Open the link on this phone. Your progress stays on this device.';
           self.syncLabel = self.session ? self.syncLabel : 'Not signed in';
@@ -946,6 +998,73 @@
         self.loading = false;
         self.nameNote = 'Could not save the name. Your progress is unchanged.';
         self.emit();
+      });
+    },
+
+    attachNativeAuth: function () {
+      if (this._nativeAuthListening || !isNativeApp()) return;
+      var app = nativePlugin('App');
+      var browser = nativePlugin('Browser');
+      if (!app || typeof app.addListener !== 'function') return;
+      this._nativeAuthListening = true;
+      var self = this;
+      app.addListener('appUrlOpen', function (event) {
+        self.handleNativeAuthUrl(event && event.url);
+      });
+      if (browser && typeof browser.addListener === 'function') {
+        browser.addListener('browserFinished', function () {
+          setTimeout(function () {
+            if (!self._nativeAuthPending || self._nativeAuthHandled) return;
+            self._nativeAuthPending = false;
+            self.loading = false;
+            self.errorText = 'Sign-in was cancelled.';
+            if (!self.session) self.syncLabel = 'Not signed in';
+            self.emit();
+          }, 500);
+        });
+      }
+    },
+
+    handleNativeAuthUrl: function (raw) {
+      var self = this;
+      var parsed = parseNativeAuthUrl(raw);
+      if (!parsed) return;
+      this._nativeAuthHandled = true;
+      this._nativeAuthPending = false;
+      var browser = nativePlugin('Browser');
+      if (browser && typeof browser.close === 'function') {
+        Promise.resolve(browser.close()).catch(function () { /* the tab may already be closed */ });
+      }
+      if (parsed.error) {
+        this.loading = false;
+        this.setError(friendlyError({ message: parsed.error }));
+        return;
+      }
+      if (parsed.type === 'recovery') this.recovery = true;
+      if (!this.client) {
+        this.loading = false;
+        this.setError('Sign-in could not return to this page. Progress on this device is unchanged.');
+        return;
+      }
+      var job = null;
+      if (parsed.code) job = this.client.auth.exchangeCodeForSession(parsed.code);
+      else if (parsed.accessToken && parsed.refreshToken) {
+        job = this.client.auth.setSession({ access_token: parsed.accessToken, refresh_token: parsed.refreshToken });
+      }
+      if (!job) {
+        this.loading = false;
+        this.setError('Sign-in could not return to this page. Progress on this device is unchanged.');
+        return;
+      }
+      this.loading = true;
+      this.emit();
+      Promise.resolve(job).then(function (res) {
+        if (res && res.error) throw res.error;
+        self.loading = false;
+        self.emit();
+      }, function (err) {
+        self.loading = false;
+        self.setError(friendlyError(err));
       });
     },
 

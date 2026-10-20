@@ -48,7 +48,9 @@ scripts/check-paths.js       pre-deploy check: relative, case-exact file referen
 scripts/check-secrets.js     fails if a shipped file contains a secret-role JWT or secret API key
 .github/workflows/pages.yml  GitHub Pages deploy (official actions)
 .github/workflows/android-debug.yml  debug APK (no release signing)
-android/                Capacitor Android project (debug builds only)
+.github/workflows/android-release.yml  signed Play AAB and APK (secrets stay in GitHub)
+android/                Capacitor Android project
+docs/PLAY-RELEASE.md         phone steps for the Play upload key and the release workflow
 docs/MOBILE-TESTING.md       Android phone test checklist
 docs/CLOUD-SETUP.md          Supabase, Google, and Facebook setup for a phone browser
 tests/                 optional headless-browser tests (not needed to play or host)

@@ -2,7 +2,9 @@
  * TEST-ONLY. Playwright checks for the startup popup queue.
  * Not loaded by the game and not deployed.
  */
+const fs = require('fs');
 const { chromium, devices } = require('playwright-core');
+fs.mkdirSync('shots', { recursive: true });
 const URL = process.env.PB_URL || 'http://127.0.0.1:8090/index.html';
 const results = [];
 function record(name, pass, detail) {
@@ -69,6 +71,31 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const first = await page.evaluate(() => __PB.scenes().slice());
     record('startup opens the menu and the first popup together', first.includes('Menu') && first.includes('HomePop'), first);
     record('the first popup is the daily bonus', await hasText('DAILY BONUS'));
+    record('day 2 says 1 gem', await hasText('1 gem') && !(await hasText('1 gems')));
+    const layout = await page.evaluate(() => {
+      const s = PB.game.scene.getScene('HomePop');
+      const found = {};
+      const walk = list => (list || []).forEach(o => {
+        if (o.name === 'bonusPanel' || /^dayCard[1-7]$/.test(o.name || '') || o.name === 'popupNote') found[o.name] = o;
+        if (o.list) walk(o.list);
+      });
+      walk(s.children.list);
+      const box = o => ({ x: o.x - o.width / 2, y: o.y - o.height / 2, r: o.x + o.width / 2, b: o.y + o.height / 2, w: o.width, h: o.height, cx: o.x });
+      const panel = box(found.bonusPanel);
+      const cards = [1, 2, 3, 4, 5, 6, 7].map(day => box(found['dayCard' + day]));
+      const note = found.popupNote;
+      return { panel, cards, noteY: note.y, noteH: note.height };
+    });
+    const panel = layout.panel;
+    const inside = layout.cards.every(c => c.x >= panel.x + 12 && c.r <= panel.r - 12 && c.y >= panel.y + 12 && c.b <= panel.b - 12);
+    const leftGap = layout.cards[0].x - panel.x;
+    const rightGap = panel.r - layout.cards[3].r;
+    const row2Right = panel.r - layout.cards[6].r;
+    const noteInside = layout.noteY + layout.noteH / 2 <= panel.b - 12 && layout.noteY - layout.noteH / 2 >= panel.y + 12;
+    await page.screenshot({ path: 'shots/daily-bonus.png' });
+    record('daily bonus cards and status text sit inside the panel',
+      inside && Math.abs(leftGap - rightGap) < 2 && Math.abs(leftGap - row2Right) < 2 && layout.cards[6].w > layout.cards[0].w && noteInside,
+      { leftGap, rightGap, row2Right, day7: layout.cards[6].w, day1: layout.cards[0].w, noteY: layout.noteY, panel });
     const beforeDouble = await page.evaluate(() => __PB.save().coins);
     await tapUI('HomePop', 'claimDouble');
     await sleep(200);
@@ -82,7 +109,23 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await tapUI('HomePop', 'popupClose');
     await sleep(300);
     record('X advances to the tasks reminder', await hasText('DAILY TASKS'));
-    record('unbuilt tasks are labelled as not in the game yet', await hasText('Finish 1 challenge level  ·  Not in the game yet') && await hasText('Open a chest  ·  Not in the game yet'));
+    record('unbuilt tasks are labelled as not in the game yet', await hasText('Not in the game yet') && await hasText('Finish 1 challenge level') && await hasText('Open a chest'));
+    record('the first milestone says 1 task', await hasText('1 task · 15 gems'));
+    const stubs = await page.evaluate(() => {
+      const s = PB.game.scene.getScene('HomePop');
+      const found = {};
+      const walk = list => (list || []).forEach(o => {
+        if (o.name && (o.name.indexOf('stub-') === 0 || o.name.indexOf('taskBar-') === 0)) found[o.name] = o;
+        if (o.list) walk(o.list);
+      });
+      walk(s.children.list);
+      return ['challenge', 'chest'].map(id => {
+        const stub = found['stub-' + id];
+        const bar = found['taskBar-' + id];
+        return { id, stubBottom: stub.y + stub.height / 2, barTop: bar.y - bar.height / 2 };
+      });
+    });
+    record('the not-in-game label sits above the progress bar', stubs.every(row => row.stubBottom < row.barTop - 4), stubs);
     await tapUI('HomePop', 'popupClose');
     await sleep(300);
     record('X advances to the lucky wheel', await hasText('LUCKY WHEEL'));
@@ -218,6 +261,157 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.evaluate(() => { PB.Save.track('clears', 2); PB.Save.track('powerups', 1); });
     const hooked = await page.evaluate(() => __PB.save().home.tasks.progress);
     record('clearing a level and using a power-up advance the live tasks', hooked.clears === 2 && hooked.powerups === 1, hooked);
+
+    await page.evaluate(() => localStorage.clear());
+    await boot();
+    const dotBefore = await page.evaluate(() => {
+      let found = false;
+      const walk = list => (list || []).forEach(o => {
+        if (o.name === 'dot-bonus') found = true;
+        if (o.list) walk(o.list);
+      });
+      walk(PB.game.scene.getScene('Menu').children.list);
+      return found;
+    });
+    await tapUI('HomePop', 'claimBonus');
+    await sleep(300);
+    const claimed = await page.evaluate(() => {
+      const s = PB.game.scene.getScene('HomePop');
+      let btn = null;
+      let note = null;
+      let panel = null;
+      const walk = list => (list || []).forEach(o => {
+        if (o.name === 'claimBonus') btn = o;
+        if (o.name === 'popupNote') note = o;
+        if (o.name === 'bonusPanel') panel = o;
+        if (o.list) walk(o.list);
+      });
+      walk(s.children.list);
+      const label = btn && btn.label;
+      let dot = false;
+      let footer = '';
+      const walkMenu = list => (list || []).forEach(o => {
+        if (o.name === 'dot-bonus') dot = true;
+        if (o.name === 'versionFooter') footer = o.text;
+        if (o.list) walkMenu(o.list);
+      });
+      walkMenu(PB.game.scene.getScene('Menu').children.list);
+      return {
+        text: label && label.text,
+        localCenter: label ? label.x + label.width * (0.5 - label.originX) : 99,
+        note: note && note.text,
+        noteTop: note.y - note.height / 2,
+        noteBottom: note.y + note.height / 2,
+        panelTop: panel.y - panel.height / 2,
+        panelBottom: panel.y + panel.height / 2,
+        dot,
+        footer
+      };
+    });
+    record('Claimed is centred and the status line stays inside the panel',
+      dotBefore === true && claimed.text === 'Claimed' && Math.abs(claimed.localCenter) < 2
+        && claimed.note.indexOf('saved on this device') >= 0
+        && claimed.noteTop >= claimed.panelTop + 12 && claimed.noteBottom <= claimed.panelBottom - 12
+        && claimed.dot === false && claimed.footer.indexOf('v1.3.1') === 0,
+      claimed);
+    await tapUI('HomePop', 'popupClose');
+    await sleep(200);
+    const dotAfter = await page.evaluate(() => {
+      let found = false;
+      const walk = list => (list || []).forEach(o => {
+        if (o.name === 'dot-bonus') found = true;
+        if (o.list) walk(o.list);
+      });
+      walk(PB.game.scene.getScene('Menu').children.list);
+      return found;
+    });
+    record('the bonus dot stays off after returning to Home', dotAfter === false);
+
+    await page.evaluate(() => localStorage.clear());
+    await boot();
+    await page.evaluate(() => {
+      PB.game.scene.stop('HomePop');
+      PB.Home.mode = { type: 'one', items: ['wheel'], index: 0 };
+      const menu = PB.game.scene.getScene('Menu');
+      menu.scene.launch('HomePop');
+      menu.scene.bringToTop('HomePop');
+    });
+    await sleep(300);
+    record('the wheel offers one free spin', await hasText('1 free spin left today'));
+    const beforeWheel = await page.evaluate(() => ({
+      coins: PB.Save.data.coins, gems: PB.Save.data.home.gems,
+      wide: PB.Save.data.home.powers.wide, multi: PB.Save.data.home.powers.multi
+    }));
+    await tapUI('HomePop', 'spinWheel');
+    await page.waitForFunction(() => {
+      const s = PB.game.scene.getScene('HomePop');
+      return s && s.spinning === false && s.noteText && s.noteText.text;
+    }, null, { timeout: 8000 });
+    const landed = await page.evaluate(before => {
+      const s = PB.game.scene.getScene('HomePop');
+      const index = PB.Home.segmentAtPointer(s.wheelGfx.angle);
+      const seg = PB.Home.SEGMENTS[index];
+      const now = {
+        coins: PB.Save.data.coins, gems: PB.Save.data.home.gems,
+        wide: PB.Save.data.home.powers.wide, multi: PB.Save.data.home.powers.multi
+      };
+      return {
+        toast: s.noteText.text,
+        label: seg.label,
+        id: seg.id,
+        used: PB.Save.data.home.wheel.used,
+        pending: PB.Save.data.home.wheel.pending.length,
+        coins: now.coins - before.coins,
+        gems: now.gems - before.gems,
+        wide: now.wide - before.wide,
+        multi: now.multi - before.multi,
+        expectCoins: seg.kind === 'coins' ? seg.amount : 0,
+        expectGems: seg.kind === 'gems' ? seg.amount : 0,
+        expectWide: seg.power === 'wide' ? seg.amount : 0,
+        expectMulti: seg.power === 'multi' ? seg.amount : 0
+      };
+    }, beforeWheel);
+    record('the wheel stops on the awarded segment and the toast matches the balance',
+      landed.toast === landed.label && landed.used === 1 && landed.pending === 0
+        && landed.coins === landed.expectCoins && landed.gems === landed.expectGems
+        && landed.wide === landed.expectWide && landed.multi === landed.expectMulti,
+      landed);
+
+    await page.evaluate(() => localStorage.clear());
+    await boot();
+    await page.evaluate(() => {
+      PB.game.scene.stop('HomePop');
+      PB.Home.mode = { type: 'one', items: ['wheel'], index: 0 };
+      const menu = PB.game.scene.getScene('Menu');
+      menu.scene.launch('HomePop');
+      menu.scene.bringToTop('HomePop');
+    });
+    await sleep(200);
+    const doubleTap = await page.evaluate(() => {
+      const s = PB.game.scene.getScene('HomePop');
+      let zone = null;
+      const walk = list => (list || []).forEach(o => {
+        if (o.name === 'spinWheel') zone = o.zone;
+        if (o.list) walk(o.list);
+      });
+      walk(s.children.list);
+      zone.emit('pointerup');
+      zone.emit('pointerup');
+      return { used: PB.Save.data.home.wheel.used, pending: PB.Save.data.home.wheel.pending.length };
+    });
+    await page.waitForFunction(() => {
+      const s = PB.game.scene.getScene('HomePop');
+      return s && s.spinning === false && s.noteText && s.noteText.text;
+    }, null, { timeout: 8000 });
+    const afterDoubleTap = await page.evaluate(() => ({
+      used: PB.Save.data.home.wheel.used,
+      pending: PB.Save.data.home.wheel.pending.length,
+      toast: PB.game.scene.getScene('HomePop').noteText.text
+    }));
+    record('a double tap uses exactly one spin',
+      doubleTap.used === 1 && doubleTap.pending === 1 && afterDoubleTap.used === 1 && afterDoubleTap.pending === 0 && afterDoubleTap.toast.length > 0,
+      { doubleTap, afterDoubleTap });
+
     record('popup run has no page errors', errors.length === 0, errors.slice(0, 5));
   } catch (err) {
     record('home suite crashed', false, err && err.stack ? err.stack : String(err));

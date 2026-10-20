@@ -466,14 +466,26 @@
       g.fillStyle(col, pressed ? 0.45 : 0.22); g.fillRoundedRect(-w / 2 + 4, -h / 2 + 4, w - 8, h / 2 - 4, { tl: Math.min(22, h / 2 - 4), tr: Math.min(22, h / 2 - 4), bl: 4, br: 4 });
       g.lineStyle(3, col, dis ? 0.6 : 1); g.strokeRoundedRect(-w / 2, -h / 2, w, h, Math.min(26, h / 2));
     }
-    var t = PB.text(scene, opts.icon ? 14 : 0, 0, label, opts.size || Math.min(40, Math.round(h * 0.42)), opts.textColor || '#ffffff', { glow: opts.disabled ? null : PB.hex(color) });
+    var t = PB.text(scene, 0, 0, label, opts.size || Math.min(40, Math.round(h * 0.42)), opts.textColor || '#ffffff', { glow: opts.disabled ? null : PB.hex(color) });
     c.add([g, t]);
+    function placeLabel(str) {
+      if (str != null) t.setText(str);
+      if (opts.icon) {
+        t.setOrigin(0.5, 0.5);
+        t.setPosition(14, 0);
+        return;
+      }
+      t.setStyle({ align: 'center', fixedWidth: w });
+      t.setOrigin(0, 0.5);
+      t.setPosition(-w / 2, 0);
+    }
+    placeLabel();
     if (opts.icon) { var ic = scene.add.image(-t.width / 2 - 10, 0, opts.icon).setScale(opts.iconScale || 0.8); c.add(ic); c.icon = ic; }
     var zone = scene.add.zone(0, 0, w + 12, h + 12).setInteractive({ useHandCursor: true });
     c.add(zone);
     c.label = t; c.zone = zone; c.disabled = !!opts.disabled; c.redraw = draw;
-    c.setDisabled = function (d) { c.disabled = d; t.setAlpha(d ? 0.5 : 1); draw(false); return c; };
-    c.setLabel = function (s) { t.setText(s); return c; };
+    c.setDisabled = function (d) { c.disabled = d; t.setAlpha(d ? 0.5 : 1); placeLabel(); draw(false); return c; };
+    c.setLabel = function (s) { placeLabel(s); return c; };
     zone.on('pointerdown', function () { if (c.disabled) return; draw(true); scene.tweens.add({ targets: c, scale: 0.95, duration: 60 }); });
     zone.on('pointerout', function () { draw(false); scene.tweens.add({ targets: c, scale: 1, duration: 90 }); });
     zone.on('pointerup', function () {

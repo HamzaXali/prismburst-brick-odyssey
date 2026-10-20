@@ -10,8 +10,8 @@
  * Email is allowed here, but the button stays off until the URL and key exist.
  */
 window.PB_CONFIG = {
-  supabaseUrl: '',
-  supabaseAnonKey: '',
+  supabaseUrl: 'https://qogqnutpqzatxnbhcznc.supabase.co',
+  supabaseAnonKey: 'sb_publishable_GXcDg41LoH39qGsu_zY9Zw_0I_elhPq',
   providers: {
     email: true,
     google: false,

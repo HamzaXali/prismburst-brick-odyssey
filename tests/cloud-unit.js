@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const sync = require('../js/save-sync');
+const profile = require('../js/profile');
 const secrets = require('../scripts/check-secrets');
 
 const root = path.join(__dirname, '..');
@@ -146,14 +147,14 @@ try {
   record('save size is capped under 64 KB', /65536/.test(sql));
 
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  record('service worker cache version was bumped and precaches supabase-js', sw.includes('prismburst-v1.1.0') && sw.includes('./lib/supabase.min.js') && sw.includes('./config.js') && sw.includes('./privacy.html'));
+  record('service worker cache version was bumped and precaches supabase-js', sw.includes('prismburst-v1.2.0') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.1.0'));
   record('service worker keeps Supabase network-only and skips OAuth returns', sw.includes('supabase\\.co') && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
 
   const yml = fs.readFileSync(path.join(root, '.github/workflows/pages.yml'), 'utf8');
   record('Pages workflow validates secrets and publishes config and privacy', yml.includes('check-secrets.js') && yml.includes('config.js') && yml.includes('privacy.html') && yml.includes('cloud-unit.js'));
 
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/core.js', 'js/save-sync.js', 'js/cloud.js', 'js/account.js', 'js/menus.js', 'game.js'];
+  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/core.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/menus.js', 'game.js'];
   let pos = -1;
   let orderOk = true;
   for (const file of order) {
@@ -174,6 +175,66 @@ try {
   const syncSrc = fs.readFileSync(path.join(root, 'js/save-sync.js'), 'utf8');
   const ids = ['classic', 'rose', 'venom', 'ember', 'solar', 'void', 'rainbow', 'magenta', 'emerald', 'gold', 'obsidian', 'prism'];
   record('skin ids in the merge rules match the game', ids.every(id => core.includes("'" + id + "'") && syncSrc.includes("'" + id + "'")));
+
+  record('a normal unicode name is accepted', profile.validate('星の光').ok === true && profile.validate("O'Brien").ok === true && profile.validate('Ali').name === 'Ali');
+  record('empty and short names are rejected', profile.validate('  ').ok === false && profile.validate('').error === 'Enter a display name.' && profile.validate('Ab').error === 'Use 3 to 20 characters.');
+  record('names longer than 20 are rejected', profile.validate('a'.repeat(21)).ok === false && profile.validate('😀'.repeat(21)).ok === false);
+  const family = '👨‍👩‍👧‍👦';
+  record('code points are capped at 20 even when graphemes are fewer', profile.graphemeCount(family) === 1 && Array.from(family).length > 1 && profile.validate(family.repeat(4)).ok === false);
+  record('control, format, and markup characters are rejected',
+    profile.validate('Ali\nNova').ok === false && profile.validate('Ali\u200b').ok === false && profile.validate('<img src=x onerror=alert(1)>').ok === false && profile.validate('a<b>').error === 'That name has characters that are not allowed.');
+  record('Google full_name is the first suggestion', profile.suggest({ full_name: 'Ali Prism', name: 'Other' }, 'PrismPlayer1000', 'ali@example.com') === 'Ali Prism');
+  record('an email or its local part is never suggested',
+    profile.suggest({ full_name: 'ali@example.com', name: 'ali' }, 'PrismPlayer1000', 'ali@example.com') === 'PrismPlayer1000' &&
+    profile.suggest({ name: 'Ali@Example.com' }, '', 'ali@example.com') === '' &&
+    profile.suggest({}, '', 'ali@example.com') === '');
+  record('a guest name is suggested when Google gives none', profile.suggest({}, 'PrismPlayer4242', 'player@example.com') === 'PrismPlayer4242');
+  record('guest names look like PrismPlayer and four digits', /^PrismPlayer\d{4}$/.test(profile.randomGuestName()) && profile.randomGuestName().length <= 20);
+
+  const mem = new Map();
+  global.localStorage = {
+    getItem: function (k) { return mem.has(k) ? mem.get(k) : null; },
+    setItem: function (k, v) { mem.set(k, String(v)); },
+    removeItem: function (k) { mem.delete(k); }
+  };
+  const guest = profile.ensureGuest();
+  record('a guest gets a default name outside the game save', /^PrismPlayer\d{4}$/.test(guest) && mem.has(profile.KEY) && !mem.has('prismburst.save.v1'));
+  record('editing the guest name persists in the profile key', profile.writeGuest('星の光').ok === true && profile.guestName() === '星の光');
+  record('a markup name is not stored', profile.writeGuest('<img src=x>').ok === false && profile.guestName() === '星の光');
+  delete global.localStorage;
+
+  const migration = fs.readFileSync(path.join(root, 'supabase/migrations/002_profiles.sql'), 'utf8');
+  const profileSql = sql.slice(sql.indexOf('create table if not exists public.profiles'));
+  record('schema.sql contains the profiles migration', profileSql.length > 100 && migration.includes('create table if not exists public.profiles') && profileSql.includes('profiles_guard'));
+  function profilesLocked(text) {
+    return /alter table public\.profiles enable row level security/i.test(text)
+      && /revoke all on table public\.profiles from public, anon/i.test(text)
+      && /grant select, insert on table public\.profiles to authenticated/i.test(text)
+      && /grant update \(display_name\) on table public\.profiles to authenticated/i.test(text)
+      && /auth\.uid\(\)\s*=\s*id/.test(text)
+      && /for update[\s\S]{0,180}using \(auth\.uid\(\) = id\)[\s\S]{0,80}with check \(auth\.uid\(\) = id\)/i.test(text)
+      && /char_length\(display_name\) between 3 and 20/.test(text)
+      && /security invoker/i.test(text)
+      && /set search_path = pg_catalog, public/i.test(text)
+      && !/security definer/i.test(text)
+      && !/using\s*\(\s*true\s*\)/i.test(text)
+      && !/to anon/i.test(text)
+      && !/for delete/i.test(text)
+      && !/grant\s+(select|insert|update|delete|all)[^;]*\bto\s+anon\b/i.test(text)
+      && !/\bto anon\b/i.test(text);
+  }
+  record('profiles RLS allows only the signed-in owner and no anon access', profilesLocked(profileSql) && profilesLocked(migration));
+  record('the profiles migration does not change player_saves', !/\b(insert into|update|delete from|drop table|alter table)\s+public\.player_saves\b/i.test(migration));
+
+  const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.'));
+  record('the repo has one Pages workflow', workflows.length === 1 && workflows[0] === 'pages.yml');
+
+  const nameUi = fs.readFileSync(path.join(root, 'js/account.js'), 'utf8')
+    + fs.readFileSync(path.join(root, 'js/profile.js'), 'utf8')
+    + fs.readFileSync(path.join(root, 'js/cloud.js'), 'utf8');
+  record('display names are assigned with textContent and never innerHTML', nameUi.includes('textContent') && !nameUi.includes('innerHTML'));
+  record('the Google button is an inline SVG and is not fetched',
+    html.includes('data-action="google"') && html.includes('<svg') && html.includes('#4285') === false && html.includes('#FFC107') && html.includes('Continue with Google') && !/googleusercontent|gstatic\.com|logo\.svg/.test(html));
 } catch (err) {
   record('unit suite crashed', false, err.stack);
 }

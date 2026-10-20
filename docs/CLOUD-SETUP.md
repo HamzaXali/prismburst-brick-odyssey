@@ -10,8 +10,9 @@ You do not need a computer, a credit card, or a paid Supabase plan. You never pu
 
 - **Continue as Guest** keeps using the save already on the phone (`prismburst.save.v1`). Guest play works offline.
 - **Email** turns on when `config.js` has the URL, the publishable key, and `providers.email` is `true` (that is already the default).
-- **Google** and **Facebook** turn on only when you set `providers.google` or `providers.facebook` to `true` after the steps below.
+- **Google** and **Facebook** turn on only when you set `providers.google` or `providers.facebook` to `true` after the steps below. Facebook stays off in this setup.
 - Signing in never deletes the phone save. Before a cloud copy replaces it, the game writes a backup key named `prismburst.save.backup.<time>`.
+- Every player has a display name. A guest name such as `PrismPlayer1234` is stored on the phone in `prismburst.profile.v1`, separate from the game save. A signed-in name is stored in `public.profiles`. Syncing the save does not change the name, and the game never uses the email address as the name.
 
 ## Conflict rule
 
@@ -42,7 +43,9 @@ The database stores a `revision`. A write is accepted only if the phone sends th
 3. Paste it into the SQL editor and press **Run**.
 4. You should see success. Running the same script again is safe.
 
-The script creates `public.player_saves`, turns on row level security, and lets only the signed-in user (`auth.uid() = user_id`) select, insert, update, or delete their own row. The `anon` role gets no policy and no grants. Writes go through `upsert_player_save`, which checks the revision.
+The script creates `public.player_saves`, turns on row level security, and lets only the signed-in user (`auth.uid() = user_id`) select, insert, update, or delete their own row. The `anon` role gets no policy and no grants. Writes go through `upsert_player_save`, which checks the revision. It also creates `public.profiles` for the display name.
+
+The live project already has `player_saves`. Do not rely on pasting `schema.sql` again for the name table. Open [supabase/migrations/002_profiles.sql](https://github.com/HamzaXali/prismburst-brick-odyssey/blob/main/supabase/migrations/002_profiles.sql) (after this change is on `main`), copy that file alone, paste it into a new SQL query, and run it. It only adds `public.profiles`. It does not read or write `player_saves`. Running it twice is safe.
 
 ## 3. Copy the URL and publishable key into the game
 
@@ -76,17 +79,14 @@ Save. The game sends players back to the page they started on, including the `/p
 
 ## 6. Google sign-in
 
-Do this only when you want Google. The button stays off until `providers.google` is `true`.
+The Google button stays off and says **Not set up yet** until `providers.google` is `true`. Email keeps working while Google is off.
 
-1. Open [Google Cloud Console credentials](https://console.cloud.google.com/apis/credentials). Sign in with the Google account that should own the OAuth client. Create a project if asked.
-2. **OAuth consent screen**. User type **External**. App name `PRISMBURST`. Support email: yours. Privacy policy: `https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html`. Save.
-3. While the app is in **Testing**, add your Gmail address under **Test users** or only that account can sign in. **Publish** the app when every player should be able to use Google. The scopes are the basic email and profile scopes.
-4. **Credentials** → **Create credentials** → **OAuth client ID** → **Web application**.
-5. **Authorized redirect URI** (this is Supabase, not the game): `https://<project-ref>.supabase.co/auth/v1/callback`  
-   `<project-ref>` is the subdomain of the Project URL. Example: if the URL is `https://abcdefgh.supabase.co`, the redirect is `https://abcdefgh.supabase.co/auth/v1/callback`.
-6. Copy the **client ID** and **client secret**.
-7. In Supabase → **Authentication** → **Providers** → **Google**: turn it on, paste the client ID and secret, save. The secret stays in the Supabase dashboard. It must not go in `config.js`.
-8. Edit `config.js` on GitHub again and set `providers.google` to `true`. Commit to `main`.
+Do the phone steps in [GOOGLE-SIGNIN.md](GOOGLE-SIGNIN.md). Two addresses are easy to mix up:
+
+- **Google's Authorized redirect URI** is Supabase's callback. Copy it from Supabase. For this project it is expected to look like `https://qogqnutpqzatxnbhcznc.supabase.co/auth/v1/callback`. The value on the Supabase screen is the one that counts.
+- **The game URL** is GitHub Pages: `https://hamzaxali.github.io/prismburst-brick-odyssey/`. That is the Supabase Site URL and the page the player returns to. It is not the Google redirect URI.
+
+The Google client secret stays in Google Cloud and in the Supabase Google provider form. It does not go in GitHub, `config.js`, or a chat.
 
 ## 7. Facebook sign-in
 
@@ -120,4 +120,4 @@ Not part of this setup. When that happens:
 
 ## Privacy page
 
-Players, Google, and Facebook can open [privacy.html](https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html). It matches what the game stores: email and provider id if you sign in, and the game save. No ads and no analytics.
+Players, Google, and Facebook can open [privacy.html](https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html). It matches what the game stores: email and provider id if you sign in, the display name, and the game save. No ads and no analytics.

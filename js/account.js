@@ -58,9 +58,21 @@
       var who = $('pb-acct-who');
       if (snap.signedIn) {
         var provider = snap.provider ? snap.provider.charAt(0).toUpperCase() + snap.provider.slice(1) : 'Account';
-        who.textContent = (snap.email || 'Signed in') + ' · ' + provider;
+        var parts = [];
+        if (snap.displayName) parts.push(snap.displayName);
+        parts.push(snap.email || 'Signed in');
+        parts.push(provider);
+        who.textContent = parts.join(' · ');
       } else {
-        who.textContent = 'Guest on this device';
+        who.textContent = snap.displayName ? snap.displayName + ' · Guest on this device' : 'Guest on this device';
+      }
+      var shown = $('pb-name-shown');
+      if (shown) shown.textContent = snap.displayName || '';
+      var nameMsg = $('pb-name-msg');
+      if (nameMsg) nameMsg.textContent = snap.nameNote || '';
+      var nameInput = $('pb-name-input');
+      if (nameInput && document.activeElement !== nameInput) {
+        nameInput.value = snap.namePrompt ? (snap.nameSuggestion || '') : (snap.displayName || '');
       }
       $('pb-acct-sync').textContent = snap.sync;
       $('pb-acct-msg').textContent = snap.error || '';
@@ -92,6 +104,9 @@
         }
       }
       var sheetBusy = snap.loading;
+      document.querySelectorAll('[data-action="save-name"], #pb-name-input').forEach(function (el) {
+        setDisabled(el, sheetBusy);
+      });
       document.querySelectorAll('#pb-email-form button, #pb-email-form input, [data-action="guest"], [data-action="logout"], [data-action="link"], [data-action="set-password"]').forEach(function (el) {
         if (el.closest && el.closest('#pb-migrate')) return;
         if (el.id === 'pb-email-input' || el.id === 'pb-password-input' || el.getAttribute('data-action') === 'login' || el.getAttribute('data-action') === 'signup' || el.getAttribute('data-action') === 'forgot') {
@@ -172,6 +187,11 @@
       event.preventDefault();
       $('pb-confirm').hidden = true;
       PB.Cloud.logout();
+      return;
+    }
+    if (action === 'save-name') {
+      event.preventDefault();
+      PB.Cloud.saveDisplayName($('pb-name-input').value);
       return;
     }
     if (action === 'set-password') {

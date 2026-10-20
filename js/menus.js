@@ -64,9 +64,12 @@
         this.tweens.add({ targets: badge, scale: 1.15, yoyo: true, repeat: -1, duration: 600 });
       }
       PB.button(this, cx, y0 + 416, 520, 96, 'SETTINGS', function () { PB.fadeTo(self, 'Settings', { from: 'Menu' }); }, { color: 0x9b6bff, size: 36 });
+      var nameText = PB.text(this, cx, 1122, (PB.Cloud.snapshot && PB.Cloud.snapshot().displayName) || '', 20, '#9fe9ff', { strokeThickness: 0 });
+      nameText.name = 'playerName';
       var acct = PB.button(this, cx, 1172, 520, 64, PB.Cloud.badgeText(), function () { PB.Account.open(); }, { color: 0x22e8ff, size: 22 });
       acct.name = 'accountBadge';
       PB.Cloud.onChange(function () {
+        if (nameText.scene) nameText.setText((PB.Cloud.snapshot && PB.Cloud.snapshot().displayName) || '');
         if (!acct.label || !acct.label.scene) return;
         acct.setLabel(PB.Cloud.badgeText());
       });

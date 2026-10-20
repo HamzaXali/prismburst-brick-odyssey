@@ -90,6 +90,33 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await sleep(300);
     const closed = await page.evaluate(() => __PB.scenes().slice());
     record('the queue finishes and the menu stays open', !closed.includes('HomePop') && closed.includes('Menu'), closed);
+    const top = await page.evaluate(() => {
+      const s = PB.game.scene.getScene('Menu');
+      const boxes = {};
+      const walk = list => (list || []).forEach(o => {
+        if (o.name === 'starBadge' || o.name === 'coinBadge' || o.name === 'gemBadge') {
+          let label = '';
+          const read = nodes => (nodes || []).forEach(n => {
+            if (typeof n.text === 'string' && n.text !== '') label = n.text;
+            if (n.list) read(n.list);
+          });
+          read(o.list);
+          boxes[o.name] = { x: o.x - 90, y: o.y - 26, r: o.x + 90, bot: o.y + 26, visible: o.visible && o.alpha > 0, label };
+        }
+        if (o.list) walk(o.list);
+      });
+      walk(s.children.list);
+      const save = __PB.save();
+      return { boxes, coins: String(save.coins), gems: String((save.home && save.home.gems) || 0) };
+    });
+    const star = top.boxes.starBadge, coin = top.boxes.coinBadge, gem = top.boxes.gemBadge;
+    const apart = (a, b) => a && b && (a.r <= b.x + 0.5 || b.r <= a.x + 0.5 || a.bot <= b.y + 0.5 || b.bot <= a.y + 0.5);
+    record('Home shows the coin badge and the gem badge without overlap',
+      !!(star && coin && gem && coin.visible && gem.visible && star.visible
+        && coin.label === top.coins && gem.label === top.gems
+        && apart(star, coin) && apart(coin, gem) && apart(star, gem)
+        && coin.x >= 0 && gem.r <= 720 && coin.y >= 0 && coin.bot <= 140 && gem.bot <= 140),
+      top.boxes);
     await tapUI('Menu', 'PLAY');
     await page.waitForFunction(() => __PB.scenes().includes('Worlds'), null, { timeout: 8000 });
     record('gameplay is reachable after the popups close', (await page.evaluate(() => __PB.scenes().includes('Worlds'))));

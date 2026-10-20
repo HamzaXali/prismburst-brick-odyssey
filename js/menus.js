@@ -65,9 +65,12 @@
         acct.setLabel(PB.Cloud.badgeText());
       });
 
-      if (PB.HomeUI) PB.HomeUI.gemBadge(this, W - 110, 64);
+      var coins = PB.coinBadge(this, 418, 64);
+      coins.name = 'coinBadge';
+      if (PB.HomeUI) PB.HomeUI.gemBadge(this, W - 106, 64);
       if (PB.HomeUI) PB.HomeUI.decorate(this);
       var sb = this.add.container(110, 64);
+      sb.name = 'starBadge';
       var g = this.add.graphics(); g.fillStyle(0x0c1030, 0.85); g.fillRoundedRect(-90, -26, 180, 52, 26); g.lineStyle(2, 0x22e8ff, 0.9); g.strokeRoundedRect(-90, -26, 180, 52, 26);
       sb.add([g, this.add.image(-60, 0, 'star').setScale(0.6).setTint(0xffd166), PB.text(this, 12, 0, String(Save.totalStars()), 30, '#e8fdff')]);
       PB.text(this, cx, H - 22, 'v' + PB.VERSION + ' · offline ready · progress saved on this device', 18, '#7a80b8', { strokeThickness: 0 });

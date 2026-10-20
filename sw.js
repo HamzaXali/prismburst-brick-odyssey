@@ -4,10 +4,11 @@
  * pushed to GitHub appears on the next launch. Paths are relative to this file,
  * so it works under a GitHub Pages sub-path (https://<user>.github.io/<repo>/).
  * Bump VERSION to force-drop old caches. */
-var VERSION = 'prismburst-v1.0.0';
+var VERSION = 'prismburst-v1.1.0';
 var ASSETS = [
-  './', './index.html', './style.css', './levels.js', './game.js', './js/core.js', './js/menus.js',
-  './lib/phaser.min.js', './manifest.webmanifest',
+  './', './index.html', './style.css', './levels.js', './game.js', './config.js', './privacy.html',
+  './js/core.js', './js/menus.js', './js/save-sync.js', './js/cloud.js', './js/account.js',
+  './lib/phaser.min.js', './lib/supabase.min.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'
 ];
 self.addEventListener('install', function (e) {
@@ -18,9 +19,31 @@ self.addEventListener('activate', function (e) {
     return Promise.all(keys.filter(function (k) { return k !== VERSION; }).map(function (k) { return caches.delete(k); }));
   }).then(function () { return self.clients.claim(); }));
 });
+function isSupabaseHost(hostname) {
+  return /(^|\.)supabase\.co$/i.test(hostname) || /(^|\.)supabase\.in$/i.test(hostname);
+}
+function isAuthReturn(url) {
+  var q = url.search || '';
+  var h = url.hash || '';
+  return /(?:^|[?&])code=/.test(q) || /access_token=/.test(q) || /access_token=/.test(h) || /(?:^|[?&])error=/.test(q);
+}
 self.addEventListener('fetch', function (e) {
   var req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  var url;
+  try { url = new URL(req.url); } catch (err) { return; }
+  // Supabase auth and REST stay network-only. Never write them into the Cache API.
+  if (isSupabaseHost(url.hostname)) {
+    e.respondWith(fetch(req, { cache: 'no-store' }));
+    return;
+  }
+  // OAuth returns (?code=, ?error=, access_token) must not be served from a cached shell.
+  if (req.mode === 'navigate' && isAuthReturn(url)) {
+    e.respondWith(fetch(req, { cache: 'no-store' }).catch(function () {
+      return caches.match('./index.html');
+    }));
+    return;
+  }
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(caches.open(VERSION).then(function (cache) {
     return cache.match(req, { ignoreSearch: true }).then(function (hit) {
       var net = fetch(req).then(function (res) {

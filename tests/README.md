@@ -5,5 +5,8 @@ npm i playwright-core            # in this folder
 python3 -m http.server 8090      # in the project root
 mkdir -p shots && node suite.js  # 38 end-to-end checks -> results.json + screenshots
 node bot.js 0 0,9,19 10          # bot plays world 1 levels 1,10,20 at 10x speed
+node cloud-unit.js               # merge rule, validation, secret scan, schema checks
+node cloud-suite.js              # mocked Supabase in the browser (not a real provider)
 ```
+`cloud-suite.js` is a test-only mock. It intercepts HTTP with Playwright. The game has no fake auth path.
 Set CHROME_PATH if Chrome is not at /usr/bin/google-chrome.

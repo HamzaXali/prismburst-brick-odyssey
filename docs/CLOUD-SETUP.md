@@ -1,0 +1,123 @@
+# Cloud save setup (phone browser)
+
+PRISMBURST already runs without an account. Cloud save stays off until you paste a Supabase project URL and publishable key into `config.js`. Google and Facebook stay off until you turn those two switches on after the OAuth clients exist.
+
+Do this in Chrome on the Android phone. If a dashboard button is cut off, open the browser menu and turn on **Desktop site**.
+
+You do not need a computer, a credit card, or a paid Supabase plan. You never put the dashboard **secret** key in the game. Older dashboards call that key `service_role`. The game's check fails the GitHub Pages build if that kind of key is committed.
+
+## What the game will do after this
+
+- **Continue as Guest** keeps using the save already on the phone (`prismburst.save.v1`). Guest play works offline.
+- **Email** turns on when `config.js` has the URL, the publishable key, and `providers.email` is `true` (that is already the default).
+- **Google** and **Facebook** turn on only when you set `providers.google` or `providers.facebook` to `true` after the steps below.
+- Signing in never deletes the phone save. Before a cloud copy replaces it, the game writes a backup key named `prismburst.save.backup.<time>`.
+
+## Conflict rule
+
+When both sides have progress and you choose **Merge** (or the same account syncs on its own):
+
+- Unlocked levels: the higher count in each world is kept.
+- Each level's best score and stars: the higher number is kept.
+- Owned skins: the union of both sides.
+- Lifetime stats (bricks broken, games played, levels cleared): the higher number.
+- The furthest current level is kept.
+- Coins, equipped skins, settings (sound, vibration, screen shake), daily reward, and mission state come from whichever side has the newer `client_updated_at`. If the times match, this phone wins those fields.
+
+**Use cloud** replaces this phone with the account copy. **Keep this device's progress** keeps this phone's coins and settings, and still keeps any better scores, stars, unlocks, and skins from the account. Both choices write a local backup first.
+
+The database stores a `revision`. A write is accepted only if the phone sends the revision it last read (`0` if the account has no row yet). If another device wrote in between, the server returns `revision_conflict`, and the phone loads the row again, merges, and retries. A newer row is not replaced by a stale write.
+
+## 1. Create the free Supabase project
+
+1. Open [https://supabase.com/dashboard](https://supabase.com/dashboard).
+2. Sign in with **GitHub** (the same GitHub account that owns the game repo is fine).
+3. **New project**. Pick the free plan, a name you will remember, and a database password. Store that password in your phone's password manager. It does not go in the game.
+4. Wait until the project status is healthy.
+
+## 2. Run the database script
+
+1. In the project, open **SQL Editor** → **New query**.
+2. On GitHub, open [supabase/schema.sql](https://github.com/HamzaXali/prismburst-brick-odyssey/blob/main/supabase/schema.sql) (after this change is on `main`). Select all of the text and copy it.
+3. Paste it into the SQL editor and press **Run**.
+4. You should see success. Running the same script again is safe.
+
+The script creates `public.player_saves`, turns on row level security, and lets only the signed-in user (`auth.uid() = user_id`) select, insert, update, or delete their own row. The `anon` role gets no policy and no grants. Writes go through `upsert_player_save`, which checks the revision.
+
+## 3. Copy the URL and publishable key into the game
+
+1. In Supabase open **Project Settings** → **API** (or **API Keys**).
+2. Copy the **Project URL**. It looks like `https://abcdefgh.supabase.co`.
+3. Copy the **publishable** key, also called the **anon** key. Do not copy the **secret** key.
+4. On GitHub open [config.js on main](https://github.com/HamzaXali/prismburst-brick-odyssey/blob/main/config.js).
+5. Tap the pencil (**Edit this file**). If GitHub asks you to sign in, use the phone browser.
+6. Set `supabaseUrl` and `supabaseAnonKey` to the two values, inside the quotes. Leave `providers.google` and `providers.facebook` as `false` for now. Leave `providers.email` as `true` if you want email sign-in.
+7. Commit directly to `main`. The **Deploy to GitHub Pages** workflow publishes the file. Give it a minute, then fully close the game tab and open [https://hamzaxali.github.io/prismburst-brick-odyssey/](https://hamzaxali.github.io/prismburst-brick-odyssey/) again. If the old page is still cached, open it once more.
+
+Until those two strings are filled in, every account button stays disabled and says **Not set up yet.**
+
+## 4. Auth URLs
+
+In Supabase open **Authentication** → **URL Configuration**.
+
+- **Site URL:** `https://hamzaxali.github.io/prismburst-brick-odyssey/`
+- **Redirect URLs**, add each of these on its own line:
+  - `https://hamzaxali.github.io/prismburst-brick-odyssey/**`
+  - `https://hamzaxali.github.io/prismburst-brick-odyssey/`
+  - `https://hamzaxali.github.io/prismburst-brick-odyssey/index.html`
+
+Save. The game sends players back to the page they started on, including the `/prismburst-brick-odyssey/` subpath.
+
+## 5. Email sign-in
+
+1. **Authentication** → **Providers** (or **Sign In / Providers**) → **Email**. Turn it on.
+2. Leave "confirm email" on if you want players to open a link before the first sign-in. The game tells them to check their inbox and does not delete the phone save. The free email sender only allows a few messages per hour. If a reset email fails, the game shows the error and keeps the phone save.
+3. With the URL and publishable key in `config.js` and `providers.email` set to `true`, the email buttons enable themselves. No other switch is required for email.
+
+## 6. Google sign-in
+
+Do this only when you want Google. The button stays off until `providers.google` is `true`.
+
+1. Open [Google Cloud Console credentials](https://console.cloud.google.com/apis/credentials). Sign in with the Google account that should own the OAuth client. Create a project if asked.
+2. **OAuth consent screen**. User type **External**. App name `PRISMBURST`. Support email: yours. Privacy policy: `https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html`. Save.
+3. While the app is in **Testing**, add your Gmail address under **Test users** or only that account can sign in. **Publish** the app when every player should be able to use Google. The scopes are the basic email and profile scopes.
+4. **Credentials** → **Create credentials** → **OAuth client ID** → **Web application**.
+5. **Authorized redirect URI** (this is Supabase, not the game): `https://<project-ref>.supabase.co/auth/v1/callback`  
+   `<project-ref>` is the subdomain of the Project URL. Example: if the URL is `https://abcdefgh.supabase.co`, the redirect is `https://abcdefgh.supabase.co/auth/v1/callback`.
+6. Copy the **client ID** and **client secret**.
+7. In Supabase → **Authentication** → **Providers** → **Google**: turn it on, paste the client ID and secret, save. The secret stays in the Supabase dashboard. It must not go in `config.js`.
+8. Edit `config.js` on GitHub again and set `providers.google` to `true`. Commit to `main`.
+
+## 7. Facebook sign-in
+
+Facebook ships off (`providers.facebook` is `false`). Turn it on only after this works for you as a tester.
+
+1. Open [https://developers.facebook.com/apps/](https://developers.facebook.com/apps/) and create an app. Use case: **Facebook Login**. App name `PRISMBURST`.
+2. Add the **Facebook Login** product if it is not already there. Choose the **Web** setup.
+3. **Valid OAuth Redirect URI:** the same Supabase callback as Google, `https://<project-ref>.supabase.co/auth/v1/callback`.
+4. Permissions: `public_profile` and `email`.
+5. **Settings** → **Basic**: set the privacy policy URL to `https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html`. For data deletion, set the **Data deletion instructions URL** to `https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html#deletion`. This site cannot run Meta's automatic POST callback because GitHub Pages is a static host. The instructions on that page are how a player asks for deletion.
+6. Add yourself as an admin or tester and try login before review. Facebook only lets other people sign in after the app is in **Live** mode. `email` may need **Advanced Access** and app review before it works for players who are not testers. `public_profile` is the standard profile permission.
+7. Copy the **App ID** and **App secret**. In Supabase → **Facebook** provider, paste them and turn the provider on. The app secret stays in Supabase, not in `config.js`.
+8. Edit `config.js` and set `providers.facebook` to `true`. Commit to `main`.
+
+## 8. Free-plan limits
+
+- A free project can **pause after about a week** with no traffic. Sign-in then fails and the game still plays from the phone save. Open the Supabase dashboard and restore the project.
+- Built-in auth emails are **rate limited** (a small number per hour). "Forgot password" can fail until the limit resets. The phone save is not touched.
+- Each cloud save must be **under 64 KB**. A normal game save is much smaller.
+- The free database and monthly active users have plan caps. One save row per player is enough for this game.
+
+## 9. Later, if the game is wrapped with Capacitor
+
+Not part of this setup. When that happens:
+
+- The page already skips the service worker when `window.Capacitor` is set, because the files are inside the app.
+- Google and Facebook will not finish inside an embedded webview. Open OAuth in the system browser or a custom tab, then return to the app with a deep link.
+- Add that deep link (for example an Android app link or a custom scheme such as `com.prismburst.odyssey://login-callback`) to Supabase **Redirect URLs** and to the Google and Facebook clients.
+- The game currently sets `redirectTo` to the page URL. A wrapped build has to pass the deep link instead when Capacitor is present.
+- Register the scheme in `AndroidManifest.xml`.
+
+## Privacy page
+
+Players, Google, and Facebook can open [privacy.html](https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html). It matches what the game stores: email and provider id if you sign in, and the game save. No ads and no analytics.

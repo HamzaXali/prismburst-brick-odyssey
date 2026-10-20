@@ -7,9 +7,10 @@
   "scripts": {
     "start": "npx --yes http-server . -p 8080 -c-1",
     "serve": "npx --yes serve .",
-    "validate": "node scripts/validate-levels.js && node scripts/check-paths.js",
+    "validate": "node scripts/validate-levels.js && node scripts/check-paths.js && node scripts/check-secrets.js && node tests/cloud-unit.js",
     "icons": "python3 scripts/make-icons.py"
   },
   "engines": { "node": ">=18" },
-  "phaser": "3.90.0 (vendored at lib/phaser.min.js, MIT license)"
+  "phaser": "3.90.0 (vendored at lib/phaser.min.js, MIT license)",
+  "supabase": "2.118.0 (vendored UMD at lib/supabase.min.js, MIT license)"
 }

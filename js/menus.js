@@ -7,7 +7,7 @@
   'use strict';
   var PB = window.PB, L = window.PB_LEVELS, Save = PB.Save, Sfx = PB.Sfx;
   var W = PB.W, H = PB.H;
-  PB.VERSION = '1.0.0';
+  PB.VERSION = '1.1.0';
 
   function backButton(scene, cb) {
     return PB.button(scene, 92, 70, 140, 76, '‹ Back', cb, { size: 30, color: 0x9b6bff });
@@ -64,12 +64,18 @@
         this.tweens.add({ targets: badge, scale: 1.15, yoyo: true, repeat: -1, duration: 600 });
       }
       PB.button(this, cx, y0 + 416, 520, 96, 'SETTINGS', function () { PB.fadeTo(self, 'Settings', { from: 'Menu' }); }, { color: 0x9b6bff, size: 36 });
+      var acct = PB.button(this, cx, 1172, 520, 64, PB.Cloud.badgeText(), function () { PB.Account.open(); }, { color: 0x22e8ff, size: 22 });
+      acct.name = 'accountBadge';
+      PB.Cloud.onChange(function () {
+        if (!acct.label || !acct.label.scene) return;
+        acct.setLabel(PB.Cloud.badgeText());
+      });
 
       PB.coinBadge(this, W - 110, 64);
       var sb = this.add.container(110, 64);
       var g = this.add.graphics(); g.fillStyle(0x0c1030, 0.85); g.fillRoundedRect(-90, -26, 180, 52, 26); g.lineStyle(2, 0x22e8ff, 0.9); g.strokeRoundedRect(-90, -26, 180, 52, 26);
       sb.add([g, this.add.image(-60, 0, 'star').setScale(0.6).setTint(0xffd166), PB.text(this, 12, 0, String(Save.totalStars()), 30, '#e8fdff')]);
-      PB.text(this, cx, H - 40, 'v' + PB.VERSION + ' · offline ready · progress saved on this device', 20, '#7a80b8', { strokeThickness: 0 });
+      PB.text(this, cx, H - 22, 'v' + PB.VERSION + ' · offline ready · progress saved on this device', 18, '#7a80b8', { strokeThickness: 0 });
     }
     update(time) {
       for (var i = 0; i < this.orbit.length; i++) {
@@ -209,7 +215,7 @@
       if (!this.overlay) {
         PB.button(this, W / 2, top + 620, 540, 96, 'Reset progress', function () { self.confirmReset(); }, { color: 0xff2e63, size: 32 });
         PB.text(this, W / 2, H - 170, 'PRISMBURST — BRICK ODYSSEY v' + PB.VERSION, 22, '#9fa8e0', { strokeThickness: 0 });
-        PB.text(this, W / 2, H - 130, 'No ads · no accounts · no tracking. Progress is stored only on this device.', 18, '#6a70a8', { strokeThickness: 0, wrap: 600 });
+        PB.text(this, W / 2, H - 130, 'No ads and no tracking. Progress stays on this device. Cloud save is optional.', 18, '#6a70a8', { strokeThickness: 0, wrap: 600 });
       } else {
         PB.button(this, W / 2, top + 640, 400, 96, 'Done', function () { self.close(); }, { color: 0x22e8ff, size: 34 });
       }
@@ -223,7 +229,7 @@
       var dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.7).setInteractive();
       layer.add([dim, PB.panel(this, W / 2, H / 2, 600, 480, 0xff2e63)]);
       layer.add(PB.text(this, W / 2, H / 2 - 150, 'Reset all progress?', 40, '#ffffff'));
-      layer.add(PB.text(this, W / 2, H / 2 - 80, 'Levels, stars, coins, skins and missions will be erased. This cannot be undone.', 24, '#c9d4ff', { strokeThickness: 0, wrap: 520 }));
+      layer.add(PB.text(this, W / 2, H / 2 - 80, 'Levels, stars, coins, skins and missions on this device will be erased. A cloud save is not deleted.', 24, '#c9d4ff', { strokeThickness: 0, wrap: 520 }));
       layer.add(PB.button(this, W / 2 - 130, H / 2 + 120, 220, 96, 'Cancel', function () { layer.destroy(); }, { color: 0x22e8ff, size: 32 }));
       layer.add(PB.button(this, W / 2 + 130, H / 2 + 120, 220, 96, 'Reset', function () {
         Save.reset(); layer.destroy(); self.scene.restart({ from: self.from });

@@ -245,7 +245,10 @@ security invoker
 set search_path = pg_catalog, public
 as $$
 begin
-  if tg_op = 'UPDATE' then
+  if tg_op = 'INSERT' then
+    new.created_at = pg_catalog.now();
+    new.updated_at = pg_catalog.now();
+  elsif tg_op = 'UPDATE' then
     if new.id is distinct from old.id then
       raise exception 'id is immutable' using errcode = '42501';
     end if;
@@ -261,7 +264,7 @@ grant execute on function public.profiles_guard() to authenticated;
 
 drop trigger if exists profiles_guard on public.profiles;
 create trigger profiles_guard
-  before update on public.profiles
+  before insert or update on public.profiles
   for each row
   execute function public.profiles_guard();
 

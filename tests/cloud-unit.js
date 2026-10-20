@@ -224,6 +224,16 @@ try {
       && !/\bto anon\b/i.test(text);
   }
   record('profiles RLS allows only the signed-in owner and no anon access', profilesLocked(profileSql) && profilesLocked(migration));
+  function timestampsOwned(text) {
+    return /before insert or update on public\.profiles/i.test(text)
+      && /drop trigger if exists profiles_guard on public\.profiles/i.test(text)
+      && /if tg_op = 'INSERT' then[\s\S]*new\.created_at = pg_catalog\.now\(\);[\s\S]*new\.updated_at = pg_catalog\.now\(\);/.test(text)
+      && /new\.created_at = old\.created_at/.test(text)
+      && /tg_op = 'UPDATE'/.test(text);
+  }
+  record('profiles trigger sets insert and update timestamps', timestampsOwned(profileSql) && timestampsOwned(migration));
+  const guardStart = migration.indexOf('create or replace function public.profiles_guard()');
+  record('schema.sql profiles trigger matches the migration', guardStart > 0 && profileSql.includes(migration.slice(guardStart)));
   record('the profiles migration does not change player_saves', !/\b(insert into|update|delete from|drop table|alter table)\s+public\.player_saves\b/i.test(migration));
 
   const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.'));

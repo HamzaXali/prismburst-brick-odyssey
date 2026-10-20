@@ -16,14 +16,89 @@
 </head>
 <body>
   <div id="game"></div>
+  <div id="pb-account" hidden>
+    <div class="pb-sheet" role="dialog" aria-modal="true" aria-labelledby="pb-acct-title">
+      <button type="button" class="pb-back" data-action="close">‹ Back</button>
+      <h1 id="pb-acct-title">ACCOUNT</h1>
+      <p id="pb-acct-who">Guest on this device</p>
+      <p id="pb-acct-sync">Not signed in</p>
+      <p id="pb-acct-msg" role="status"></p>
+      <p id="pb-acct-loading" hidden>Working…</p>
+
+      <button type="button" class="pb-btn guest" data-action="guest">Continue as Guest</button>
+
+      <button type="button" class="pb-btn google" data-action="google">
+        <span class="mark g" aria-hidden="true">G</span>
+        Continue with Google
+      </button>
+      <p class="pb-note" id="pb-note-google"></p>
+
+      <button type="button" class="pb-btn facebook" data-action="facebook">
+        <span class="mark f" aria-hidden="true">f</span>
+        Continue with Facebook
+      </button>
+      <p class="pb-note" id="pb-note-facebook"></p>
+
+      <form id="pb-email-form" autocomplete="on">
+        <label>Email
+          <input id="pb-email-input" name="email" type="email" inputmode="email" autocomplete="username" maxlength="320">
+        </label>
+        <label>Password
+          <input id="pb-password-input" name="password" type="password" autocomplete="current-password" maxlength="72">
+        </label>
+        <button type="submit" class="pb-btn email" data-action="login">Log in</button>
+        <button type="button" class="pb-btn email" data-action="signup">Sign up</button>
+        <button type="button" class="pb-btn quiet" data-action="forgot">Forgot password</button>
+        <p class="pb-note" id="pb-note-email"></p>
+      </form>
+
+      <div id="pb-recovery" hidden>
+        <label>New password
+          <input id="pb-new-password" type="password" autocomplete="new-password" maxlength="72">
+        </label>
+        <button type="button" class="pb-btn email" data-action="set-password">Set new password</button>
+      </div>
+
+      <button type="button" class="pb-btn link" data-action="link">Link this guest progress to an account</button>
+      <button type="button" class="pb-btn danger" data-action="logout">Log out</button>
+      <p class="pb-fine">Progress is always stored on this device. Cloud save runs only while you are signed in.</p>
+      <p class="pb-fine"><a href="privacy.html">Privacy policy</a></p>
+    </div>
+
+    <div id="pb-confirm" hidden>
+      <div class="pb-sheet pb-modal" role="alertdialog" aria-labelledby="pb-confirm-title">
+        <h2 id="pb-confirm-title">Log out?</h2>
+        <p>Log out of this account? Progress on this device stays here.</p>
+        <button type="button" class="pb-btn email" data-action="confirm-cancel">Cancel</button>
+        <button type="button" class="pb-btn danger" data-action="confirm-logout">Log out</button>
+      </div>
+    </div>
+
+    <div id="pb-migrate" hidden>
+      <div class="pb-sheet pb-modal" role="alertdialog" aria-labelledby="pb-migrate-title">
+        <h2 id="pb-migrate-title">Choose what to keep</h2>
+        <p id="pb-migrate-body"></p>
+        <button type="button" class="pb-btn email" data-choice="merge">Merge (recommended)</button>
+        <button type="button" class="pb-btn google" data-choice="cloud">Use cloud</button>
+        <button type="button" class="pb-btn guest" data-choice="device">Keep this device's progress</button>
+        <p class="pb-fine">A timestamped backup is stored on this device either way. You can close this and decide later. Nothing is replaced until you choose.</p>
+        <button type="button" class="pb-btn quiet" data-action="decide-later">Decide later</button>
+      </div>
+    </div>
+  </div>
   <div id="loading">
     <div class="spinner"></div>
     <div>PRISMBURST</div>
     <noscript><p>This game needs JavaScript enabled.</p></noscript>
   </div>
   <script src="lib/phaser.min.js"></script>
+  <script src="lib/supabase.min.js"></script>
+  <script src="config.js"></script>
   <script src="levels.js"></script>
   <script src="js/core.js"></script>
+  <script src="js/save-sync.js"></script>
+  <script src="js/cloud.js"></script>
+  <script src="js/account.js"></script>
   <script src="js/menus.js"></script>
   <script src="game.js"></script>
   <script>

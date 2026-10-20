@@ -773,13 +773,18 @@
     scene: [S[0], S[1], S[2], S[3], S[5], GameScene, S[6], S[4], S[7], S[8]]
   };
   PB.game = new Phaser.Game(config);
+  if (PB.Account && PB.Account.attachInputGuard) PB.Account.attachInputGuard();
 
   // ---- page guards: no zoom, no context menu, no pull-to-refresh
-  document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-  ['gesturestart', 'gesturechange', 'dblclick'].forEach(function (n) { document.addEventListener(n, function (e) { e.preventDefault(); }, { passive: false }); });
-  document.addEventListener('touchmove', function (e) { if (e.cancelable) e.preventDefault(); }, { passive: false });
+  function inAccount(e) {
+    var t = e.target;
+    return t && t.closest && t.closest('#pb-account');
+  }
+  document.addEventListener('contextmenu', function (e) { if (!inAccount(e)) e.preventDefault(); });
+  ['gesturestart', 'gesturechange', 'dblclick'].forEach(function (n) { document.addEventListener(n, function (e) { if (!inAccount(e)) e.preventDefault(); }, { passive: false }); });
+  document.addEventListener('touchmove', function (e) { if (inAccount(e)) return; if (e.cancelable) e.preventDefault(); }, { passive: false });
   var lastTouch = 0;
-  document.addEventListener('touchend', function (e) { var now = Date.now(); if (now - lastTouch < 300 && e.cancelable) e.preventDefault(); lastTouch = now; }, { passive: false });
+  document.addEventListener('touchend', function (e) { if (inAccount(e)) return; var now = Date.now(); if (now - lastTouch < 300 && e.cancelable) e.preventDefault(); lastTouch = now; }, { passive: false });
 
   // ---- test/debug hook (harmless in production; used by automated tests)
   window.__PB = {
@@ -804,6 +809,7 @@
     bot: function (on, scale) { var g = PB.currentGame; g.bot = !!on; g.timeScale = scale || 1; },
     unlockAll: function () { for (var i = 0; i < L.worldCount(); i++) Save.data.unlocked[i] = L.LEVELS_PER_WORLD; Save.persist(); },
     save: function () { return JSON.parse(JSON.stringify(Save.data)); },
+    cloud: function () { return PB.Cloud ? PB.Cloud.snapshot() : null; },
     consts: { W: W, H: H, PADDLE_Y: PADDLE_Y, TOP: TOP, GX: GX, GY: GY, CW: CW, CH: CH }
   };
 })();

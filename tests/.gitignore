@@ -1,5 +1,6 @@
 node_modules/
 shots/
 results.json
+cloud-results.json
 bot-*.json
 bot-last.png

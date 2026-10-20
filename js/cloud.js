@@ -1,0 +1,854 @@
+/*
+ * PRISMBURST — cloud.js
+ * Real Supabase Auth and cloud save. There is no fake or simulated sign-in
+ * in this file. With an empty config.js the game never creates a client.
+ * Automated tests intercept the network; they do not turn on a back door here.
+ *
+ * The device save prismburst.save.v1 is never removed by login, logout,
+ * account switch, or an auth error. Before a cloud copy overwrites it, a
+ * timestamped backup is written under prismburst.save.backup.<time>.
+ */
+(function () {
+  'use strict';
+  var PB = window.PB = window.PB || {};
+  var Sync = PB.SaveSync;
+  var SAVE_KEY = Sync.SAVE_KEY;
+  var META_KEY = 'prismburst.cloud.meta.v1';
+
+  function emptyMeta() {
+    return { lastUserId: null, clientUpdatedAt: null, knownRevision: null, queue: null };
+  }
+
+  function readMeta() {
+    try {
+      var raw = localStorage.getItem(META_KEY);
+      if (!raw) return emptyMeta();
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return emptyMeta();
+      return {
+        lastUserId: typeof parsed.lastUserId === 'string' ? parsed.lastUserId : null,
+        clientUpdatedAt: typeof parsed.clientUpdatedAt === 'string' ? parsed.clientUpdatedAt : null,
+        knownRevision: typeof parsed.knownRevision === 'number' ? parsed.knownRevision : null,
+        queue: parsed.queue && typeof parsed.queue === 'object' ? parsed.queue : null
+      };
+    } catch (e) { return emptyMeta(); }
+  }
+
+  function writeMeta(meta) {
+    try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch (e) { /* keep playing */ }
+  }
+
+  function pageUrl() {
+    var u = new URL(window.location.href);
+    u.hash = '';
+    u.search = '';
+    return u.toString();
+  }
+
+  function config() {
+    var cfg = window.PB_CONFIG || {};
+    return {
+      supabaseUrl: String(cfg.supabaseUrl || '').trim(),
+      supabaseAnonKey: String(cfg.supabaseAnonKey || '').trim(),
+      providers: {
+        email: !!(cfg.providers && cfg.providers.email === true),
+        google: !!(cfg.providers && cfg.providers.google === true),
+        facebook: !!(cfg.providers && cfg.providers.facebook === true)
+      }
+    };
+  }
+
+  function forbiddenKey(key) {
+    if (String(key).indexOf('sb_secret_') === 0) return true;
+    var parts = String(key).split('.');
+    if (parts.length !== 3) return false;
+    try {
+      var mid = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (mid.length % 4) mid += '=';
+      var json = JSON.parse(atob(mid));
+      var role = json && json.role ? String(json.role) : '';
+      if (role.indexOf('service') !== -1 && role.indexOf('role') !== -1) return true;
+    } catch (e) { /* not a JWT */ }
+    return false;
+  }
+
+  function usableConfig(cfg) {
+    if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) return false;
+    if (forbiddenKey(cfg.supabaseAnonKey)) return false;
+    try {
+      var u = new URL(cfg.supabaseUrl);
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    } catch (e) { return false; }
+    return true;
+  }
+
+  function friendlyError(err) {
+    var msg = err && (err.message || err.error_description || err.msg) || '';
+    var low = String(msg).toLowerCase();
+    var name = err && err.name || '';
+    if (!err) return 'Something went wrong. Progress on this device is unchanged.';
+    if (low === 'timeout' || low.indexOf('failed to fetch') !== -1 || low.indexOf('network') !== -1 || name === 'AuthRetryableFetchError') {
+      return 'You appear to be offline. Your progress stays on this device.';
+    }
+    if (low.indexOf('invalid login') !== -1 || low.indexOf('invalid credentials') !== -1) return 'That email or password is incorrect.';
+    if (low.indexOf('not confirmed') !== -1) return 'Confirm your email before signing in. Check your inbox.';
+    if (low.indexOf('already registered') !== -1 || low.indexOf('already been registered') !== -1) return 'An account with that email already exists. Log in instead.';
+    if (low.indexOf('refresh') !== -1 || low.indexOf('session expired') !== -1 || low.indexOf('jwt expired') !== -1) {
+      return 'Your session expired. Sign in again. Progress on this device is unchanged.';
+    }
+    if (low.indexOf('denied') !== -1 || low.indexOf('cancel') !== -1) return 'Sign-in was cancelled.';
+    if (low.indexOf('weak') !== -1 || (low.indexOf('password') !== -1 && low.indexOf('at least') !== -1)) return 'Use at least 6 characters in the password.';
+    if (err.status >= 500) return 'The account server had a problem. Your progress stays on this device.';
+    return msg || 'Sign-in failed. Progress on this device is unchanged.';
+  }
+
+  function isConflict(error) {
+    if (!error) return false;
+    var msg = String(error.message || error.details || error.hint || error.code || '').toLowerCase();
+    return error.code === '40001' || msg.indexOf('revision_conflict') !== -1;
+  }
+
+  function isOfflineError(error) {
+    var msg = String(error && error.message || error || '').toLowerCase();
+    return msg.indexOf('failed to fetch') !== -1 || msg.indexOf('network') !== -1 || msg === 'timeout' || (error && error.name === 'AuthRetryableFetchError');
+  }
+
+  function backupLocal(reason, cloud) {
+    var raw = null;
+    try { raw = localStorage.getItem(SAVE_KEY); } catch (e) { return null; }
+    if (raw == null) return null;
+    var stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    var key = 'prismburst.save.backup.' + stamp + '-' + Math.floor(Math.random() * 10000);
+    try {
+      localStorage.setItem(key, JSON.stringify({
+        reason: reason,
+        savedAt: new Date().toISOString(),
+        prismburstSaveV1: raw,
+        cloud: cloud || null
+      }));
+    } catch (e) { return null; }
+    return key;
+  }
+
+  function withTimeout(promise, ms) {
+    return new Promise(function (resolve, reject) {
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        reject(new Error('timeout'));
+      }, ms);
+      Promise.resolve(promise).then(function (value) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(value);
+      }, function (err) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  }
+
+  function consumeOAuthError() {
+    var u;
+    try { u = new URL(window.location.href); } catch (e) { return null; }
+    var hash = new URLSearchParams((u.hash || '').replace(/^#/, ''));
+    var msg = u.searchParams.get('error_description') || u.searchParams.get('error') || hash.get('error_description') || hash.get('error');
+    if (!msg) return null;
+    u.searchParams.delete('error');
+    u.searchParams.delete('error_description');
+    u.searchParams.delete('error_code');
+    if (hash.has('error') || hash.has('error_description')) u.hash = '';
+    try { history.replaceState({}, '', u.pathname + u.search + u.hash); } catch (e) { /* keep the url */ }
+    return msg;
+  }
+
+  var Cloud = PB.Cloud = {
+    client: null,
+    session: null,
+    syncLabel: 'Not signed in',
+    errorText: '',
+    loading: false,
+    pending: null,
+    recovery: false,
+    readySettled: false,
+    _hadSession: false,
+    _loggingOut: false,
+    _applying: false,
+    _suppress: false,
+    _timer: null,
+    _listeners: [],
+    _reconcilePromise: null,
+    _reconcileUser: null,
+    _chain: Promise.resolve(),
+
+    ready: null,
+
+    init: function () {
+      var self = this;
+      if (this._started) return;
+      this._started = true;
+      this.ready = new Promise(function (resolve) { self._resolveReady = resolve; });
+      var oauthErr = null;
+      try { oauthErr = consumeOAuthError(); } catch (e) { oauthErr = null; }
+      try {
+        if (/type=recovery/.test(window.location.href)) this.recovery = true;
+      } catch (e) { /* ignore */ }
+      if (oauthErr) {
+        this.errorText = friendlyError({ message: oauthErr });
+        this.syncLabel = 'Not signed in';
+      }
+      var cfg = config();
+      if (forbiddenKey(cfg.supabaseAnonKey)) {
+        this.errorText = 'That key looks like a secret key. The game only accepts the publishable anon key. Nothing was sent. Progress on this device is unchanged.';
+        this.syncLabel = 'Error';
+        this.settleReady();
+        this.emit();
+        return;
+      }
+      if (!usableConfig(cfg)) {
+        this.syncLabel = 'Not signed in';
+        this.settleReady();
+        this.emit();
+        return;
+      }
+      var lib = window.supabase;
+      if (!lib || typeof lib.createClient !== 'function') {
+        this.errorText = 'Cloud library failed to load. You can keep playing as a guest.';
+        this.syncLabel = 'Error';
+        this.settleReady();
+        this.emit();
+        return;
+      }
+      try {
+        this.client = lib.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+          auth: {
+            flowType: 'pkce',
+            detectSessionInUrl: true,
+            persistSession: true,
+            autoRefreshToken: true,
+            lock: function (_name, _timeout, fn) { return fn(); }
+          }
+        });
+        this.client.auth.onAuthStateChange(function (event, session) {
+          setTimeout(function () { self.handleAuthEvent(event, session); }, 0);
+        });
+      } catch (e) {
+        this.client = null;
+        this.errorText = friendlyError(e);
+        this.syncLabel = 'Error';
+        this.settleReady();
+        this.emit();
+        return;
+      }
+      setTimeout(function () { if (!self.readySettled) self.settleReady(); }, 12000);
+      window.addEventListener('online', function () { self.flush(); });
+      window.addEventListener('pageshow', function () { self.flush(); });
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') self.flush();
+      });
+      this.emit();
+    },
+
+    settleReady: function () {
+      if (this.readySettled) return;
+      this.readySettled = true;
+      if (this._resolveReady) this._resolveReady();
+    },
+
+    handleAuthEvent: function (event, session) {
+      var self = this;
+      if (event === 'PASSWORD_RECOVERY') this.recovery = true;
+      if (event === 'TOKEN_REFRESHED' && session) {
+        this.session = session;
+        this._hadSession = true;
+        this.emit();
+        return;
+      }
+      if (event === 'SIGNED_OUT') {
+        this.session = null;
+        this.pending = null;
+        if (this._hadSession && !this._loggingOut) {
+          this.errorText = 'Your session expired. Sign in again. Progress on this device is unchanged.';
+          this.syncLabel = 'Error';
+        } else if (this._loggingOut) {
+          this.errorText = 'Signed out. Progress on this device was kept.';
+          this.syncLabel = 'Not signed in';
+        } else {
+          this.syncLabel = 'Not signed in';
+        }
+        this._loggingOut = false;
+        this.settleReady();
+        this.emit();
+        return;
+      }
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        this.session = session && session.user ? session : null;
+        if (this.session) {
+          this._hadSession = true;
+          this.reconcile(this.session).then(function () { self.settleReady(); }, function () { self.settleReady(); });
+        } else {
+          this.syncLabel = 'Not signed in';
+          this.settleReady();
+          this.emit();
+        }
+      }
+    },
+
+    onChange: function (fn) { this._listeners.push(fn); },
+
+    emit: function () {
+      for (var i = 0; i < this._listeners.length; i++) {
+        try { this._listeners[i](); } catch (e) { /* a badge must not break auth */ }
+      }
+      if (PB.Account && PB.Account.render) PB.Account.render();
+    },
+
+    badgeText: function () { return 'Account · ' + this.syncLabel; },
+
+    providerEnabled: function (name) {
+      var cfg = config();
+      return usableConfig(cfg) && cfg.providers[name] === true && !forbiddenKey(cfg.supabaseAnonKey);
+    },
+
+    hasCredentials: function () { return usableConfig(config()); },
+
+    setSync: function (label) {
+      this.syncLabel = label;
+      this.emit();
+    },
+
+    setError: function (text) {
+      this.errorText = text || '';
+      if (text) this.syncLabel = 'Error';
+      this.emit();
+    },
+
+    snapshot: function () {
+      var keys = [];
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('prismburst.save.backup.') === 0) keys.push(k);
+        }
+      } catch (e) { /* ignore */ }
+      var meta = readMeta();
+      var raw = null;
+      try { raw = localStorage.getItem(SAVE_KEY); } catch (e2) { raw = null; }
+      return {
+        sync: this.syncLabel,
+        error: this.errorText || '',
+        signedIn: !!(this.session && this.session.user),
+        userId: this.session && this.session.user ? this.session.user.id : null,
+        email: this.session && this.session.user ? (this.session.user.email || '') : '',
+        provider: this.providerName(),
+        queue: meta.queue,
+        pending: this.pending ? { different: !!this.pending.different, hasRemote: !!this.pending.hasRemote } : null,
+        backups: keys,
+        save: raw,
+        loading: this.loading,
+        recovery: this.recovery
+      };
+    },
+
+    providerName: function () {
+      var user = this.session && this.session.user;
+      if (!user) return '';
+      var fromApp = user.app_metadata && user.app_metadata.provider;
+      if (fromApp) return fromApp;
+      var ids = user.identities || [];
+      return ids[0] && ids[0].provider || 'email';
+    },
+
+    getClient: function () { return this.client; },
+
+    noteLocalChange: function () {
+      if (this._applying || this._suppress) return;
+      var meta = readMeta();
+      meta.clientUpdatedAt = new Date().toISOString();
+      meta.queue = this.session && this.session.user ? {
+        userId: this.session.user.id,
+        at: meta.clientUpdatedAt,
+        expectedRevision: meta.knownRevision || 0
+      } : meta.queue;
+      writeMeta(meta);
+      if (!this.session || !this.session.user) {
+        this.syncLabel = 'Not signed in';
+        this.emit();
+        return;
+      }
+      if (this.pending) {
+        this.setSync('Sync pending');
+        return;
+      }
+      if (!navigator.onLine) {
+        this.setSync('Offline');
+        return;
+      }
+      this.setSync('Sync pending');
+      this.schedulePush();
+    },
+
+    schedulePush: function () {
+      var self = this;
+      clearTimeout(this._timer);
+      this._timer = setTimeout(function () { self.flush(); }, 1000);
+    },
+
+    flush: function () {
+      var self = this;
+      clearTimeout(this._timer);
+      if (!this.session || !this.session.user || this.pending) return Promise.resolve();
+      if (!navigator.onLine) {
+        var meta = readMeta();
+        if (meta.queue) this.setSync('Offline');
+        return Promise.resolve();
+      }
+      var run = this._chain.then(function () { return self.pushCurrent(); });
+      this._chain = run.then(function () {}, function () {});
+      return run;
+    },
+
+    pushCurrent: function () {
+      var self = this;
+      var userId = this.session.user.id;
+      var meta = readMeta();
+      if (meta.lastUserId && meta.lastUserId !== userId) return Promise.resolve();
+      var expected = meta.knownRevision == null ? 0 : meta.knownRevision;
+      return this.fetchRemote(userId).then(function (remote) {
+        if (remote && remote.invalid) {
+          self.setError('Cloud save was rejected: ' + remote.error + ' Progress on this device was not changed.');
+          return;
+        }
+        if (remote && meta.knownRevision != null && remote.revision !== meta.knownRevision) {
+          return self.mergeAndPush(userId, remote, meta.clientUpdatedAt, { reason: 'auto-merge' });
+        }
+        var payload = Sync.toCloudData(PB.Save.data, meta.clientUpdatedAt || new Date().toISOString());
+        var check = Sync.validateCloudData(payload);
+        if (!check.ok) {
+          self.setError('This device save could not be uploaded: ' + check.error);
+          return;
+        }
+        return self.pushPayload(userId, payload, remote ? remote.revision : expected, remote);
+      }).catch(function (err) {
+        if (isOfflineError(err)) self.setSync('Offline');
+        else self.setError(friendlyError(err));
+      });
+    },
+
+    reconcile: function (session) {
+      var self = this;
+      var user = session && session.user;
+      if (!user || !user.id) return Promise.resolve();
+      if (this._reconcilePromise && this._reconcileUser === user.id) return this._reconcilePromise;
+      this._reconcileUser = user.id;
+      this._reconcilePromise = this._reconcile(session).then(function () {
+        self._reconcilePromise = null;
+      }, function (err) {
+        self._reconcilePromise = null;
+        if (isOfflineError(err)) self.setSync('Offline');
+        else self.setError(friendlyError(err));
+      });
+      return this._reconcilePromise;
+    },
+
+    _reconcile: function (session) {
+      var self = this;
+      var userId = session.user.id;
+      return this.fetchRemote(userId).then(function (remote) {
+        if (remote && remote.invalid) {
+          self.setError('Cloud save was rejected: ' + remote.error + ' Progress on this device was not changed.');
+          return;
+        }
+        var meta = readMeta();
+        var local = PB.Save.data;
+        var localProg = Sync.hasProgress(local);
+        var cloudProg = !!(remote && Sync.hasProgress(remote.save));
+        var different = !!(meta.lastUserId && meta.lastUserId !== userId);
+        if (different || (!meta.lastUserId && localProg && cloudProg)) {
+          self.pending = { userId: userId, remote: remote, different: different, hasRemote: !!remote, localAt: meta.clientUpdatedAt };
+          self.setSync('Sync pending');
+          if (PB.Account && PB.Account.open) PB.Account.open();
+          return;
+        }
+        if (!remote) return self.uploadLocal(userId, meta.clientUpdatedAt);
+        if (!localProg && cloudProg) {
+          self.applyLocal(remote.save, 'auto-cloud', remote.cloudData);
+          meta = readMeta();
+          meta.lastUserId = userId;
+          meta.knownRevision = remote.revision;
+          meta.clientUpdatedAt = remote.clientUpdatedAt;
+          meta.queue = null;
+          writeMeta(meta);
+          self.session = session;
+          self.errorText = '';
+          self.setSync('Synced');
+          return;
+        }
+        return self.mergeAndPush(userId, remote, meta.clientUpdatedAt, { reason: 'auto-merge' });
+      });
+    },
+
+    fetchRemote: function (userId) {
+      var client = this.client;
+      if (!client) return Promise.reject(new Error('Cloud is not set up.'));
+      return withTimeout(client.from('player_saves').select('data,save_version,revision,client_updated_at').eq('user_id', userId).maybeSingle(), 15000).then(function (res) {
+        if (res.error) {
+          if (res.error.code === 'PGRST116') return null;
+          throw res.error;
+        }
+        if (!res.data) return null;
+        var check = Sync.validateCloudData(res.data.data);
+        if (!check.ok) return { invalid: true, error: check.error };
+        return {
+          save: check.save,
+          revision: res.data.revision,
+          clientUpdatedAt: res.data.client_updated_at || check.clientUpdatedAt,
+          cloudData: res.data.data
+        };
+      });
+    },
+
+    uploadLocal: function (userId, clientUpdatedAt) {
+      var iso = clientUpdatedAt || new Date().toISOString();
+      var payload = Sync.toCloudData(PB.Save.data, iso);
+      var check = Sync.validateCloudData(payload);
+      if (!check.ok) {
+        this.setError('This device save could not be uploaded: ' + check.error);
+        return Promise.resolve();
+      }
+      return this.pushPayload(userId, payload, 0, null);
+    },
+
+    mergeAndPush: function (userId, remote, localAt, opts) {
+      var self = this;
+      opts = opts || {};
+      var merged = Sync.mergeProgress(PB.Save.data, remote.save, localAt, remote.clientUpdatedAt);
+      var changed = !Sync.sameSave(PB.Save.data, merged.save);
+      if (changed) this.applyLocal(merged.save, opts.reason || 'merge', remote.cloudData, !!opts.backedUp);
+      var meta = readMeta();
+      meta.clientUpdatedAt = merged.client_updated_at || localAt || remote.clientUpdatedAt || new Date().toISOString();
+      writeMeta(meta);
+      var payload = Sync.toCloudData(merged.save, meta.clientUpdatedAt);
+      var sameCloud = remote.cloudData && JSON.stringify(payload) === JSON.stringify(remote.cloudData);
+      if (sameCloud && !opts.force) {
+        meta.lastUserId = userId;
+        meta.knownRevision = remote.revision;
+        meta.queue = null;
+        writeMeta(meta);
+        this.pending = null;
+        this.errorText = '';
+        this.setSync('Synced');
+        return Promise.resolve();
+      }
+      return this.pushPayload(userId, payload, remote.revision, remote);
+    },
+
+    pushPayload: function (userId, payload, expected, remote) {
+      var self = this;
+      var attempt = 0;
+      var revision = expected || 0;
+      var body = payload;
+      function once() {
+        attempt += 1;
+        return self.rpcUpsert(body, revision).then(function (res) {
+          if (res.conflict) {
+            if (attempt >= 3) throw new Error('Could not sync because the cloud save kept changing.');
+            return self.fetchRemote(userId).then(function (next) {
+              if (next && next.invalid) {
+                self.setError('Cloud save was rejected: ' + next.error + ' Progress on this device was not changed.');
+                return;
+              }
+              if (!next) {
+                revision = 0;
+                return once();
+              }
+              var meta = readMeta();
+              var merged = Sync.mergeProgress(PB.Save.data, next.save, meta.clientUpdatedAt, next.clientUpdatedAt);
+              if (!Sync.sameSave(PB.Save.data, merged.save)) self.applyLocal(merged.save, 'revision-retry', next.cloudData);
+              meta = readMeta();
+              meta.clientUpdatedAt = merged.client_updated_at || meta.clientUpdatedAt;
+              writeMeta(meta);
+              body = Sync.toCloudData(merged.save, meta.clientUpdatedAt);
+              revision = next.revision;
+              remote = next;
+              return once();
+            });
+          }
+          var meta = readMeta();
+          meta.lastUserId = userId;
+          meta.knownRevision = res.revision;
+          meta.queue = null;
+          if (body.client_updated_at) meta.clientUpdatedAt = body.client_updated_at;
+          writeMeta(meta);
+          self.pending = null;
+          self.errorText = '';
+          self.setSync('Synced');
+        });
+      }
+      return once();
+    },
+
+    rpcUpsert: function (payload, expected) {
+      var client = this.client;
+      return withTimeout(client.rpc('upsert_player_save', {
+        p_data: payload,
+        p_save_version: Sync.SAVE_VERSION,
+        p_client_updated_at: payload.client_updated_at,
+        p_expected_revision: expected || 0
+      }), 15000).then(function (res) {
+        if (res.error) {
+          if (isConflict(res.error)) return { conflict: true };
+          throw res.error;
+        }
+        var row = res.data;
+        var revision = row && (row.revision || (row[0] && row[0].revision));
+        if (!revision) throw new Error('Cloud save did not return a revision.');
+        return { conflict: false, revision: revision };
+      });
+    },
+
+    applyLocal: function (clean, reason, cloud, alreadyBackedUp) {
+      var raw = null;
+      try { raw = localStorage.getItem(SAVE_KEY); } catch (e) { raw = null; }
+      var next = JSON.stringify(Sync.toLocalSave(clean));
+      var same = false;
+      if (raw != null) {
+        try { same = Sync.sameSave(JSON.parse(raw), clean); } catch (e2) { same = false; }
+      }
+      if (same || raw === next) return false;
+      if (!alreadyBackedUp && raw != null) backupLocal(reason || 'cloud-apply', cloud || null);
+      try { localStorage.setItem(SAVE_KEY, next); } catch (e3) {
+        this.setError('Could not store the cloud save on this device. The previous progress is still here.');
+        return false;
+      }
+      this._applying = true;
+      try { PB.Save.load(); } finally { this._applying = false; }
+      this.refreshMenu();
+      return true;
+    },
+
+    refreshMenu: function () {
+      try {
+        var game = PB.game;
+        if (!game || !game.scene || !game.scene.isActive('Menu')) return;
+        game.scene.start('Menu');
+      } catch (e) { /* menu refresh is optional */ }
+    },
+
+    choose: function (mode) {
+      var self = this;
+      var pending = this.pending;
+      if (!pending || !this.session || !this.session.user) return Promise.resolve();
+      if (mode !== 'merge' && mode !== 'cloud' && mode !== 'device') return Promise.resolve();
+      var raw = null;
+      try { raw = localStorage.getItem(SAVE_KEY); } catch (e) { raw = null; }
+      if (raw != null) backupLocal('choice-' + mode, pending.remote && pending.remote.cloudData);
+      this.loading = true;
+      this.errorText = '';
+      this.emit();
+      var userId = pending.userId;
+      var remote = pending.remote;
+      var job;
+      if (mode === 'cloud') {
+        if (!remote) {
+          this.loading = false;
+          this.setError('This account has no cloud save yet.');
+          return Promise.resolve();
+        }
+        var applied = this.applyLocal(remote.save, 'choice-cloud', remote.cloudData, true);
+        if (!applied && this.syncLabel === 'Error') {
+          this.loading = false;
+          this.emit();
+          return Promise.resolve();
+        }
+        var meta = readMeta();
+        meta.lastUserId = userId;
+        meta.knownRevision = remote.revision;
+        meta.clientUpdatedAt = remote.clientUpdatedAt;
+        meta.queue = null;
+        writeMeta(meta);
+        this.pending = null;
+        this.loading = false;
+        this.errorText = '';
+        this.setSync('Synced');
+        return Promise.resolve();
+      }
+      if (mode === 'device') {
+        var stamped = readMeta();
+        stamped.clientUpdatedAt = new Date().toISOString();
+        writeMeta(stamped);
+        if (!remote) job = this.uploadLocal(userId, stamped.clientUpdatedAt);
+        else job = this.mergeAndPush(userId, remote, stamped.clientUpdatedAt, { reason: 'choice-device', backedUp: true, force: true });
+      } else if (!remote) {
+        job = this.uploadLocal(userId, readMeta().clientUpdatedAt);
+      } else {
+        job = this.mergeAndPush(userId, remote, readMeta().clientUpdatedAt, { reason: 'choice-merge', backedUp: true });
+      }
+      return Promise.resolve(job).then(function () {
+        self.loading = false;
+        self.emit();
+      }, function (err) {
+        self.loading = false;
+        self.setError(friendlyError(err));
+      });
+    },
+
+    busy: function (fn) {
+      var self = this;
+      if (this.loading) return Promise.resolve();
+      this.loading = true;
+      this.errorText = '';
+      this.emit();
+      return Promise.resolve().then(fn).then(function () {
+        self.loading = false;
+        self.emit();
+      }, function (err) {
+        self.loading = false;
+        self.setError(friendlyError(err));
+      });
+    },
+
+    signInOAuth: function (provider) {
+      var self = this;
+      if (!this.providerEnabled(provider)) {
+        this.errorText = 'Not set up yet.';
+        this.emit();
+        return Promise.resolve();
+      }
+      return this.busy(function () {
+        return withTimeout(self.client.auth.signInWithOAuth({
+          provider: provider,
+          options: { redirectTo: pageUrl(), skipBrowserRedirect: false }
+        }), 15000).then(function (res) {
+          if (res.error) throw res.error;
+        });
+      });
+    },
+
+    signInEmail: function (email, password) {
+      var self = this;
+      var problem = this.checkEmailPassword(email, password);
+      if (problem) { this.setError(problem); return Promise.resolve(); }
+      if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
+      return this.busy(function () {
+        return withTimeout(self.client.auth.signInWithPassword({ email: email, password: password }), 15000).then(function (res) {
+          if (res.error) throw res.error;
+          return self.afterAuthCall();
+        });
+      });
+    },
+
+    signUpEmail: function (email, password) {
+      var self = this;
+      var problem = this.checkEmailPassword(email, password);
+      if (problem) { this.setError(problem); return Promise.resolve(); }
+      if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
+      return this.busy(function () {
+        return withTimeout(self.client.auth.signUp({
+          email: email,
+          password: password,
+          options: { emailRedirectTo: pageUrl() }
+        }), 15000).then(function (res) {
+          if (res.error) throw res.error;
+          var session = res.data && res.data.session;
+          if (!session) {
+            self.errorText = 'Check your email to confirm the account. Your progress stays on this device until you sign in.';
+            self.syncLabel = 'Not signed in';
+            return;
+          }
+          return self.afterAuthCall();
+        });
+      });
+    },
+
+    forgotEmail: function (email) {
+      var self = this;
+      if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
+      if (!email || email.indexOf('@') < 1) { this.setError('Enter the email for that account.'); return Promise.resolve(); }
+      return this.busy(function () {
+        return withTimeout(self.client.auth.resetPasswordForEmail(email, { redirectTo: pageUrl() }), 15000).then(function (res) {
+          if (res.error) throw res.error;
+          self.errorText = 'Password reset email sent. Open the link on this phone. Your progress stays on this device.';
+          self.syncLabel = self.session ? self.syncLabel : 'Not signed in';
+        });
+      });
+    },
+
+    updatePassword: function (password) {
+      var self = this;
+      if (!password || password.length < 6) { this.setError('Use at least 6 characters in the password.'); return Promise.resolve(); }
+      if (!this.client || !this.session) { this.setError('Your session expired. Sign in again. Progress on this device is unchanged.'); return Promise.resolve(); }
+      return this.busy(function () {
+        return withTimeout(self.client.auth.updateUser({ password: password }), 15000).then(function (res) {
+          if (res.error) throw res.error;
+          self.recovery = false;
+          self.errorText = 'Password updated. Progress on this device was kept.';
+        });
+      });
+    },
+
+    logout: function () {
+      var self = this;
+      if (!this.client) return Promise.resolve();
+      this._loggingOut = true;
+      this.pending = null;
+      return this.busy(function () {
+        return withTimeout(self.client.auth.signOut(), 8000).catch(function () {
+          return self.client.auth.signOut({ scope: 'local' });
+        }).then(function () {
+          self.session = null;
+          self.pending = null;
+          setTimeout(function () {
+            if (!self._loggingOut) return;
+            self._loggingOut = false;
+            self.session = null;
+            self.syncLabel = 'Not signed in';
+            self.errorText = 'Signed out. Progress on this device was kept.';
+            self.emit();
+          }, 50);
+        });
+      });
+    },
+
+    afterAuthCall: function () {
+      var self = this;
+      return new Promise(function (resolve) { setTimeout(resolve, 0); }).then(function () {
+        if (self._reconcilePromise) return self._reconcilePromise;
+      });
+    },
+
+    checkEmailPassword: function (email, password) {
+      if (!email || email.indexOf('@') < 1 || email.length > 320) return 'Enter a valid email address.';
+      if (!password || password.length < 6) return 'Use at least 6 characters in the password.';
+      if (password.length > 72) return 'Password is too long.';
+      return '';
+    }
+  };
+
+  var origPersist = PB.Save.persist;
+  PB.Save.persist = function () {
+    var ok = origPersist.apply(this, arguments);
+    try { if (ok) Cloud.noteLocalChange(); } catch (e) { /* never block a local save */ }
+    return ok;
+  };
+  var origReset = PB.Save.reset;
+  PB.Save.reset = function () {
+    Cloud._suppress = true;
+    try { return origReset.apply(this, arguments); }
+    finally { Cloud._suppress = false; }
+  };
+
+  window.addEventListener('unhandledrejection', function (event) {
+    var reason = event.reason;
+    if (reason && reason.__isAuthError) {
+      event.preventDefault();
+      Cloud.setError(friendlyError(reason));
+    }
+  });
+
+  Cloud.init();
+})();

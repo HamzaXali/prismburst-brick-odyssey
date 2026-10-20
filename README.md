@@ -2,7 +2,7 @@
 
 A mobile-first neon-crystal brick-breaker that runs in any modern Android browser.
 It's a plain static site: no build step and no paid APIs. Guest play has no account and no tracking. Optional cloud save uses a free Supabase project when `config.js` is filled in.
-It's built to be hosted free on **GitHub Pages** and wrapped later with **Capacitor** to make an Android app.
+It's built to be hosted free on **GitHub Pages**. A Capacitor Android project builds a debug APK from the same files. See [docs/ANDROID.md](docs/ANDROID.md).
 
 - **5 themed worlds × 20 levels** (Prism Nebula, Crystal Caverns, Neon Reef, Solar Forge, Void Citadel)
 - **Objectives:** clear all crystals, reach a score, beat a time limit, or shatter the golden cores
@@ -45,6 +45,8 @@ scripts/make-icons.py        regenerates the icons (Python + Pillow)
 scripts/check-paths.js       pre-deploy check: relative, case-exact file references
 scripts/check-secrets.js     fails if a shipped file contains a secret-role JWT or secret API key
 .github/workflows/pages.yml  GitHub Pages deploy (official actions)
+.github/workflows/android-debug.yml  debug APK (no release signing)
+android/                Capacitor Android project (debug builds only)
 docs/MOBILE-TESTING.md       Android phone test checklist
 docs/CLOUD-SETUP.md          Supabase, Google, and Facebook setup for a phone browser
 tests/                 optional headless-browser tests (not needed to play or host)

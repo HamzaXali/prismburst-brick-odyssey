@@ -236,8 +236,31 @@ try {
   record('schema.sql profiles trigger matches the migration', guardStart > 0 && profileSql.includes(migration.slice(guardStart)));
   record('the profiles migration does not change player_saves', !/\b(insert into|update|delete from|drop table|alter table)\s+public\.player_saves\b/i.test(migration));
 
-  const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.'));
-  record('the repo has one Pages workflow', workflows.length === 1 && workflows[0] === 'pages.yml');
+  const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.')).sort();
+  record('Pages and the debug APK are the only workflows', workflows.join(',') === 'android-debug.yml,pages.yml');
+  record('Pages deploy still publishes only the game files', yml.includes('no tests/, scripts/') && yml.includes('cp -r index.html') && !/\btests\//.test(yml.split('cp -r')[1] || '') && !yml.includes('android-debug'));
+  const apk = fs.readFileSync(path.join(root, '.github/workflows/android-debug.yml'), 'utf8');
+  record('debug APK workflow validates, syncs, and uploads the debug artifact',
+    apk.includes('android-actions/setup-android@v4') && apk.includes('platforms;android-36') && apk.includes('npm run validate') && apk.includes('node scripts/copy-web.js') && apk.includes('npx cap sync android') && apk.includes('assembleDebug') && apk.includes('name: prismburst-debug-apk') && apk.includes('app-debug.apk') && !/\$\{\{\s*secrets\./.test(apk) && !/KEYSTORE_/.test(apk));
+  const copy = require('../scripts/copy-web');
+  const banned = ['tests', 'scripts', 'supabase', 'docs', 'node_modules', '.github'];
+  record('Capacitor web copy is the shipped game only',
+    copy.INCLUDE_FILES.indexOf('index.html') >= 0 && copy.INCLUDE_FILES.indexOf('config.js') >= 0 && copy.INCLUDE_FILES.indexOf('privacy.html') >= 0 && copy.INCLUDE_DIRS.indexOf('js') >= 0 && copy.INCLUDE_DIRS.indexOf('lib') >= 0 && copy.INCLUDE_DIRS.indexOf('icons') >= 0 && banned.every(name => copy.INCLUDE_FILES.indexOf(name) < 0 && copy.INCLUDE_DIRS.indexOf(name) < 0));
+  const os = require('os');
+  const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'pb-www-'));
+  copy.copyWeb(dest);
+  record('copied web dir has the game and omits repo-only folders',
+    fs.existsSync(path.join(dest, 'index.html')) && fs.existsSync(path.join(dest, 'js/cloud.js')) && fs.existsSync(path.join(dest, 'lib/supabase.min.js')) && banned.every(name => !fs.existsSync(path.join(dest, name))));
+  fs.rmSync(dest, { recursive: true, force: true });
+  record('service worker registration is skipped when Capacitor is present',
+    html.includes("!window.Capacitor") && html.includes("navigator.serviceWorker.register('sw.js')"));
+  const cloudJs = fs.readFileSync(path.join(root, 'js/cloud.js'), 'utf8');
+  record('native Google sign-in uses the app scheme and the web sign-in stays on the page',
+    cloudJs.includes("var NATIVE_AUTH_URL = 'com.hamzaxali.prismburst://auth'") && cloudJs.includes('skipBrowserRedirect: native') && cloudJs.includes('exchangeCodeForSession') && cloudJs.includes('isNativePlatform') && cloudJs.includes('native ? NATIVE_AUTH_URL : pageUrl()'));
+  const cap = fs.readFileSync(path.join(root, 'capacitor.config.json'), 'utf8');
+  record('Capacitor app id and name match the debug app', cap.includes('"appId": "com.hamzaxali.prismburst"') && cap.includes('"appName": "PRISMBURST"') && cap.includes('"webDir": "www"'));
+  const manifest = fs.readFileSync(path.join(root, 'android/app/src/main/AndroidManifest.xml'), 'utf8');
+  record('Android manifest accepts the auth return scheme', manifest.includes('android:scheme="com.hamzaxali.prismburst"') && manifest.includes('android:host="auth"'));
 
   const nameUi = fs.readFileSync(path.join(root, 'js/account.js'), 'utf8')
     + fs.readFileSync(path.join(root, 'js/profile.js'), 'utf8')

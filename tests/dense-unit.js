@@ -109,9 +109,12 @@ try {
   record('a dense track on a cloud save is accepted',
     denseOk.ok === true && denseOk.save.dense.unlocked === 2 && denseOk.save.dense.levels['0'].stars === 3);
 
-  withDense.dense.extra = true;
-  const rejected = sync.validateCloudData(withDense, { worlds: 5, perWorld: 20 });
-  record('an unknown dense field is rejected', rejected.ok === false);
+  withDense.dense.extra = { flag: true };
+  withDense.dense.levels['0'].badge = 'mass';
+  const kept = sync.validateCloudData(withDense, { worlds: 5, perWorld: 20 });
+  const uploaded = sync.toCloudData(kept.save, '2026-10-02T00:00:00.000Z');
+  record('an unknown dense field is kept',
+    kept.ok === true && kept.save.dense.extra.flag === true && kept.save.dense.levels['0'].badge === 'mass' && kept.save.dense.levels['0'].stars === 3 && uploaded.dense.extra.flag === true && uploaded.dense.levels['0'].badge === 'mass');
 } catch (err) {
   record('dense unit suite ran', false, err && err.stack ? err.stack : String(err));
 }

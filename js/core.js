@@ -87,8 +87,17 @@
       var raw = null;
       try { raw = window.localStorage.getItem(SAVE_KEY); } catch (e) { raw = null; }
       var parsed = null;
-      if (raw) { try { parsed = JSON.parse(raw); } catch (e) { parsed = null; } }
+      var checker = window.PB && window.PB.SavePlain;
+      if (raw && (!checker || checker.byteLength(raw) < checker.MAX_BYTES)) {
+        try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+      }
+      if (parsed && checker) {
+        var checked = checker.copyValue(parsed, 0);
+        if (!checked.ok) parsed = null;
+        else parsed = checked.value;
+      }
       this.data = merge(defaults(), parsed);
+      if (parsed && checker) checker.absorb(this.data, parsed, 0, checker.ENVELOPE);
       // keep unlocked array in sync with world count (worlds may be added later)
       while (this.data.unlocked.length < L.worldCount()) this.data.unlocked.push(0);
       if (!this.data.unlocked[0]) this.data.unlocked[0] = 1;

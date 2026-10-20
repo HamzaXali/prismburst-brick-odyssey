@@ -19,6 +19,16 @@
 })(typeof window !== 'undefined' ? window : null, function () {
   'use strict';
 
+  var plain = null;
+  if (typeof require === 'function') {
+    try { plain = require('./save-plain.js'); } catch (e) { plain = null; }
+  }
+  function plainApi() {
+    if (plain) return plain;
+    var g = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
+    return g.PB && g.PB.SavePlain || null;
+  }
+
   var COLS = 160;
   var ROWS = 188;
   var CELL = 4;
@@ -513,11 +523,22 @@
     return { v: 1, unlocked: 1, levels: {} };
   }
 
-  function keysExact(obj, allowed) {
-    var ks = Object.keys(obj);
-    for (var i = 0; i < ks.length; i++) if (allowed.indexOf(ks[i]) < 0) return ks[i];
-    return null;
+  function finishDense(out, raw) {
+  var api = plainApi();
+  if (!api || !raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  var src = {};
+  Object.keys(raw).forEach(function (key) { src[key] = raw[key]; });
+  if (raw.levels && typeof raw.levels === 'object' && out.levels) {
+    var levels = {};
+    Object.keys(raw.levels).forEach(function (key) {
+      if (/^\d+$/.test(key) && !out.levels[key]) return;
+      levels[key] = raw.levels[key];
+    });
+    src.levels = levels;
   }
+  var kept = api.absorb(out, src, 0);
+  return kept.ok ? out : defaultDense();
+}
 
   function normalize(raw) {
     var out = defaultDense();
@@ -527,7 +548,7 @@
     if (unlocked > COUNT) unlocked = COUNT;
     out.unlocked = unlocked;
     var levels = raw.levels;
-    if (!levels || typeof levels !== 'object' || Array.isArray(levels)) return out;
+    if (!levels || typeof levels !== 'object' || Array.isArray(levels)) return finishDense(out, raw);
     Object.keys(levels).forEach(function (key) {
       if (!/^\d+$/.test(key)) return;
       var id = +key;
@@ -540,29 +561,37 @@
       if (stars > 3) stars = 3;
       if (best || stars) out.levels[String(id)] = { best: best, stars: stars };
     });
-    return out;
+    return finishDense(out, raw);
   }
 
   function validate(raw) {
     if (raw == null) return { ok: true, dense: defaultDense() };
     if (typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: 'dense is invalid' };
-    if (keysExact(raw, ['v', 'unlocked', 'levels'])) return { ok: false, error: 'dense is invalid' };
+    var api = plainApi();
+    if (api) {
+      var checked = api.copyValue(raw, 0);
+      if (!checked.ok) return { ok: false, error: checked.error };
+      raw = checked.value;
+    }
     if (raw.v !== 1) return { ok: false, error: 'dense is invalid' };
     if (!isInt(raw.unlocked) || raw.unlocked < 1 || raw.unlocked > COUNT) return { ok: false, error: 'dense is invalid' };
     if (!raw.levels || typeof raw.levels !== 'object' || Array.isArray(raw.levels)) return { ok: false, error: 'dense is invalid' };
     var keys = Object.keys(raw.levels);
-    if (keys.length > COUNT) return { ok: false, error: 'dense is invalid' };
+    var idCount = 0;
+    for (var c = 0; c < keys.length; c++) if (/^\d+$/.test(keys[c]) && +keys[c] < COUNT) idCount++;
+    if (idCount > COUNT) return { ok: false, error: 'dense is invalid' };
     var levels = {};
     for (var i = 0; i < keys.length; i++) {
       var key = keys[i];
-      if (!/^\d+$/.test(key) || +key >= COUNT) return { ok: false, error: 'dense is invalid' };
+      if (!/^\d+$/.test(key)) continue;
+      if (+key >= COUNT) return { ok: false, error: 'dense is invalid' };
       var rec = raw.levels[key];
-      if (!rec || typeof rec !== 'object' || Array.isArray(rec) || keysExact(rec, ['best', 'stars'])) return { ok: false, error: 'dense is invalid' };
+      if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return { ok: false, error: 'dense is invalid' };
       if (!isInt(rec.best) || rec.best < 0 || rec.best > 1e15) return { ok: false, error: 'dense is invalid' };
       if (!isInt(rec.stars) || rec.stars < 0 || rec.stars > 3) return { ok: false, error: 'dense is invalid' };
       levels[String(+key)] = { best: rec.best, stars: rec.stars };
     }
-    return { ok: true, dense: { v: 1, unlocked: raw.unlocked, levels: levels } };
+    return { ok: true, dense: finishDense({ v: 1, unlocked: raw.unlocked, levels: levels }, raw) };
   }
 
   function ensure(data) {

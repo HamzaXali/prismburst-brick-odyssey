@@ -92,8 +92,43 @@ try {
   record('level outside the world bounds is rejected', badWorld.ok === false);
   const badVersion = sync.validateCloudData(Object.assign(cloudOf(local), { save_version: 2 }), bounds);
   record('unknown save_version is rejected', badVersion.ok === false);
-  const extra = sync.validateCloudData(Object.assign(cloudOf(local), { injected: true }), bounds);
-  record('unknown field is rejected', extra.ok === false);
+  const newer = cloudOf(local, '2026-06-01T00:00:00.000Z');
+  newer.future = { banner: 'prism', n: 1, list: [1, true, null], nest: { a: 'ok' } };
+  newer.levels = { '0-0': { best: 10, stars: 2, badge: 'new' } };
+  newer.settings.extra = { hud: 'hearts' };
+  newer.missions.season = 4;
+  const checked = sync.validateCloudData(newer, bounds);
+  record('a newer save with unknown fields validates',
+    checked.ok === true && checked.save.coins === 10 && checked.save.future.nest.a === 'ok' && checked.save.levels['0-0'].badge === 'new' && checked.save.levels['0-0'].stars === 2 && checked.save.settings.extra.hud === 'hearts' && checked.save.settings.sound === false && checked.save.missions.season === 4);
+  const older = base();
+  older.coins = 3;
+  const kept = sync.mergeProgress(older, checked.save, '2026-12-01T00:00:00.000Z', '2026-06-01T00:00:00.000Z', bounds);
+  const uploaded = sync.toCloudData(kept.save, kept.client_updated_at);
+  record('unknown fields round-trip unchanged through merge and upload',
+    kept.save.coins === 3 && JSON.stringify(uploaded.future) === JSON.stringify(newer.future) && uploaded.levels['0-0'].badge === 'new' && uploaded.levels['0-0'].best === 10 && uploaded.settings.extra.hud === 'hearts' && uploaded.missions.season === 4 && uploaded.save_version === 1 && !Object.prototype.hasOwnProperty.call(kept.save, 'save_version'));
+  const otherWay = sync.mergeProgress(checked.save, older, '2026-06-01T00:00:00.000Z', '2026-12-01T00:00:00.000Z', bounds);
+  record('a newer device that lacks the field still keeps it', otherWay.save.future.banner === 'prism' && otherWay.save.levels['0-0'].badge === 'new' && otherWay.save.coins === 3);
+  const proto = JSON.parse(JSON.stringify(cloudOf(local)).slice(0, -1) + ',"__proto__":{"admin":true}}');
+  record('__proto__ is rejected', sync.validateCloudData(proto, bounds).ok === false && !proto.admin);
+  const nestedProto = JSON.parse(JSON.stringify(cloudOf(local)).slice(0, -1) + ',"future":{"__proto__":{"admin":true}}}');
+  record('a nested __proto__ key is rejected', sync.validateCloudData(nestedProto, bounds).ok === false);
+  const ctor = JSON.parse(JSON.stringify(cloudOf(local)).slice(0, -1) + ',"constructor":{"x":1}}');
+  record('a constructor key is rejected', sync.validateCloudData(ctor, bounds).ok === false);
+  const fnSave = cloudOf(local);
+  fnSave.future = function () { return 1; };
+  record('a function field is rejected', sync.validateCloudData(fnSave, bounds).ok === false);
+  const infSave = cloudOf(local);
+  infSave.future = Infinity;
+  record('a non-finite number is rejected', sync.validateCloudData(infSave, bounds).ok === false);
+  let deepNode = {};
+  let deepCursor = deepNode;
+  for (let d = 0; d < sync.MAX_DEPTH + 3; d++) { deepCursor.next = {}; deepCursor = deepCursor.next; }
+  const deepSave = cloudOf(local);
+  deepSave.future = deepNode;
+  record('a save nested too deeply is rejected', sync.validateCloudData(deepSave, bounds).ok === false);
+  const fat = cloudOf(local);
+  fat.future = 'x'.repeat(70000);
+  record('an oversized unknown field is rejected', sync.validateCloudData(fat, bounds).ok === false && sync.MAX_BYTES === 65536);
   const huge = cloudOf(local);
   huge.levels = {};
   for (let i = 0; i < 20; i++) huge.levels['0-' + i] = { best: 1, stars: 1 };
@@ -101,6 +136,13 @@ try {
   const padded = 'x'.repeat(70000);
   const tooBig = sync.validateCloudData(Object.assign(cloudOf(base()), { missions: { date: null, list: [{ type: 'bricks', target: 1, reward: 0, text: padded, progress: 0, claimed: false }] } }), bounds);
   record('oversized cloud save is rejected', tooBig.ok === false);
+  const plain = require('../js/save-plain');
+  const loaded = { settings: { sound: false, vibration: true, shake: true }, home: null };
+  plain.absorb(loaded, { settings: { sound: false, vibration: true, shake: true, theme: 'prism' }, future: { a: 1 }, home: null, save_version: 1 }, 0, plain.ENVELOPE);
+  record('local load keeps unknown fields and skips the cloud envelope', loaded.future.a === 1 && loaded.settings.theme === 'prism' && loaded.settings.sound === false && !Object.prototype.hasOwnProperty.call(loaded, 'save_version'));
+  const jsFiles = fs.readdirSync(path.join(root, 'js')).filter(name => name.endsWith('.js'));
+  const htmlHits = jsFiles.filter(name => fs.readFileSync(path.join(root, 'js', name), 'utf8').includes('innerHTML'));
+  record('unknown save fields are not written as HTML', htmlHits.length === 0, htmlHits.join(','));
 
   const cfg = fs.readFileSync(path.join(root, 'config.js'), 'utf8');
   const sandbox = { window: {} };
@@ -145,6 +187,7 @@ try {
   record('functions are security invoker with a locked search_path', /security invoker/i.test(sql) && /set search_path = pg_catalog, public/i.test(sql) && !/security definer/i.test(sql));
   record('revision conflicts are explicit', /revision_conflict/.test(sql) && /p_expected_revision/.test(sql));
   record('save size is capped under 64 KB', /65536/.test(sql));
+  record('the database save function does not reject unknown keys', !/unknown field/i.test(sql) && !/jsonb_object_keys/.test(sql));
 
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   record('service worker cache version was bumped and precaches supabase-js', sw.includes('prismburst-v1.3.3') && sw.includes('./js/dense.js') && sw.includes('./js/dense-scene.js') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
@@ -156,7 +199,7 @@ try {
   record('Pages workflow validates secrets and publishes config and privacy', yml.includes('check-secrets.js') && yml.includes('config.js') && yml.includes('privacy.html') && yml.includes('cloud-unit.js'));
 
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/dense.js', 'js/core.js', 'js/home.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'js/dense-scene.js', 'game.js'];
+const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/dense.js', 'js/core.js', 'js/home.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'js/dense-scene.js', 'game.js'];
   let pos = -1;
   let orderOk = true;
   for (const file of order) {

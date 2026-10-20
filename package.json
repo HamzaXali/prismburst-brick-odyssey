@@ -8,9 +8,19 @@
     "start": "npx --yes http-server . -p 8080 -c-1",
     "serve": "npx --yes serve .",
     "validate": "node scripts/validate-levels.js && node scripts/check-paths.js && node scripts/check-secrets.js && node tests/cloud-unit.js && node tests/home-unit.js",
-    "icons": "python3 scripts/make-icons.py"
+    "icons": "python3 scripts/make-icons.py",
+    "copy-web": "node scripts/copy-web.js"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "phaser": "3.90.0 (vendored at lib/phaser.min.js, MIT license)",
-  "supabase": "2.118.0 (vendored UMD at lib/supabase.min.js, MIT license)"
+  "supabase": "2.118.0 (vendored UMD at lib/supabase.min.js, MIT license)",
+  "devDependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/core": "^8.5.3"
+  }
 }

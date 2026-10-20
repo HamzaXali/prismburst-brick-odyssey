@@ -844,6 +844,78 @@ async function signIn(page, email, password) {
         /could not return/i.test(blocked.msg) && blocked.save === legacy && blocked.search.indexOf('error') === -1, blocked.msg);
       await ctx.close();
     }
+
+    // -------------------------------------------------- native Capacitor auth
+    {
+      const ctx = await phoneContext(browser, { serviceWorkers: 'allow' });
+      const page = await ctx.newPage();
+      const legacy = JSON.stringify(legacyObject());
+      await ctx.addInitScript(raw => {
+        localStorage.setItem('prismburst.save.v1', raw);
+        window.Capacitor = {
+          isNativePlatform: function () { return true; },
+          registerPlugin: function (name) {
+            var bag = window.__cap || (window.__cap = { opened: [], listeners: {}, plugins: {} });
+            if (!bag.plugins[name]) {
+              bag.plugins[name] = {
+                open: function (opts) { bag.opened.push(opts && opts.url); return Promise.resolve(); },
+                close: function () { bag.closed = true; return Promise.resolve(); },
+                addListener: function (eventName, cb) {
+                  bag.listeners[name + ':' + eventName] = cb;
+                  return Promise.resolve({ remove: function () {} });
+                }
+              };
+            }
+            return bag.plugins[name];
+          }
+        };
+      }, legacy);
+      await page.context().route('**/config.js', route => route.fulfill({
+        contentType: 'application/javascript',
+        body: configBody({ email: true, google: true, facebook: false })
+      }));
+      const state = createState();
+      await installMock(page, state);
+      const errors = await boot(page);
+      const regs = await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length);
+      record('the service worker is not registered inside Capacitor', regs === 0, String(regs));
+      await openAccount(page);
+      const before = await page.evaluate(() => localStorage.getItem('prismburst.save.v1'));
+      await page.evaluate(() => {
+        PB.Cloud.signInOAuth('google');
+        PB.Cloud.signInOAuth('google');
+      });
+      await page.waitForFunction(() => window.__cap && __cap.opened.length === 1, null, { timeout: 10000 });
+      const opened = await page.evaluate(() => ({ url: __cap.opened[0], href: location.href }));
+      const authUrl = new URL(opened.url);
+      record('native Google opens the system browser once with the app redirect',
+        opened.href.indexOf('authorize') === -1 && authUrl.searchParams.get('provider') === 'google' && authUrl.searchParams.get('scopes') === 'openid email profile' && authUrl.searchParams.get('redirect_to') === 'com.hamzaxali.prismburst://auth' && !!authUrl.searchParams.get('code_challenge'),
+        { href: opened.href, redirect: authUrl.searchParams.get('redirect_to'), scopes: authUrl.searchParams.get('scopes') });
+      await page.evaluate(() => {
+        const cb = __cap.listeners['Browser:browserFinished'];
+        if (cb) cb();
+      });
+      await page.waitForFunction(() => /cancelled/i.test(document.getElementById('pb-acct-msg').textContent || ''), null, { timeout: 5000 });
+      const afterCancel = await page.evaluate(() => localStorage.getItem('prismburst.save.v1'));
+      record('a cancelled native sign-in keeps the local save byte-identical', afterCancel === before && before === legacy);
+
+      await page.evaluate(() => { PB.Cloud.loading = false; return PB.Cloud.signInOAuth('google'); });
+      await page.waitForFunction(() => window.__cap && __cap.opened.length === 2, null, { timeout: 10000 });
+      await page.evaluate(() => __cap.listeners['App:appUrlOpen']({ url: 'com.hamzaxali.prismburst://auth?code=good-code' }));
+      await page.waitForFunction(() => PB.Cloud.snapshot().signedIn && PB.Cloud.snapshot().provider === 'google' && PB.Cloud.nameSuggestion === 'Ali Prism', null, { timeout: 10000 });
+      const returned = await page.evaluate(() => ({
+        save: localStorage.getItem('prismburst.save.v1'),
+        suggestion: PB.Cloud.nameSuggestion
+      }));
+      record('the native auth return exchanges the code and keeps the save', returned.suggestion === 'Ali Prism' && returned.save === legacy, returned.suggestion);
+
+      await page.fill('#pb-email-input', 'ali@example.com');
+      await page.click('[data-action="forgot"]');
+      await page.waitForFunction(() => /Password reset email sent/i.test(document.getElementById('pb-acct-msg').textContent || ''));
+      record('native password reset uses the app redirect', state.requests.some(r => r.includes('/auth/v1/recover') && decodeURIComponent(r).includes('com.hamzaxali.prismburst://auth')));
+      record('native auth flow has no page errors', errors.length === 0, errors);
+      await ctx.close();
+    }
     record('cloud suite never calls the real Supabase project', realHits.length === 0, realHits.slice(0, 5));
   } catch (err) {
     record('cloud suite crashed', false, err.stack);

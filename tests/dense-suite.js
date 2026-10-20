@@ -76,20 +76,39 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await sleep(400);
     const hud = await page.evaluate(() => {
       const g = PB.currentDense;
-      const box = g.livesHud.getBounds();
+      const hearts = (g.livesIcons || []).map(icon => ({
+        filled: !!icon.filled, w: icon.heartW, h: icon.heartH, x: icon.x, visible: icon.visible
+      }));
+      const left = g.livesHud.x + Math.min.apply(null, hearts.map(h => h.x - h.w / 2));
+      const right = g.livesHud.x + Math.max.apply(null, hearts.map(h => h.x + h.w / 2));
       return {
-        lives: g.livesCount.text,
+        lives: g.lives,
+        text: g.livesCount.text,
+        countVisible: !!g.livesCount.visible,
         title: g.titleText.text,
         score: g.scoreText.text,
-        visible: g.livesHud.visible && g.livesCount.visible,
-        x: box.x, y: box.y, w: box.width, h: box.height,
+        visible: g.livesHud.visible && g.livesHud.alpha > 0,
+        y: g.livesHud.y,
+        left, right,
         breakable: g.breakableLeft,
-        hearts: g.livesIcons.filter(icon => icon.visible).length
+        filled: hearts.filter(h => h.filled).length,
+        hearts
       };
     });
     record('a dense level shows the name, star score, and three hearts',
-      hud.title === 'Quartz Spines' && hud.score === '\u2605 0' && hud.lives === '\u00d73' && hud.hearts === 3 && hud.visible && hud.y < 160 && hud.breakable >= 2000, hud);
+      hud.title === 'Quartz Spines' && hud.score === '\u2605 0' && hud.lives === 3 && hud.text === '\u00d73' && hud.filled === 3 && !hud.countVisible && hud.visible && hud.y < 160 && hud.left >= 0 && hud.right <= 720 && hud.hearts.every(h => h.visible && h.w >= 36 && h.h >= 32) && hud.breakable >= 2000, hud);
     await page.screenshot({ path: SHOTS + '/dense-spines.png' });
+    await page.evaluate(() => { const g = PB.currentDense; g.loseLife(); g.updateHud(); });
+    await sleep(200);
+    const lostHeart = await page.evaluate(() => {
+      const g = PB.currentDense;
+      return {
+        lives: g.lives,
+        filled: g.livesIcons.filter(icon => icon.filled).length,
+        outlined: g.livesIcons.filter(icon => !icon.filled).length
+      };
+    });
+    record('losing a life in Crystal Mass outlines that heart', lostHeart.lives === 2 && lostHeart.filled === 2 && lostHeart.outlined === 1, lostHeart);
 
     await page.evaluate(() => __PB.startDense(2));
     await page.waitForFunction(() => __PB.dense() && __PB.dense().name === 'Facet Bloom', null, { timeout: 8000 });

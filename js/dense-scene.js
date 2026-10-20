@@ -231,22 +231,10 @@
       this.titleText.name = 'denseTitle';
       this.scoreText = PB.text(this, W / 2 + 20, 100, '\u2605 0', 30, '#ffe7a3').setDepth(41);
       this.scoreText.name = 'denseScore';
-      this.livesHud = this.add.container(575, 74).setDepth(45);
-      this.livesHud.name = 'livesHud';
-      var pill = this.add.graphics();
-      pill.fillStyle(0x140814, 0.94);
-      pill.fillRoundedRect(-78, -26, 156, 52, 26);
-      pill.lineStyle(3, 0xff4d8d, 1);
-      pill.strokeRoundedRect(-78, -26, 156, 52, 26);
-      pill.fillStyle(0xff2e63, 1);
-      pill.fillCircle(-52, -2, 7);
-      pill.fillCircle(-40, -2, 7);
-      pill.fillTriangle(-60, 0, -32, 0, -46, 12);
-      this.livesIcons = [];
-      for (var i = 0; i < 3; i++) this.livesIcons.push(this.add.image(-8 + i * 18, 0, 'life').setScale(0.62).setTint(0xff4d8d));
-      this.livesCount = PB.text(this, 52, 0, '\u00d7' + this.lives, 26, '#ffffff');
-      this.livesCount.name = 'livesCount';
-      this.livesHud.add([pill].concat(this.livesIcons).concat([this.livesCount]));
+      this.livesHud = PB.attachLifeHud(this, 600, 78);
+      this.livesIcons = this.livesHud.livesIcons;
+      this.livesCount = this.livesHud.livesCount;
+      PB.syncLifeHud(this.livesHud, this.lives);
       this.hint = PB.text(this, W / 2, PADDLE_Y - 90, 'TAP TO LAUNCH', 28, '#e8fdff', { glow: '#22e8ff' }).setDepth(30);
       this.hudLives = -1;
       this.hudScore = -1;
@@ -593,8 +581,7 @@
       }
       if (this.lives !== this.hudLives) {
         this.hudLives = this.lives;
-        this.livesCount.setText('\u00d7' + this.lives);
-        for (var i = 0; i < this.livesIcons.length; i++) this.livesIcons[i].setVisible(i < this.lives && i < 3);
+        PB.syncLifeHud(this.livesHud, this.lives);
       }
     }
     swarm(n) {

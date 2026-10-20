@@ -241,7 +241,7 @@ try {
   record('Pages deploy still publishes only the game files', yml.includes('no tests/, scripts/') && yml.includes('cp -r index.html') && !/\btests\//.test(yml.split('cp -r')[1] || '') && !yml.includes('android-debug'));
   const apk = fs.readFileSync(path.join(root, '.github/workflows/android-debug.yml'), 'utf8');
   record('debug APK workflow validates, syncs, and uploads the debug artifact',
-    apk.includes('npm run validate') && apk.includes('node scripts/copy-web.js') && apk.includes('npx cap sync android') && apk.includes('assembleDebug') && apk.includes('name: prismburst-debug-apk') && apk.includes('app-debug.apk') && !/\$\{\{\s*secrets\./.test(apk) && !/KEYSTORE_/.test(apk));
+    apk.includes('android-actions/setup-android@v4') && apk.includes('platforms;android-36') && apk.includes('npm run validate') && apk.includes('node scripts/copy-web.js') && apk.includes('npx cap sync android') && apk.includes('assembleDebug') && apk.includes('name: prismburst-debug-apk') && apk.includes('app-debug.apk') && !/\$\{\{\s*secrets\./.test(apk) && !/KEYSTORE_/.test(apk));
   const copy = require('../scripts/copy-web');
   const banned = ['tests', 'scripts', 'supabase', 'docs', 'node_modules', '.github'];
   record('Capacitor web copy is the shipped game only',

@@ -147,14 +147,14 @@ try {
   record('save size is capped under 64 KB', /65536/.test(sql));
 
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  record('service worker cache version was bumped and precaches supabase-js', sw.includes('prismburst-v1.2.0') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.1.0'));
+  record('service worker cache version was bumped and precaches supabase-js', sw.includes('prismburst-v1.3.0') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.2.0'));
   record('service worker keeps Supabase network-only and skips OAuth returns', sw.includes('supabase\\.co') && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
 
   const yml = fs.readFileSync(path.join(root, '.github/workflows/pages.yml'), 'utf8');
   record('Pages workflow validates secrets and publishes config and privacy', yml.includes('check-secrets.js') && yml.includes('config.js') && yml.includes('privacy.html') && yml.includes('cloud-unit.js'));
 
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/core.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/menus.js', 'game.js'];
+  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/core.js', 'js/home.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/menus.js', 'js/home-ui.js', 'game.js'];
   let pos = -1;
   let orderOk = true;
   for (const file of order) {

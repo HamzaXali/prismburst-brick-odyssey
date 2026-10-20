@@ -30,6 +30,8 @@ game.js                gameplay scene (physics, power-ups, scoring), Phaser conf
 config.js              public Supabase URL, publishable key, and provider switches (empty = offline)
 privacy.html           privacy policy (no ads, no analytics; account data only if you sign in)
 js/core.js             save system, WebAudio synth, haptics, procedural textures, UI helpers
+js/home.js             daily bonus, lucky wheel, and daily tasks (save.home)
+js/home-ui.js          home bar, shortcuts, and the startup popup queue
 js/save-sync.js        cloud merge and validation (no network)
 js/cloud.js            Supabase auth and sync (real client only; no-op when config is empty)
 js/account.js          account sheet (guest, Google, Facebook, email)

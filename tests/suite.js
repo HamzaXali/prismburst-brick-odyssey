@@ -31,12 +31,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     walk(s.children.list); return found;
   }, [scene, q]);
   const tapUI = async (scene, q) => { const p = await findUI(scene, q); if (!p) throw new Error('UI not found: ' + scene + '/' + q); await tap(p.x, p.y); };
+  const dismissPopups = async () => {
+    for (let i = 0; i < 5; i++) {
+      const open = await page.evaluate(() => __PB.scenes().includes('HomePop'));
+      if (!open) return;
+      await tapUI('HomePop', 'popupClose');
+      await sleep(250);
+    }
+  };
   const touch = async (type, x, y) => { const tp = type === 'touchEnd' ? [] : [Object.assign(await toPage(x, y), { id: 1 })]; await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: tp }); };
 
   try {
     // ---------------------------------------------------------- 1. launch
     await page.goto(URL);
     await waitScene('Menu', 15000); await sleep(800);
+    await dismissPopups();
     const info = await page.evaluate(() => ({ phaser: Phaser.VERSION, renderer: PB.game.renderer.type === Phaser.WEBGL ? 'WebGL' : 'Canvas', vp: document.querySelector('meta[name=viewport]').content }));
     record('Game launches to main menu', true, info);
     await page.screenshot({ path: SHOTS + '01-main-menu.png' });
@@ -183,6 +192,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     // ---------------------------------------------------------- 11. save survives reload
     await page.reload(); await waitScene('Menu', 15000); await sleep(600);
+    await dismissPopups();
     const sv2 = await page.evaluate(() => __PB.save());
     const contLabel = await page.evaluate(() => PB.game.scene.getScene('Menu').btnContinue.label.text);
     record('Save data survives browser reload', sv2.unlocked[0] >= 2 && sv2.levels['0-0'] && sv2.coins === sv.coins, { unlocked: sv2.unlocked, coins: sv2.coins, continueBtn: contLabel });

@@ -770,7 +770,7 @@
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     render: { antialias: true, powerPreference: 'high-performance' },
     input: { activePointers: 3 }, fps: { target: 60, min: 20 }, banner: false, disableContextMenu: true,
-    scene: [S[0], S[1], S[2], S[3], S[5], GameScene, S[6], S[4], S[7], S[8]]
+    scene: [S[0], S[1], S[2], S[3], S[5], GameScene, S[6], S[4], S[7], S[8]].concat(PB.HomePopScene ? [PB.HomePopScene] : [])
   };
   PB.game = new Phaser.Game(config);
   if (PB.Account && PB.Account.attachInputGuard) PB.Account.attachInputGuard();

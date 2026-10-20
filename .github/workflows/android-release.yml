@@ -183,15 +183,16 @@ jobs:
 
       - name: Resolve versionName and versionCode
         id: ver
+        env:
+          VERSION_NAME: ${{ inputs.versionName }}
+          VERSION_CODE: ${{ inputs.versionCode }}
         run: |
           set -eu
           NAME="$(node -p "require('./package.json').version")"
           CODE="$(node -p "String(require('./package.json').androidVersionCode)")"
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            INPUT_NAME="${{ inputs.versionName }}"
-            INPUT_CODE="${{ inputs.versionCode }}"
-            if [ -n "$INPUT_NAME" ]; then NAME="$INPUT_NAME"; fi
-            if [ -n "$INPUT_CODE" ]; then CODE="$INPUT_CODE"; fi
+            if [ -n "${VERSION_NAME:-}" ]; then NAME="$VERSION_NAME"; fi
+            if [ -n "${VERSION_CODE:-}" ]; then CODE="$VERSION_CODE"; fi
           fi
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             NAME="${GITHUB_REF_NAME#v}"

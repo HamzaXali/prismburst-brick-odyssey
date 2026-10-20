@@ -254,6 +254,9 @@ try {
     releaseYml.includes("github.event_name == 'workflow_dispatch' || github.event_name == 'push'") &&
     releaseYml.includes('bundleRelease') &&
     releaseYml.includes('assembleRelease') &&
+    releaseYml.includes('VERSION_NAME: ${{ inputs.versionName }}') &&
+    releaseYml.includes('VERSION_CODE: ${{ inputs.versionCode }}') &&
+    releaseYml.split('\n').filter(line => /\$\{\{\s*inputs\./.test(line)).every(line => /^\s+VERSION_(NAME|CODE):\s+\$\{\{\s*inputs\.version(Name|Code)\s*\}\}\s*$/.test(line)) &&
     releaseYml.includes('name: prismburst-release-aab') &&
     releaseYml.includes('name: prismburst-release-apk') &&
     releaseYml.includes('apksigner verify --print-certs') &&

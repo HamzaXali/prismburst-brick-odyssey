@@ -36,8 +36,30 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const hud = () => page.evaluate(() => {
     const g = __PB.game();
     const box = g.livesHud.getBounds();
-    return { text: g.livesCount.text, lives: g.lives, visible: g.livesHud.visible && g.livesHud.alpha > 0, x: box.x, y: box.y, w: box.width, h: box.height };
+    const hearts = (g.livesIcons || []).map(icon => ({
+      filled: !!icon.filled, w: icon.heartW, h: icon.heartH, x: icon.x, visible: icon.visible
+    }));
+    const heights = hearts.map(h => h.h);
+    const widths = hearts.map(h => h.w);
+    return {
+      text: g.livesCount.text,
+      countVisible: !!g.livesCount.visible,
+      lives: g.lives,
+      filled: hearts.filter(h => h.filled).length,
+      outlined: hearts.filter(h => !h.filled).length,
+      hearts,
+      sameSize: hearts.length === 3 && Math.max.apply(null, heights) - Math.min.apply(null, heights) < 8 && Math.max.apply(null, widths) - Math.min.apply(null, widths) < 8,
+      separated: hearts.length === 3 && hearts.slice().sort((a, b) => a.x - b.x).every((h, i, arr) => i === 0 || h.x - arr[i - 1].x >= h.w * 0.9),
+      legible: hearts.length === 3 && hearts.every(h => h.visible && h.w >= 36 && h.h >= 32),
+      visible: g.livesHud.visible && g.livesHud.alpha > 0,
+      x: box.x, y: box.y, w: box.width, h: box.height
+    };
   });
+  const heartsMatch = (view) => {
+    if (!view || !view.legible || !view.sameSize || !view.separated) return false;
+    if (view.lives > 3) return view.filled === 3 && view.outlined === 0 && view.countVisible && view.text === '\u00d7' + view.lives;
+    return view.filled === view.lives && view.outlined === 3 - view.lives && !view.countVisible;
+  };
   const alive = () => page.evaluate(() => __PB.game().bricks.filter(b => b.alive).length);
   async function missLastBall() {
     await page.evaluate(() => { const g = __PB.game(); g.lives = 1; g.paddle.tx = 40; __PB.launch(); });
@@ -55,12 +77,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.waitForFunction(() => __PB.scenes().includes('Game'), null, { timeout: 8000 });
     await sleep(400);
     const shown = await hud();
-    record('lives counter is visible in the play HUD', shown.visible && shown.text === '\u00d73' && shown.y < 160 && shown.x >= 0 && shown.x + shown.w <= 720, shown);
+    record('lives counter is visible in the play HUD', shown.visible && heartsMatch(shown) && shown.y < 160 && shown.x >= 0 && shown.x + shown.w <= 720, shown);
     await page.screenshot({ path: SHOTS + '/hud-lives.png' });
     await page.evaluate(() => __PB.game().loseLife());
     await sleep(250);
     const dropped = await hud();
-    record('the lives counter decrements when a life is lost', dropped.lives === 2 && dropped.text === '\u00d72', dropped);
+    record('the lives counter decrements when a life is lost', dropped.lives === 2 && heartsMatch(dropped), dropped);
 
     const before = await alive();
     await missLastBall();
@@ -205,12 +227,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.waitForFunction(() => __PB.scenes().includes('Game'), null, { timeout: 8000 });
     await sleep(300);
     const boosted = await page.evaluate(() => ({ lives: __PB.state().lives, queued: __PB.save().shop.boosts.life.length }));
-    record('the extra life is applied to the next level and then gone', boosted.lives === 4 && boosted.queued === 0, boosted);
+    const boostedHud = await hud();
+    record('the extra life is applied to the next level and then gone', boosted.lives === 4 && boosted.queued === 0 && heartsMatch(boostedHud), { boosted, boostedHud });
     await page.evaluate(() => __PB.start(0, 2));
     await page.waitForFunction(() => __PB.state() && __PB.state().level === 2, null, { timeout: 8000 });
     await sleep(200);
     const plain = await hud();
-    record('the following level starts at 3 lives', plain.lives === 3 && plain.text === '\u00d73', plain);
+    record('the following level starts at 3 lives', plain.lives === 3 && heartsMatch(plain), plain);
 
     await page.reload();
     await page.waitForFunction(() => window.__PB && __PB.scenes().includes('Menu'), null, { timeout: 20000 });

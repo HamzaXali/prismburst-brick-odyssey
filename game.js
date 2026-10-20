@@ -231,22 +231,10 @@
       g.lineStyle(2, this.wd.accent2, 0.35); g.lineBetween(1, TOP, 1, H); g.lineBetween(W - 1, TOP, W - 1, H);
       PB.text(this, 24, 30, 'SCORE', 20, '#9fa8e0', { ox: 0, strokeThickness: 0 }).setDepth(41);
       this.scoreText = PB.text(this, 24, 66, '0', 40, '#ffffff', { ox: 0, glow: PB.hex(this.wd.accent) }).setDepth(41);
-      this.livesHud = this.add.container(128, 112).setDepth(45);
-      this.livesHud.name = 'livesHud';
-      var pill = this.add.graphics();
-      pill.fillStyle(0x140814, 0.94);
-      pill.fillRoundedRect(-108, -28, 216, 56, 28);
-      pill.lineStyle(3, 0xff4d8d, 1);
-      pill.strokeRoundedRect(-108, -28, 216, 56, 28);
-      pill.fillStyle(0xff2e63, 1);
-      pill.fillCircle(-78, -4, 8);
-      pill.fillCircle(-64, -4, 8);
-      pill.fillTriangle(-88, -2, -54, -2, -71, 12);
-      this.livesIcons = [];
-      for (var i = 0; i < 3; i++) this.livesIcons.push(this.add.image(-36 + i * 22, 0, 'life').setScale(0.78).setTint(0xff4d8d));
-      this.livesCount = PB.text(this, 58, 0, '\u00d7' + this.lives, 30, '#ffffff');
-      this.livesCount.name = 'livesCount';
-      this.livesHud.add([pill].concat(this.livesIcons).concat([this.livesCount]));
+      this.livesHud = PB.attachLifeHud(this, 140, 118);
+      this.livesIcons = this.livesHud.livesIcons;
+      this.livesCount = this.livesHud.livesCount;
+      PB.syncLifeHud(this.livesHud, this.lives);
       PB.text(this, W / 2, 30, this.wd.name.toUpperCase() + ' · ' + (this.levelIdx + 1), 22, PB.hex(this.wd.accent), { strokeThickness: 0 }).setDepth(41);
       this.objText = PB.text(this, W / 2, 70, '', 30, '#ffe7a3').setDepth(41);
       this.comboText = PB.text(this, W / 2, 112, '', 24, '#ff9cf6', { glow: '#ff3df0' }).setDepth(41);
@@ -285,8 +273,7 @@
       if (cs !== this.hud.combo) { this.hud.combo = cs; this.comboText.setText(cs); }
       if (this.lives !== this.hud.lives) {
         this.hud.lives = this.lives;
-        this.livesCount.setText('\u00d7' + this.lives);
-        for (var i = 0; i < this.livesIcons.length; i++) this.livesIcons[i].setVisible(i < this.lives);
+        PB.syncLifeHud(this.livesHud, this.lives);
       }
       for (var k in this.powIcons) {
         var t = this.timers[k], ic = this.powIcons[k];

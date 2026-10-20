@@ -455,6 +455,90 @@
   };
 
   // ------------------------------------------------------------ UI helpers
+  // Three full hearts. Filled ones are lives still in hand. Lost ones are a dim outline.
+  // More than three lives keeps three filled hearts and shows ×N.
+  function paintLifeHeart(g, filled) {
+    g.clear();
+    var lobe = 13;
+    var left = -10;
+    var right = 10;
+    var lobeY = -8;
+    var tri = [-22, -3, 22, -3, 0, 20];
+    var minX = Math.min(left - lobe, right - lobe, tri[0], tri[2], tri[4]);
+    var maxX = Math.max(left + lobe, right + lobe, tri[0], tri[2], tri[4]);
+    var minY = Math.min(lobeY - lobe, tri[1], tri[3], tri[5]);
+    var maxY = Math.max(lobeY + lobe, tri[1], tri[3], tri[5]);
+    g.heartW = maxX - minX;
+    g.heartH = maxY - minY;
+    if (filled) {
+      g.fillStyle(0xff2e63, 1);
+      g.fillCircle(left, lobeY, lobe);
+      g.fillCircle(right, lobeY, lobe);
+      g.fillTriangle(tri[0], tri[1], tri[2], tri[3], tri[4], tri[5]);
+      return;
+    }
+    g.fillStyle(0xff8aab, 0.16);
+    g.fillCircle(left, lobeY, lobe);
+    g.fillCircle(right, lobeY, lobe);
+    g.fillTriangle(tri[0], tri[1], tri[2], tri[3], tri[4], tri[5]);
+    g.lineStyle(3, 0xffb4c8, 0.95);
+    g.strokeCircle(left, lobeY, lobe);
+    g.strokeCircle(right, lobeY, lobe);
+    g.strokeTriangle(tri[0], tri[1], tri[2], tri[3], tri[4], tri[5]);
+  }
+
+  PB.attachLifeHud = function (scene, x, y) {
+    var root = scene.add.container(x, y).setDepth(45);
+    root.name = 'livesHud';
+    var bg = scene.add.graphics();
+    root.add(bg);
+    root.lifeBg = bg;
+    root.livesIcons = [];
+    for (var i = 0; i < 3; i++) {
+      var heart = scene.add.graphics();
+      heart.name = 'lifeHeart';
+      root.add(heart);
+      root.livesIcons.push(heart);
+    }
+    var count = PB.text(scene, 0, 0, '', 28, '#ffffff');
+    count.name = 'livesCount';
+    root.add(count);
+    root.livesCount = count;
+    return root;
+  };
+
+  PB.syncLifeHud = function (root, lives) {
+    lives = lives | 0;
+    if (lives < 0) lives = 0;
+    var showCount = lives > 3;
+    var gap = 52;
+    var start = -gap;
+    var filled = lives > 3 ? 3 : lives;
+    var icons = root.livesIcons;
+    for (var i = 0; i < icons.length; i++) {
+      var heart = icons[i];
+      heart.setPosition(start + i * gap, 0);
+      paintLifeHeart(heart, i < filled);
+      heart.filled = i < filled;
+      heart.setVisible(true);
+    }
+    var count = root.livesCount;
+    count.setText('\u00d7' + lives);
+    count.setVisible(showCount);
+    count.setPosition(start + (icons.length - 1) * gap + 40, 0);
+    var bg = root.lifeBg;
+    bg.clear();
+    var left = start - 30;
+    var right = showCount ? count.x + 26 : start + (icons.length - 1) * gap + 30;
+    var top = -32;
+    var h = 64;
+    bg.fillStyle(0x140814, 0.94);
+    bg.fillRoundedRect(left, top, right - left, h, 32);
+    bg.lineStyle(3, 0xff4d8d, 1);
+    bg.strokeRoundedRect(left, top, right - left, h, 32);
+    return root;
+  };
+
   PB.text = function (scene, x, y, str, size, color, opts) {
     opts = opts || {};
     var t = scene.add.text(x, y, str, {

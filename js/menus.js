@@ -50,23 +50,14 @@
       var ct = Save.continueTarget(), has = Save.hasProgress();
       var self = this;
       var y0 = 640;
-      this.btnContinue = PB.button(this, cx, y0, 520, 112, has ? 'CONTINUE' : 'START', function () {
+      this.btnContinue = PB.button(this, cx + 36, y0 - 40, 420, 100, has ? 'CONTINUE' : 'START', function () {
         PB.fadeTo(self, 'Game', { world: ct.world, level: ct.level });
-      }, { color: 0xff3df0, size: 44 });
-      PB.text(this, cx, y0 + 76, (has ? 'Continue: ' : 'Begin: ') + L.WORLDS[ct.world].name + ' · Level ' + (ct.level + 1), 24, '#c9b8ff');
-      PB.button(this, cx, y0 + 170, 520, 100, 'PLAY', function () { PB.fadeTo(self, 'Worlds'); }, { color: 0x22e8ff, size: 40 });
-      var rb = PB.button(this, cx, y0 + 296, 520, 96, 'REWARDS', function () { PB.fadeTo(self, 'Rewards'); }, { color: 0xffd166, size: 36 });
-      var claimable = (Save.dailyAvailable() ? 1 : 0) + Save.missionsClaimable();
-      if (claimable) {
-        var badge = this.add.container(cx + 236, y0 + 260);
-        var bg = this.add.graphics(); bg.fillStyle(0xff2e63, 1); bg.fillCircle(0, 0, 22); bg.lineStyle(3, 0xffffff, 1); bg.strokeCircle(0, 0, 22);
-        badge.add([bg, PB.text(this, 0, 0, String(claimable), 24, '#ffffff')]);
-        this.tweens.add({ targets: badge, scale: 1.15, yoyo: true, repeat: -1, duration: 600 });
-      }
-      PB.button(this, cx, y0 + 416, 520, 96, 'SETTINGS', function () { PB.fadeTo(self, 'Settings', { from: 'Menu' }); }, { color: 0x9b6bff, size: 36 });
-      var nameText = PB.text(this, cx, 1122, (PB.Cloud.snapshot && PB.Cloud.snapshot().displayName) || '', 20, '#9fe9ff', { strokeThickness: 0 });
+      }, { color: 0xff3df0, size: 36 });
+      PB.text(this, cx + 36, y0 + 24, (has ? 'Continue: ' : 'Begin: ') + L.WORLDS[ct.world].name + ' · Level ' + (ct.level + 1), 20, '#c9b8ff');
+      PB.button(this, cx + 36, y0 + 100, 420, 88, 'PLAY', function () { PB.fadeTo(self, 'Worlds'); }, { color: 0x22e8ff, size: 34 });
+      var nameText = PB.text(this, cx + 36, 1048, (PB.Cloud.snapshot && PB.Cloud.snapshot().displayName) || '', 20, '#9fe9ff', { strokeThickness: 0 });
       nameText.name = 'playerName';
-      var acct = PB.button(this, cx, 1172, 520, 64, PB.Cloud.badgeText(), function () { PB.Account.open(); }, { color: 0x22e8ff, size: 22 });
+      var acct = PB.button(this, cx + 36, 1096, 420, 60, PB.Cloud.badgeText(), function () { PB.Account.open(); }, { color: 0x22e8ff, size: 20 });
       acct.name = 'accountBadge';
       PB.Cloud.onChange(function () {
         if (nameText.scene) nameText.setText((PB.Cloud.snapshot && PB.Cloud.snapshot().displayName) || '');
@@ -74,8 +65,12 @@
         acct.setLabel(PB.Cloud.badgeText());
       });
 
-      PB.coinBadge(this, W - 110, 64);
+      var coins = PB.coinBadge(this, 418, 64);
+      coins.name = 'coinBadge';
+      if (PB.HomeUI) PB.HomeUI.gemBadge(this, W - 106, 64);
+      if (PB.HomeUI) PB.HomeUI.decorate(this);
       var sb = this.add.container(110, 64);
+      sb.name = 'starBadge';
       var g = this.add.graphics(); g.fillStyle(0x0c1030, 0.85); g.fillRoundedRect(-90, -26, 180, 52, 26); g.lineStyle(2, 0x22e8ff, 0.9); g.strokeRoundedRect(-90, -26, 180, 52, 26);
       sb.add([g, this.add.image(-60, 0, 'star').setScale(0.6).setTint(0xffd166), PB.text(this, 12, 0, String(Save.totalStars()), 30, '#e8fdff')]);
       PB.text(this, cx, H - 22, 'v' + PB.VERSION + ' · offline ready · progress saved on this device', 18, '#7a80b8', { strokeThickness: 0 });

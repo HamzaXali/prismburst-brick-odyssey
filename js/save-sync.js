@@ -9,6 +9,10 @@
  * Spendable and state fields — coins, equipped skins, settings, daily reward,
  * and mission state — come from whichever side has the newer client_updated_at.
  * Equal timestamps keep this device's state fields.
+ * save.home (Daily Bonus, Lucky Wheel, Daily Tasks) merges by its own dates:
+ * the later claim or task day wins, task progress on the same day is the max,
+ * a wheel reward still waiting is kept once, and gems follow the newer timestamp.
+ * Rewards are not added together.
  * An explicit "use cloud" choice replaces the device save and is not this merge.
  */
 (function (root, factory) {
@@ -30,7 +34,22 @@
   /* Keep these ids in sync with PB.BALL_SKINS and PB.PADDLE_SKINS in js/core.js. */
   var BALLS = ['classic', 'rose', 'venom', 'ember', 'solar', 'void', 'rainbow'];
   var PADDLES = ['classic', 'magenta', 'emerald', 'gold', 'obsidian', 'prism'];
-  var LOCAL_KEYS = ['v', 'coins', 'unlocked', 'levels', 'owned', 'equipped', 'settings', 'daily', 'missions', 'stats', 'last'];
+  var LOCAL_KEYS = ['v', 'coins', 'unlocked', 'levels', 'owned', 'equipped', 'settings', 'daily', 'missions', 'stats', 'last', 'home'];
+
+  function homeApi() {
+    var g = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
+    if (g.PB && g.PB.Home && g.PB.Home.mergeHome) return g.PB.Home;
+    if (typeof require === 'function') {
+      try { return require('./home.js'); } catch (e) { return null; }
+    }
+    return null;
+  }
+
+  function homeOf(raw) {
+    var api = homeApi();
+    if (!api) return raw && typeof raw === 'object' ? raw : null;
+    return api.normalize(raw);
+  }
 
   function defaultBounds() {
     var L = (typeof window !== 'undefined') ? window.PB_LEVELS : null;
@@ -130,6 +149,9 @@
     if (data.stats.bricks > MAX_STAT || data.stats.played > MAX_STAT || data.stats.cleared > MAX_STAT) return fail('stats are invalid');
     var last = checkLast(data.last, bounds);
     if (last === false) return fail('current level is invalid');
+    var homeApiRef = homeApi();
+    var homeChecked = homeApiRef ? homeApiRef.validateHome(data.home === undefined ? null : data.home) : { ok: data.home == null, home: data.home || null, error: 'home is invalid' };
+    if (!homeChecked.ok) return fail(homeChecked.error || 'home is invalid');
     var updated = data.client_updated_at;
     if (!(updated === null || typeof updated === 'string')) return fail('client_updated_at is invalid');
     if (typeof updated === 'string' && !isFinite(Date.parse(updated))) return fail('client_updated_at is invalid');
@@ -147,7 +169,8 @@
         daily: { last: data.daily.last, streak: data.daily.streak },
         missions: missions,
         stats: { bricks: data.stats.bricks, played: data.stats.played, cleared: data.stats.cleared },
-        last: last
+        last: last,
+        home: homeChecked.home
       }
     };
   }
@@ -231,7 +254,8 @@
         played: src.stats && isInt(src.stats.played) ? src.stats.played : 0,
         cleared: src.stats && isInt(src.stats.cleared) ? src.stats.cleared : 0
       },
-      last: src.last ? { world: src.last.world | 0, level: src.last.level | 0 } : null
+      last: src.last ? { world: src.last.world | 0, level: src.last.level | 0 } : null,
+      home: homeOf(src.home)
     };
   }
 
@@ -260,6 +284,8 @@
     var missions = (save.missions && save.missions.list) || [];
     for (var m = 0; m < missions.length; m++) if (missions[m] && ((missions[m].progress | 0) > 0 || missions[m].claimed)) return true;
     if (save.last && ((save.last.world | 0) > 0 || (save.last.level | 0) > 0)) return true;
+    var api = homeApi();
+    if (api && api.hasHomeProgress(save.home)) return true;
     return false;
   }
 
@@ -342,7 +368,12 @@
           played: Math.max(local.stats.played, remote.stats.played),
           cleared: Math.max(local.stats.cleared, remote.stats.cleared)
         },
-        last: furtherLast(local.last, remote.last, bounds)
+        last: furtherLast(local.last, remote.last, bounds),
+        home: (function () {
+          var api = homeApi();
+          if (!api) return homeOf(state.home);
+          return api.mergeHome(local.home, remote.home, !remoteNewer);
+        })()
       }
     };
   }

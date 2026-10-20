@@ -7,7 +7,7 @@
   "scripts": {
     "start": "npx --yes http-server . -p 8080 -c-1",
     "serve": "npx --yes serve .",
-    "validate": "node scripts/validate-levels.js && node scripts/check-paths.js && node scripts/check-secrets.js && node tests/cloud-unit.js",
+    "validate": "node scripts/validate-levels.js && node scripts/check-paths.js && node scripts/check-secrets.js && node tests/cloud-unit.js && node tests/home-unit.js",
     "icons": "python3 scripts/make-icons.py",
     "copy-web": "node scripts/copy-web.js"
   },

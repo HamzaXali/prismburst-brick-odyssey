@@ -7,7 +7,7 @@
   'use strict';
   var PB = window.PB, L = window.PB_LEVELS, Save = PB.Save, Sfx = PB.Sfx;
   var W = PB.W, H = PB.H;
-  PB.VERSION = '1.3.1';
+  PB.VERSION = '1.3.2';
 
   function backButton(scene, cb) {
     return PB.button(scene, 92, 70, 140, 76, '‹ Back', cb, { size: 30, color: 0x9b6bff });
@@ -370,7 +370,7 @@
       var d = this.d, self = this;
       this.add.rectangle(W / 2, H / 2, W, H, 0x05061a, 0.6).setInteractive();
       var p = this.add.container(0, 0);
-      p.add(PB.panel(this, W / 2, H / 2, 620, 980, 0xffd166));
+      p.add(PB.panel(this, W / 2, H / 2 + 20, 620, 1100, 0xffd166));
       p.add(PB.text(this, W / 2, H / 2 - 410, 'LEVEL CLEAR!', 64, '#ffffff', { glow: '#ffd166' }));
       p.add(PB.text(this, W / 2, H / 2 - 350, d.name, 28, '#c9d4ff', { strokeThickness: 0 }));
       var stars = PB.stars(this, W / 2, H / 2 - 230, 0, 120, 150);
@@ -392,17 +392,39 @@
       var sc = PB.text(this, W / 2, H / 2 - 30, '0', 64, '#ffffff', { glow: '#22e8ff' }); p.add(sc);
       this.tweens.addCounter({ from: 0, to: d.score, duration: 900, onUpdate: function (tw) { sc.setText(Math.round(tw.getValue()).toLocaleString('en-US')); } });
       p.add(PB.text(this, W / 2, H / 2 + 30, d.newBest ? 'NEW BEST!' : 'Best: ' + d.best.toLocaleString('en-US'), 26, d.newBest ? '#ff9cf6' : '#9fa8e0'));
-      var cy = H / 2 + 100;
+      var cy = H / 2 + 90;
       p.add(this.add.image(W / 2 - 70, cy, 'coin'));
-      p.add(PB.text(this, W / 2 + 10, cy, '+' + d.coins, 40, '#ffe7a3', { ox: 0 }));
-      if (d.unlockMsg) p.add(PB.text(this, W / 2, cy + 60, d.unlockMsg, 26, '#9fe9ff', { glow: '#22e8ff' }));
+      var coinLine = PB.text(this, W / 2 + 10, cy, '+' + d.coins, 40, '#ffe7a3', { ox: 0 });
+      coinLine.name = 'clearCoins';
+      p.add(coinLine);
+      var doubled = Save.doubledClear(d.world, d.level);
+      if (!doubled && PB.Ads) {
+        var hint = PB.text(this, W / 2, cy + 48, 'Doubles this clear\'s coin reward', 20, '#c9d4ff', { strokeThickness: 0 });
+        hint.name = 'doubleHint';
+        p.add(hint);
+        var watch = PB.button(this, W / 2, cy + 110, 460, 84, 'Watch ad: 2x reward', function () {
+          if (watch.disabled) return;
+          watch.setDisabled(true);
+          PB.Ads.showRewarded('double').then(function (res) {
+            if (!res || !res.completed) { watch.setDisabled(false); return; }
+            var gained = Save.grantDoubleCoins(d.world, d.level, d.coins);
+            if (!gained) { watch.setVisible(false); return; }
+            coinLine.setText('+' + (d.coins + gained));
+            hint.setText('Coin reward doubled');
+            watch.setVisible(false);
+          });
+        }, { color: 0xffd166, size: 28 });
+        watch.name = 'watchDouble';
+        p.add(watch);
+      }
+      if (d.unlockMsg) p.add(PB.text(this, W / 2, cy + (doubled ? 56 : 168), d.unlockMsg, 24, '#9fe9ff', { glow: '#22e8ff' }));
       var hasNext = d.level + 1 < L.LEVELS_PER_WORLD || d.world + 1 < L.worldCount();
-      var nb = PB.button(this, W / 2, H / 2 + 250, 460, 104, hasNext ? 'Next level ›' : 'Back to worlds', function () {
+      var nb = PB.button(this, W / 2, H / 2 + 360, 460, 96, hasNext ? 'Next level ›' : 'Back to worlds', function () {
         if (d.level + 1 < L.LEVELS_PER_WORLD) self.scene.start('Game', { world: d.world, level: d.level + 1 });
         else { self.scene.stop('Game'); self.scene.start('Worlds'); }
-      }, { color: 0xffd166, size: 38 }); nb.name = 'next'; p.add(nb);
-      p.add(PB.button(this, W / 2 - 118, H / 2 + 380, 220, 88, 'Retry', function () { self.scene.start('Game', { world: d.world, level: d.level }); }, { color: 0xff3df0, size: 30 }));
-      p.add(PB.button(this, W / 2 + 118, H / 2 + 380, 220, 88, 'Levels', function () { self.scene.stop('Game'); self.scene.start('Levels', { world: d.world }); }, { color: 0x22e8ff, size: 30 }));
+      }, { color: 0xffd166, size: 34 }); nb.name = 'next'; p.add(nb);
+      p.add(PB.button(this, W / 2 - 118, H / 2 + 470, 220, 80, 'Retry', function () { self.scene.start('Game', { world: d.world, level: d.level }); }, { color: 0xff3df0, size: 28 }));
+      p.add(PB.button(this, W / 2 + 118, H / 2 + 470, 220, 80, 'Levels', function () { self.scene.stop('Game'); self.scene.start('Levels', { world: d.world }); }, { color: 0x22e8ff, size: 28 }));
       p.y = 60; p.alpha = 0;
       this.tweens.add({ targets: p, y: 0, alpha: 1, duration: 320, ease: 'Cubic.out' });
     }
@@ -416,16 +438,53 @@
       var d = this.d, self = this;
       this.add.rectangle(W / 2, H / 2, W, H, 0x05061a, 0.7).setInteractive();
       var p = this.add.container(0, 0);
-      p.add(PB.panel(this, W / 2, H / 2 + 30, 600, 840, 0xff2e63));
-      p.add(PB.text(this, W / 2, H / 2 - 290, d.reason === 'time' ? 'TIME\'S UP' : 'OUT OF LIGHT', 60, '#ffffff', { glow: '#ff2e63' }));
-      p.add(PB.text(this, W / 2, H / 2 - 220, d.reason === 'time' ? 'The crystals held out this time.' : 'All balls were lost.', 26, '#c9d4ff', { strokeThickness: 0 }));
-      p.add(PB.text(this, W / 2, H / 2 - 130, 'SCORE', 26, '#9fa8e0', { strokeThickness: 0 }));
-      p.add(PB.text(this, W / 2, H / 2 - 80, d.score.toLocaleString('en-US'), 60, '#ffffff', { glow: '#ff3df0' }));
-      p.add(PB.text(this, W / 2, H / 2 - 10, 'Crystals left: ' + d.left, 24, '#9fa8e0', { strokeThickness: 0 }));
-      var rb = PB.button(this, W / 2, H / 2 + 110, 440, 104, 'Retry', function () { self.scene.start('Game', { world: d.world, level: d.level }); }, { color: 0xff3df0, size: 38 });
+      var livesOut = d.reason !== 'time';
+      p.add(PB.panel(this, W / 2, H / 2 + 10, 620, 1080, 0xff2e63));
+      var title = PB.text(this, W / 2, H / 2 - 440, livesOut ? 'OUT OF LIVES' : 'TIME\'S UP', 54, '#ffffff', { glow: '#ff2e63' });
+      title.name = 'gameOverTitle';
+      p.add(title);
+      p.add(PB.text(this, W / 2, H / 2 - 380, livesOut ? 'You ran out of lives.' : 'The crystals held out this time.', 24, '#c9d4ff', { strokeThickness: 0 }));
+      p.add(PB.text(this, W / 2, H / 2 - 310, 'SCORE', 24, '#9fa8e0', { strokeThickness: 0 }));
+      p.add(PB.text(this, W / 2, H / 2 - 260, d.score.toLocaleString('en-US'), 52, '#ffffff', { glow: '#ff3df0' }));
+      p.add(PB.text(this, W / 2, H / 2 - 200, 'Crystals left: ' + d.left, 22, '#9fa8e0', { strokeThickness: 0 }));
+      var y = H / 2 - 110;
+      if (livesOut && !d.lifeAdUsed && PB.Ads) {
+        var watch = PB.button(this, W / 2, y, 460, 88, 'Watch ad: +3 lives', function () {
+          if (watch.disabled) return;
+          watch.setDisabled(true);
+          PB.Ads.showRewarded('lives').then(function (res) {
+            if (!res || !res.completed) { watch.setDisabled(false); return; }
+            var g = self.scene.get('Game');
+            if (g && g.grantLifeAd()) { self.scene.stop(); return; }
+            watch.setVisible(false);
+          });
+        }, { color: 0xffd166, size: 28 });
+        watch.name = 'watchLives';
+        p.add(watch);
+        y += 100;
+      }
+      if (livesOut && PB.Shop && PB.Shop.continuePrice(d.continuesUsed | 0)) {
+        var price = PB.Shop.continuePrice(d.continuesUsed | 0);
+        var afford = Save.data.coins >= price;
+        var cont = PB.button(this, W / 2, y, 460, 88, 'Continue for ' + price + ' coins', function () {
+          if (cont.disabled) return;
+          cont.setDisabled(true);
+          var g = self.scene.get('Game');
+          if (g && g.grantContinue()) { self.scene.stop(); return; }
+          cont.setDisabled(true);
+        }, { color: afford ? 0x22e8ff : 0x4a4f78, size: 26, disabled: !afford });
+        cont.name = 'continueCoins';
+        p.add(cont);
+        y += 100;
+      }
+      var rb = PB.button(this, W / 2, y, 460, 88, 'Retry', function () { self.scene.start('Game', { world: d.world, level: d.level }); }, { color: 0xff3df0, size: 32 });
       rb.name = 'retry'; p.add(rb);
-      p.add(PB.button(this, W / 2, H / 2 + 230, 440, 92, 'Level select', function () { self.scene.stop('Game'); self.scene.start('Levels', { world: d.world }); }, { color: 0x22e8ff, size: 32 }));
-      p.add(PB.button(this, W / 2, H / 2 + 330, 440, 84, 'Main menu', function () { self.scene.stop('Game'); self.scene.start('Menu'); }, { color: 0x6a6f9a, size: 30 }));
+      y += 96;
+      p.add(PB.button(this, W / 2, y, 460, 80, 'Level select', function () { self.scene.stop('Game'); self.scene.start('Levels', { world: d.world }); }, { color: 0x22e8ff, size: 28 }));
+      y += 90;
+      var home = PB.button(this, W / 2, y, 460, 80, 'Home', function () { self.scene.stop('Game'); self.scene.start('Menu'); }, { color: 0x6a6f9a, size: 28 });
+      home.name = 'home';
+      p.add(home);
       p.y = 60; p.alpha = 0;
       this.tweens.add({ targets: p, y: 0, alpha: 1, duration: 320, ease: 'Cubic.out' });
     }

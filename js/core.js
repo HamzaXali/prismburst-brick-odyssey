@@ -67,7 +67,7 @@
       owned: { ball: ['classic'], paddle: ['classic'] }, equipped: { ball: 'classic', paddle: 'classic' },
       settings: { sound: true, vibration: true, shake: true },
       daily: { last: null, streak: 0 }, missions: { date: null, list: [] },
-      stats: { bricks: 0, played: 0, cleared: 0 }, last: null, home: null
+      stats: { bricks: 0, played: 0, cleared: 0 }, last: null, home: null, shop: null
     };
   }
   function merge(base, src) {
@@ -133,6 +133,20 @@
       return { first: first, newBest: newBest, unlockedNext: unlockedNext };
     },
     addCoins: function (n) { this.data.coins = Math.max(0, (this.data.coins | 0) + n); },
+    doubledClear: function (w, l) {
+      var rec = this.levelRec(w, l);
+      return !!(rec && rec.doubled);
+    },
+    // Adds the same coin amount again. Stars, best score, and unlocks stay put.
+    grantDoubleCoins: function (w, l, coins) {
+      var rec = this.levelRec(w, l);
+      var n = coins | 0;
+      if (!rec || rec.doubled || n <= 0) return 0;
+      rec.doubled = true;
+      this.addCoins(n);
+      this.persist();
+      return n;
+    },
     // ---- daily reward
     dailyAvailable: function () { return this.data.daily.last !== PB.today(); },
     dailyNextStreak: function () {
@@ -382,6 +396,7 @@
     });
     PB.BALL_SKINS.forEach(function (s) { PB.makeBallTexture(scene, s); });
     PB.PADDLE_SKINS.forEach(function (s) { PB.makePaddleTexture(scene, s); });
+    if (PB.SHOP_LOOKS) PB.SHOP_LOOKS.forEach(function (s) { if (s.kind === 'paddle') PB.makePaddleTexture(scene, s); });
     g.destroy();
     // background gradients (canvas)
     L.WORLDS.forEach(function (w, i) { PB.makeBg(scene, 'bg' + i, w.bg[0], w.bg[1], w.accent, i * 97 + 13); });

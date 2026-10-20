@@ -13,6 +13,12 @@
  * the later claim or task day wins, task progress on the same day is the max,
  * a wheel reward still waiting is kept once, and gems follow the newer timestamp.
  * Rewards are not added together.
+ * save.shop looks are the union, so a purchase is not lost. Pending boost
+ * receipts are the union minus any receipt either side already spent, so a
+ * boost is not granted twice and a spent one does not come back. Coins stay
+ * on the newer timestamp and are never added together. A level's doubled
+ * coin claim is kept if either side has it. Missing shop or doubled fields
+ * on an older save stay absent until something new is stored.
  * An explicit "use cloud" choice replaces the device save and is not this merge.
  */
 (function (root, factory) {
@@ -34,7 +40,7 @@
   /* Keep these ids in sync with PB.BALL_SKINS and PB.PADDLE_SKINS in js/core.js. */
   var BALLS = ['classic', 'rose', 'venom', 'ember', 'solar', 'void', 'rainbow'];
   var PADDLES = ['classic', 'magenta', 'emerald', 'gold', 'obsidian', 'prism'];
-  var LOCAL_KEYS = ['v', 'coins', 'unlocked', 'levels', 'owned', 'equipped', 'settings', 'daily', 'missions', 'stats', 'last', 'home'];
+  var LOCAL_KEYS = ['v', 'coins', 'unlocked', 'levels', 'owned', 'equipped', 'settings', 'daily', 'missions', 'stats', 'last', 'home', 'shop'];
 
   function homeApi() {
     var g = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
@@ -43,6 +49,21 @@
       try { return require('./home.js'); } catch (e) { return null; }
     }
     return null;
+  }
+
+  function shopApi() {
+    var g = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
+    if (g.PB && g.PB.Shop && g.PB.Shop.merge) return g.PB.Shop;
+    if (typeof require === 'function') {
+      try { return require('./shop.js'); } catch (e) { return null; }
+    }
+    return null;
+  }
+
+  function shopOf(raw) {
+    var api = shopApi();
+    if (!api) return raw && typeof raw === 'object' ? raw : null;
+    return api.normalize(raw);
   }
 
   function homeOf(raw) {
@@ -125,10 +146,12 @@
       if (world >= bounds.worlds || level >= bounds.perWorld) return fail('level id out of bounds ' + key);
       var rec = data.levels[key];
       if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return fail('bad level record ' + key);
-      if (keysExact(rec, ['best', 'stars'])) return fail('bad level record ' + key);
+      if (keysExact(rec, ['best', 'stars', 'doubled'])) return fail('bad level record ' + key);
+      if ('doubled' in rec && rec.doubled !== true) return fail('bad level record ' + key);
       if (!isInt(rec.best) || rec.best < 0 || rec.best > MAX_SCORE) return fail('bad best score ' + key);
       if (!isInt(rec.stars) || rec.stars < 0 || rec.stars > 3) return fail('bad stars ' + key);
       levels[key] = { best: rec.best, stars: rec.stars };
+      if (rec.doubled === true) levels[key].doubled = true;
     }
     if (!data.owned || typeof data.owned !== 'object' || keysExact(data.owned, ['ball', 'paddle'])) return fail('owned skins are invalid');
     var owned = { ball: checkSkins(data.owned.ball, BALLS), paddle: checkSkins(data.owned.paddle, PADDLES) };
@@ -149,6 +172,12 @@
     if (data.stats.bricks > MAX_STAT || data.stats.played > MAX_STAT || data.stats.cleared > MAX_STAT) return fail('stats are invalid');
     var last = checkLast(data.last, bounds);
     if (last === false) return fail('current level is invalid');
+    var shopChecked = null;
+    if (data.shop !== undefined) {
+      var shopRef = shopApi();
+      shopChecked = shopRef ? shopRef.validate(data.shop) : { ok: false, error: 'shop is invalid' };
+      if (!shopChecked.ok) return fail(shopChecked.error || 'shop is invalid');
+    }
     var homeApiRef = homeApi();
     var homeChecked = homeApiRef ? homeApiRef.validateHome(data.home === undefined ? null : data.home) : { ok: data.home == null, home: data.home || null, error: 'home is invalid' };
     if (!homeChecked.ok) return fail(homeChecked.error || 'home is invalid');
@@ -170,7 +199,8 @@
         missions: missions,
         stats: { bricks: data.stats.bricks, played: data.stats.played, cleared: data.stats.cleared },
         last: last,
-        home: homeChecked.home
+        home: homeChecked.home,
+        shop: shopChecked ? shopChecked.shop : shopOf(null)
       }
     };
   }
@@ -255,7 +285,8 @@
         cleared: src.stats && isInt(src.stats.cleared) ? src.stats.cleared : 0
       },
       last: src.last ? { world: src.last.world | 0, level: src.last.level | 0 } : null,
-      home: homeOf(src.home)
+      home: homeOf(src.home),
+      shop: shopOf(src.shop)
     };
   }
 
@@ -286,6 +317,8 @@
     if (save.last && ((save.last.world | 0) > 0 || (save.last.level | 0) > 0)) return true;
     var api = homeApi();
     if (api && api.hasHomeProgress(save.home)) return true;
+    var shop = shopApi();
+    if (shop && shop.hasProgress(save.shop)) return true;
     return false;
   }
 
@@ -340,7 +373,9 @@
       if (!parts || +parts[1] >= bounds.worlds || +parts[2] >= bounds.perWorld) continue;
       var lr = local.levels[id] || { best: 0, stars: 0 };
       var rr = remote.levels[id] || { best: 0, stars: 0 };
-      levels[id] = { best: Math.max(lr.best | 0, rr.best | 0), stars: Math.max(0, Math.min(3, Math.max(lr.stars | 0, rr.stars | 0))) };
+      var row = { best: Math.max(lr.best | 0, rr.best | 0), stars: Math.max(0, Math.min(3, Math.max(lr.stars | 0, rr.stars | 0))) };
+      if (lr.doubled === true || rr.doubled === true) row.doubled = true;
+      levels[id] = row;
     }
     var owned = {
       ball: unionSkins('ball', BALLS, local, remote),
@@ -369,6 +404,11 @@
           cleared: Math.max(local.stats.cleared, remote.stats.cleared)
         },
         last: furtherLast(local.last, remote.last, bounds),
+        shop: (function () {
+          var api = shopApi();
+          if (!api) return shopOf(remoteNewer ? remote.shop : local.shop);
+          return api.merge(local.shop, remote.shop, !remoteNewer);
+        })(),
         home: (function () {
           var api = homeApi();
           if (!api) return homeOf(state.home);

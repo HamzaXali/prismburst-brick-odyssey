@@ -585,10 +585,115 @@
     return s;
   }
 
+  // Occupancy silhouette: empty, steel, or any breakable. Trimmed so a
+  // shifted copy matches, then folded with horizontal and vertical mirrors.
+  function shapeSignature(grid) {
+    var occ = [];
+    for (var r = 0; r < grid.length; r++) {
+      var row = '';
+      for (var c = 0; c < grid[r].length; c++) {
+        var ch = grid[r][c];
+        row += ch === '.' ? '.' : (ch === 'S' ? 'S' : '#');
+      }
+      occ.push(row);
+    }
+    var top = 0, bot = occ.length - 1;
+    while (top <= bot && occ[top].indexOf('#') < 0 && occ[top].indexOf('S') < 0) top++;
+    while (bot >= top && occ[bot].indexOf('#') < 0 && occ[bot].indexOf('S') < 0) bot--;
+    if (top > bot) return '';
+    var left = COLS, right = -1, r2, c2;
+    for (r2 = top; r2 <= bot; r2++) {
+      for (c2 = 0; c2 < occ[r2].length; c2++) {
+        if (occ[r2][c2] !== '.') {
+          if (c2 < left) left = c2;
+          if (c2 > right) right = c2;
+        }
+      }
+    }
+    var core = [];
+    for (r2 = top; r2 <= bot; r2++) core.push(occ[r2].slice(left, right + 1));
+    function mirrorH(g) { return g.map(function (row) { return row.split('').reverse().join(''); }); }
+    function mirrorV(g) { var out = []; for (var i = g.length - 1; i >= 0; i--) out.push(g[i]); return out; }
+    var variants = [core, mirrorH(core), mirrorV(core), mirrorH(mirrorV(core))];
+    var best = null;
+    for (var i = 0; i < variants.length; i++) {
+      var sig = variants[i].join('/');
+      if (best === null || sig < best) best = sig;
+    }
+    return best;
+  }
+
+  function rowHasMover(rows, r) {
+    for (var c = 0; c < COLS; c++) if (rows[r][c] === 'M' || rows[r][c] === 'N') return true;
+    return false;
+  }
+
+  function repairLayout(g) {
+    var R = g.length, guard = 0, bad, r, c;
+    while ((bad = unreachableBreakables(g)).length && guard++ < 50) {
+      var br = bad[0][0], bc = bad[0][1], best = null, bd = 1e9;
+      for (r = 0; r < R; r++) for (c = 0; c < COLS; c++) if (g[r][c] === 'S') {
+        var dd = Math.abs(r - br) + Math.abs(c - bc);
+        if (dd < bd) { bd = dd; best = [r, c]; }
+      }
+      if (!best) break;
+      g[best[0]][best[1]] = '1';
+    }
+    guard = 0;
+    while ((bad = pockets(g)).length && guard++ < 80) {
+      var pr = bad[0][0], pc = bad[0][1];
+      var opts = [[pr - 1, pc], [pr + 1, pc], [pr, pc - 1], [pr, pc + 1]].filter(function (q) {
+        return q[0] >= 0 && q[0] < R && q[1] >= 0 && q[1] < COLS && g[q[0]][q[1]] === 'S';
+      });
+      if (!opts.length) {
+        if (g[pr][pc] !== '.' && g[pr][pc] !== 'S') g[pr][pc] = '.';
+        else break;
+        continue;
+      }
+      g[opts[0][0]][opts[0][1]] = '1';
+    }
+    return g;
+  }
+
+  // Generated levels reused the same pattern at the same row count, so the
+  // occupied silhouette matched across worlds (including mirrors). Two
+  // occupancy edits on the left half make each layout distinct without
+  // mirroring into another level's edit.
+  function notch(grid, n) {
+    var rows = [];
+    for (var r = 0; r < grid.length; r++) rows.push(grid[r].split(''));
+    var R = rows.length, done = 0, guard = 0, seed = (n + 1) * 17 + 11;
+    while (done < 2 && guard++ < 160) {
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      var rr = seed % R;
+      var cc = 1 + ((seed >>> 8) % 4);
+      if (rowHasMover(rows, rr)) continue;
+      var ch = rows[rr][cc];
+      var next = null;
+      if (ch === '.' ) {
+        var blocked = 0, dirs = [[rr - 1, cc], [rr + 1, cc], [rr, cc - 1], [rr, cc + 1]];
+        for (var d = 0; d < 4; d++) {
+          var nr = dirs[d][0], nc = dirs[d][1];
+          if (nc < 0 || nc >= COLS || (nr >= 0 && nr < R && rows[nr][nc] === 'S')) blocked++;
+        }
+        if (blocked >= 3) continue;
+        next = '1';
+      } else if (ch === 'S' || ch === '1' || ch === '2' || ch === '3' || ch === '4' || ch === 'X' || ch === 'R' || ch === 'P' || ch === 'T') {
+        next = '.';
+      }
+      if (!next) continue;
+      rows[rr][cc] = next;
+      done++;
+    }
+    repairLayout(rows);
+    return rows.map(function (line) { return line.join(''); });
+  }
+
   function buildLevel(wi, li) {
     var w = WORLDS[wi];
-    var src = (w.hand && w.hand[li]) || generateLevel(wi, li);
-    var grid = src.grid.slice();
+    var hand = w.hand && w.hand[li];
+    var src = hand || generateLevel(wi, li);
+    var grid = hand ? src.grid.slice() : notch(src.grid, wi * LEVELS_PER_WORLD + li);
     var st = analyse(grid);
     var d = (wi * LEVELS_PER_WORLD + li) / (WORLDS.length * LEVELS_PER_WORLD - 1);
     var obj = { type: src.objective.type };
@@ -620,6 +725,7 @@
     COLS: COLS, MAX_ROWS: MAX_ROWS, LEVELS_PER_WORLD: LEVELS_PER_WORLD,
     PTS_HIT: PTS_HIT, PTS_BREAK: PTS_BREAK, BRICK_INFO: BRICK_INFO, WORLDS: WORLDS,
     getLevel: getLevel, generateLevel: generateLevel, analyse: analyse,
+    shapeSignature: shapeSignature,
     unreachableBreakables: unreachableBreakables, pockets: pockets, describeObjective: describeObjective,
     worldCount: function () { return WORLDS.length; }
   };

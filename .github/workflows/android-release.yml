@@ -90,6 +90,13 @@ jobs:
         working-directory: android
         run: |
           set -eu
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            echo "ANDROID_HOME is not set"
+            exit 1
+          fi
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)"
+          echo "$BUILD_TOOLS" >> "$GITHUB_PATH"
+          export PATH="${BUILD_TOOLS}:${PATH}"
           AAB="app/build/outputs/bundle/release/app-release.aab"
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$AAB"
@@ -228,6 +235,13 @@ jobs:
         working-directory: android
         run: |
           set -eu
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            echo "ANDROID_HOME is not set"
+            exit 1
+          fi
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)"
+          echo "$BUILD_TOOLS" >> "$GITHUB_PATH"
+          export PATH="${BUILD_TOOLS}:${PATH}"
           AAB="app/build/outputs/bundle/release/app-release.aab"
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$AAB"

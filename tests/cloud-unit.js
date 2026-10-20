@@ -257,6 +257,7 @@ try {
     releaseYml.includes('name: prismburst-release-aab') &&
     releaseYml.includes('name: prismburst-release-apk') &&
     releaseYml.includes('apksigner verify --print-certs') &&
+    (releaseYml.match(/\$ANDROID_HOME"\/build-tools\/\*\//g) || []).length === 2 &&
     releaseYml.includes('jarsigner -verify') &&
     releaseYml.includes('sha256sum') &&
     releaseSecrets.every(name => releaseYml.includes(name)) &&

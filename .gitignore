@@ -1,0 +1,13 @@
+node_modules/
+test-results/
+playwright-report/
+*.log
+.DS_Store
+Thumbs.db
+# Android / Capacitor build outputs and secrets (never commit signing keys)
+android/app/build/
+android/.gradle/
+*.keystore
+*.jks
+keystore.properties
+local.properties

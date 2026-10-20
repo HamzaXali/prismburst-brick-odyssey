@@ -14,7 +14,7 @@ window.PB_CONFIG = {
   supabaseAnonKey: 'sb_publishable_GXcDg41LoH39qGsu_zY9Zw_0I_elhPq',
   providers: {
     email: true,
-    google: false,
+    google: true,
     facebook: false
   }
 };

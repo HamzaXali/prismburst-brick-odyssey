@@ -121,8 +121,8 @@ try {
   const secret = shippedKey.indexOf('sb_secret_') === 0 || shippedKey.indexOf(secrets.FORBIDDEN_WORD) !== -1;
   const shippedProviders = shipped.providers || {};
   record('shipped config is a public Supabase URL and a publishable key',
-    urlOk && publishable && !secret && shippedProviders.google === false && shippedProviders.facebook === false);
-  record('email is allowed in config but google and facebook ship off', /email:\s*true/.test(cfg) && /google:\s*false/.test(cfg) && /facebook:\s*false/.test(cfg));
+    urlOk && publishable && !secret && shippedProviders.google === true && shippedProviders.facebook === false);
+  record('email and google are enabled and facebook ships off', /email:\s*true/.test(cfg) && /google:\s*true/.test(cfg) && /facebook:\s*false/.test(cfg));
   record('config.js has no JWT', !/eyJ/.test(cfg));
 
   const problems = secrets.scanShipped();

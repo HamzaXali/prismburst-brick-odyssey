@@ -1,0 +1,5 @@
+node_modules/
+shots/
+results.json
+bot-*.json
+bot-last.png

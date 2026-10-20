@@ -1,0 +1,15 @@
+{
+  "name": "prismburst-brick-odyssey",
+  "version": "1.0.0",
+  "description": "PRISMBURST — Brick Odyssey: a mobile-first neon-crystal brick-breaker (Phaser 3, static site, offline-ready).",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "npx --yes http-server . -p 8080 -c-1",
+    "serve": "npx --yes serve .",
+    "validate": "node scripts/validate-levels.js && node scripts/check-paths.js",
+    "icons": "python3 scripts/make-icons.py"
+  },
+  "engines": { "node": ">=18" },
+  "phaser": "3.90.0 (vendored at lib/phaser.min.js, MIT license)"
+}

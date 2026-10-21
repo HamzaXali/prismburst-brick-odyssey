@@ -180,7 +180,7 @@ try {
 
   const sql = fs.readFileSync(path.join(root, 'supabase/schema.sql'), 'utf8');
   record('schema enables RLS', /enable row level security/i.test(sql));
-  record('schema restricts rows with auth.uid() = user_id', /auth\.uid\(\)\s*=\s*user_id/.test(sql));
+  record('schema restricts rows with (select auth.uid()) = user_id', /\(select auth\.uid\(\)\)\s*=\s*user_id/.test(sql));
   record('policies are for authenticated only', /to authenticated/.test(sql) && !/for (select|insert|update|delete|all)[\s\S]{0,120}to anon/i.test(sql));
   record('anon and public are revoked on the table', /revoke all on table public\.player_saves from public, anon/i.test(sql));
   record('no permissive using (true) policy', !/using\s*\(\s*true\s*\)/i.test(sql));
@@ -190,16 +190,18 @@ try {
   record('the database save function does not reject unknown keys', !/unknown field/i.test(sql) && !/jsonb_object_keys/.test(sql));
 
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  record('service worker cache version was bumped and precaches supabase-js', sw.includes('prismburst-v1.3.4') && sw.includes('./js/achievements.js') && sw.includes('./js/dense.js') && sw.includes('./js/dense-scene.js') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.3.3') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
+  const shippedVersion = require('../package.json').version;
+  record('service worker cache version matches the semver and precaches the game',
+    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && sw.includes('./js/dense.js') && sw.includes('./js/dense-scene.js') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
-  record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '1.3.4'") && sw.includes('prismburst-v1.3.4'));
+  record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '" + shippedVersion + "'") && sw.includes('prismburst-v' + shippedVersion));
   record('service worker keeps Supabase network-only and skips OAuth returns', sw.includes('supabase\\.co') && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
 
   const yml = fs.readFileSync(path.join(root, '.github/workflows/pages.yml'), 'utf8');
   record('Pages workflow validates secrets and publishes config and privacy', yml.includes('check-secrets.js') && yml.includes('config.js') && yml.includes('privacy.html') && yml.includes('cloud-unit.js'));
 
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/dense.js', 'js/core.js', 'js/home.js', 'js/achievements.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'js/dense-scene.js', 'game.js'];
+  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/dense.js', 'js/core.js', 'js/home.js', 'js/achievements.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'js/dense-scene.js', 'game.js'];
   let pos = -1;
   let orderOk = true;
   for (const file of order) {
@@ -256,8 +258,8 @@ const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.
       && /revoke all on table public\.profiles from public, anon/i.test(text)
       && /grant select, insert on table public\.profiles to authenticated/i.test(text)
       && /grant update \(display_name\) on table public\.profiles to authenticated/i.test(text)
-      && /auth\.uid\(\)\s*=\s*id/.test(text)
-      && /for update[\s\S]{0,180}using \(auth\.uid\(\) = id\)[\s\S]{0,80}with check \(auth\.uid\(\) = id\)/i.test(text)
+      && /(?:\(select\s+auth\.uid\(\)\)|auth\.uid\(\))\s*=\s*id/.test(text)
+      && /for update[\s\S]{0,220}using \((?:\(select auth\.uid\(\)\)|auth\.uid\(\)) = id\)[\s\S]{0,140}with check \((?:\(select auth\.uid\(\)\)|auth\.uid\(\)) = id\)/i.test(text)
       && /char_length\(display_name\) between 3 and 20/.test(text)
       && /security invoker/i.test(text)
       && /set search_path = pg_catalog, public/i.test(text)
@@ -281,12 +283,132 @@ const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.
   record('schema.sql profiles trigger matches the migration', guardStart > 0 && profileSql.includes(migration.slice(guardStart)));
   record('the profiles migration does not change player_saves', !/\b(insert into|update|delete from|drop table|alter table)\s+public\.player_saves\b/i.test(migration));
 
+  const initplan = fs.readFileSync(path.join(root, 'supabase/migrations/003_rls_initplan.sql'), 'utf8');
+  function parsePolicies(text) {
+    const out = [];
+    const re = /create policy\s+([a-z0-9_]+)\s+on\s+(public\.[a-z0-9_]+)\s+for\s+(select|insert|update|delete)\s+to\s+([a-z0-9_]+)\s+([\s\S]*?);/gi;
+    let match;
+    while ((match = re.exec(text))) {
+      out.push([
+        match[1],
+        match[2],
+        match[3].toLowerCase(),
+        match[4].toLowerCase(),
+        match[5].replace(/\s+/g, ' ').trim().toLowerCase()
+      ]);
+    }
+    return out;
+  }
+  const initplanPolicies = parsePolicies(initplan);
+  const schemaPolicies = parsePolicies(sql);
+  const expectedPolicies = [
+    ['player_saves_select_own', 'public.player_saves', 'select', 'authenticated', 'using ((select auth.uid()) = user_id)'],
+    ['player_saves_insert_own', 'public.player_saves', 'insert', 'authenticated', 'with check ((select auth.uid()) = user_id)'],
+    ['player_saves_update_own', 'public.player_saves', 'update', 'authenticated', 'using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id)'],
+    ['player_saves_delete_own', 'public.player_saves', 'delete', 'authenticated', 'using ((select auth.uid()) = user_id)'],
+    ['profiles_select_own', 'public.profiles', 'select', 'authenticated', 'using ((select auth.uid()) = id)'],
+    ['profiles_insert_own', 'public.profiles', 'insert', 'authenticated', 'with check ((select auth.uid()) = id)'],
+    ['profiles_update_own', 'public.profiles', 'update', 'authenticated', 'using ((select auth.uid()) = id) with check ((select auth.uid()) = id)']
+  ];
+  const initplanBare = initplan.replace(/\(select\s+auth\.(?:uid|jwt|role)\(\)\)/gi, '');
+  record('initplan policies are the seven owner checks', eq(initplanPolicies, expectedPolicies));
+  record('schema.sql policies match the initplan migration', eq(schemaPolicies, initplanPolicies));
+  record('every initplan policy uses (select auth.uid())',
+    initplanPolicies.length === 7
+    && initplanPolicies.every(function (policy) { return policy[4].indexOf('(select auth.uid())') !== -1; })
+    && initplanPolicies.reduce(function (count, policy) {
+      return count + (policy[4].match(/\(select auth\.uid\(\)\)/g) || []).length;
+    }, 0) === 9);
+  record('initplan migration has no bare auth.uid()',
+    !/auth\.uid\(\)/i.test(initplanBare) && !/auth\.jwt\(\)/i.test(initplanBare) && !/auth\.role\(\)/i.test(initplanBare));
+  record('initplan migration does not disable row level security',
+    !/disable row level security/i.test(initplan)
+    && !/disable row level security/i.test(sql)
+    && !/using\s*\(\s*true\s*\)/i.test(initplan)
+    && (sql.match(/enable row level security/gi) || []).length === 2
+    && /\bbegin\s*;/i.test(initplan)
+    && /\bcommit\s*;/i.test(initplan)
+    && initplan.toLowerCase().indexOf('begin;') < initplan.toLowerCase().indexOf('create policy')
+    && initplan.toLowerCase().lastIndexOf('create policy') < initplan.toLowerCase().lastIndexOf('commit;'));
+
   const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.')).sort();
-  record('Pages and the debug APK are the only workflows', workflows.join(',') === 'android-debug.yml,pages.yml');
+  record('Pages, the debug APK, and the release workflow are the only workflows', workflows.join(',') === 'android-debug.yml,android-release.yml,pages.yml');
   record('Pages deploy still publishes only the game files', yml.includes('no tests/, scripts/') && yml.includes('cp -r index.html') && !/\btests\//.test(yml.split('cp -r')[1] || '') && !yml.includes('android-debug'));
   const apk = fs.readFileSync(path.join(root, '.github/workflows/android-debug.yml'), 'utf8');
   record('debug APK workflow validates, syncs, and uploads the debug artifact',
     apk.includes('android-actions/setup-android@v4') && apk.includes('platforms;android-36') && apk.includes('npm run validate') && apk.includes('node scripts/copy-web.js') && apk.includes('npx cap sync android') && apk.includes('assembleDebug') && apk.includes('name: prismburst-debug-apk') && apk.includes('app-debug.apk') && !/\$\{\{\s*secrets\./.test(apk) && !/KEYSTORE_/.test(apk));
+  const releaseYml = fs.readFileSync(path.join(root, '.github/workflows/android-release.yml'), 'utf8');
+  const releaseSecrets = ['KEYSTORE_BASE64', 'KEYSTORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD'];
+  record('release workflow signs on demand and proves signing on pull requests with a throwaway key',
+    releaseYml.includes('workflow_dispatch:') &&
+    /tags:\s*\n\s*- ['"]v\*['"]/.test(releaseYml) &&
+    releaseYml.includes('signed-build-smoke:') &&
+    releaseYml.includes("github.event_name == 'pull_request'") &&
+    releaseYml.includes("github.event_name == 'workflow_dispatch' || github.event_name == 'push'") &&
+    releaseYml.includes('bundleRelease') &&
+    releaseYml.includes('assembleRelease') &&
+    releaseYml.includes('VERSION_NAME: ${{ inputs.versionName }}') &&
+    releaseYml.includes('VERSION_CODE: ${{ inputs.versionCode }}') &&
+    releaseYml.split('\n').filter(line => /\$\{\{\s*inputs\./.test(line)).every(line => /^\s+VERSION_(NAME|CODE):\s+\$\{\{\s*inputs\.version(Name|Code)\s*\}\}\s*$/.test(line)) &&
+    releaseYml.includes('name: prismburst-release-aab') &&
+    releaseYml.includes('name: prismburst-release-apk') &&
+    releaseYml.includes('apksigner verify --print-certs') &&
+    (releaseYml.match(/\$ANDROID_HOME"\/build-tools\/\*\//g) || []).length === 2 &&
+    releaseYml.includes('jarsigner -verify') &&
+    releaseYml.includes('sha256sum') &&
+    releaseSecrets.every(name => releaseYml.includes(name)) &&
+    releaseYml.includes('RUNNER_TEMP') &&
+    releaseYml.includes('if: always()') &&
+    releaseYml.includes('rm -f "$RUNNER_TEMP/prismburst-upload.jks"') &&
+    releaseYml.includes('rm -f "$RUNNER_TEMP/prismburst-smoke.jks"') &&
+    releaseYml.includes('Missing GitHub Actions secret(s):') &&
+    !releaseYml.includes('echo "$KEYSTORE_BASE64"') &&
+    !releaseYml.includes('echo "$KEYSTORE_PASSWORD"') &&
+    !releaseYml.includes('echo "$KEY_ALIAS"') &&
+    !releaseYml.includes('echo "$KEY_PASSWORD"') &&
+    !/\.jks['"]?\s*$/m.test(releaseYml.split('\n').filter(line => /keystoreFile|storeFile/.test(line)).join('\n')));
+  const pkg = require('../package.json');
+  const appGradle = fs.readFileSync(path.join(root, 'android/app/build.gradle'), 'utf8');
+  const { execFileSync } = require('child_process');
+  const decodeScript = path.join(root, 'scripts/decode-upload-keystore.py');
+  const sample = Buffer.from('throwaway-keystore-bytes');
+  const sampleB64 = sample.toString('base64');
+  const decodedPath = path.join(require('os').tmpdir(), 'pb-keystore-decode-test.bin');
+  const decodeOut = execFileSync('python3', [decodeScript], {
+    env: Object.assign({}, process.env, { KEYSTORE_BASE64: sampleB64, KEYSTORE_PATH: decodedPath }),
+    encoding: 'utf8'
+  });
+  let emptyFailed = false;
+  try {
+    execFileSync('python3', [decodeScript], {
+      env: Object.assign({}, process.env, { KEYSTORE_BASE64: '   ', KEYSTORE_PATH: decodedPath }),
+      encoding: 'utf8',
+      stdio: 'pipe'
+    });
+  } catch (err) {
+    emptyFailed = true;
+  }
+  record('keystore decoder writes the bytes and does not print the secret',
+    releaseYml.includes('python3 scripts/decode-upload-keystore.py') &&
+    fs.readFileSync(decodedPath).equals(sample) &&
+    !decodeOut.includes(sampleB64) &&
+    !decodeOut.includes(sample.toString()) &&
+    emptyFailed);
+  fs.rmSync(decodedPath, { force: true });
+  record('release version, R8, and signing env come from package.json without printing secrets',
+    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 1 &&
+    appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&
+    appGradle.includes('debuggable false') &&
+    appGradle.includes('minifyEnabled true') &&
+    appGradle.includes('shrinkResources true') &&
+    appGradle.includes('proguard-rules.pro') &&
+    appGradle.includes('PRISMBURST_KEYSTORE') &&
+    appGradle.includes('v1SigningEnabled true') &&
+    appGradle.includes('v2SigningEnabled true') &&
+    appGradle.includes('Values are not printed'));
+  const variables = fs.readFileSync(path.join(root, 'android/variables.gradle'), 'utf8');
+  record('compile and target SDK meet the Play API 36 requirement and minSdk stays 24',
+    /compileSdkVersion = 36/.test(variables) && /targetSdkVersion = 36/.test(variables) && /minSdkVersion = 24/.test(variables));
   const copy = require('../scripts/copy-web');
   const banned = ['tests', 'scripts', 'supabase', 'docs', 'node_modules', '.github'];
   record('Capacitor web copy is the shipped game only',
@@ -306,6 +428,10 @@ const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.
   record('Capacitor app id and name match the debug app', cap.includes('"appId": "com.hamzaxali.prismburst"') && cap.includes('"appName": "PRISMBURST"') && cap.includes('"webDir": "www"'));
   const manifest = fs.readFileSync(path.join(root, 'android/app/src/main/AndroidManifest.xml'), 'utf8');
   record('Android manifest accepts the auth return scheme', manifest.includes('android:scheme="com.hamzaxali.prismburst"') && manifest.includes('android:host="auth"'));
+  record('release manifest blocks backup and cleartext, and WebView debugging is not forced on',
+    manifest.includes('android:allowBackup="false"') &&
+    manifest.includes('android:usesCleartextTraffic="false"') &&
+    !cap.includes('webContentsDebuggingEnabled'));
 
   const nameUi = fs.readFileSync(path.join(root, 'js/account.js'), 'utf8')
     + fs.readFileSync(path.join(root, 'js/profile.js'), 'utf8')

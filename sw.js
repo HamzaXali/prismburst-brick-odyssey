@@ -4,10 +4,10 @@
  * pushed to GitHub appears on the next launch. Paths are relative to this file,
  * so it works under a GitHub Pages sub-path (https://<user>.github.io/<repo>/).
  * Bump VERSION to force-drop old caches. */
-var VERSION = 'prismburst-v1.3.4';
+var VERSION = 'prismburst-v1.3.5';
 var ASSETS = [
   './', './index.html', './style.css', './levels.js', './game.js', './config.js', './privacy.html',
-'./js/save-plain.js', './js/core.js', './js/dense.js', './js/dense-scene.js', './js/home.js', './js/achievements.js', './js/shop.js', './js/ads.js', './js/home-ui.js', './js/menus.js', './js/save-sync.js', './js/profile.js', './js/cloud.js', './js/account.js',
+  './js/save-plain.js', './js/core.js', './js/dense.js', './js/dense-scene.js', './js/home.js', './js/achievements.js', './js/shop.js', './js/ads.js', './js/home-ui.js', './js/menus.js', './js/save-sync.js', './js/profile.js', './js/cloud.js', './js/account.js',
   './lib/phaser.min.js', './lib/supabase.min.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'
 ];

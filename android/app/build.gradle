@@ -1,5 +1,29 @@
 apply plugin: 'com.android.application'
 
+def repoPackage = new File(rootProject.projectDir.parentFile, 'package.json')
+def packageJson = new groovy.json.JsonSlurper().parse(repoPackage)
+def resolvedVersionName = (project.findProperty('versionName') ?: packageJson.version).toString()
+def resolvedVersionCode = (project.findProperty('versionCode') ?: packageJson.androidVersionCode).toString().toInteger()
+if (!resolvedVersionName || resolvedVersionCode < 1) {
+    throw new GradleException('versionName must be set and versionCode must be a positive integer')
+}
+
+def releaseStorePath = System.getenv('PRISMBURST_KEYSTORE')
+def releaseStorePassword = System.getenv('PRISMBURST_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('PRISMBURST_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('PRISMBURST_KEY_PASSWORD')
+def releaseEnvNames = [
+    PRISMBURST_KEYSTORE: releaseStorePath,
+    PRISMBURST_KEYSTORE_PASSWORD: releaseStorePassword,
+    PRISMBURST_KEY_ALIAS: releaseKeyAlias,
+    PRISMBURST_KEY_PASSWORD: releaseKeyPassword
+]
+def releaseMissing = releaseEnvNames.findAll { name, value -> value == null || value.toString().trim().isEmpty() }.keySet()
+if (!releaseMissing.isEmpty() && releaseMissing.size() < releaseEnvNames.size()) {
+    throw new GradleException('Release signing is incomplete. Missing environment variable(s): ' + releaseMissing.toList().sort().join(', ') + '. Values are not printed.')
+}
+def releaseSigningReady = releaseMissing.isEmpty()
+
 android {
     namespace = "com.hamzaxali.prismburst"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +31,8 @@ android {
         applicationId "com.hamzaxali.prismburst"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode resolvedVersionCode
+        versionName resolvedVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,11 +40,38 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    if (releaseSigningReady) {
+        signingConfigs {
+            release {
+                storeFile file(releaseStorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                v1SigningEnabled true
+                v2SigningEnabled true
+                enableV3Signing true
+            }
+        }
+    }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            debuggable false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
         }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def buildingRelease = graph.allTasks.any { task ->
+        task.name == 'bundleRelease' || task.name == 'assembleRelease' || task.name.startsWith('signRelease') || task.name.startsWith('packageRelease')
+    }
+    if (buildingRelease && !releaseSigningReady) {
+        throw new GradleException('Release signing is not configured. Set PRISMBURST_KEYSTORE, PRISMBURST_KEYSTORE_PASSWORD, PRISMBURST_KEY_ALIAS, and PRISMBURST_KEY_PASSWORD. Values are not printed.')
     }
 }
 

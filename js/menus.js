@@ -7,7 +7,7 @@
   'use strict';
   var PB = window.PB, L = window.PB_LEVELS, Save = PB.Save, Sfx = PB.Sfx;
   var W = PB.W, H = PB.H;
-  PB.VERSION = '1.3.4';
+  PB.VERSION = '1.3.5';
 
   function backButton(scene, cb) {
     return PB.button(scene, 92, 70, 140, 76, '‹ Back', cb, { size: 30, color: 0x9b6bff });

@@ -72,7 +72,7 @@ const Dense = require('../js/dense.js');
 const denseAudit = Dense.auditAll();
 console.log('Crystal Mass solvability:');
 denseAudit.rows.forEach(function (row) {
-  console.log('  L' + (row.index + 1) + ' ' + row.name + ' steel=' + row.steel + ' mouths=' + row.mouths + ' reached=' + row.reached + '/' + row.breakable + ' bot=' + (Math.round(row.pct * 1000) / 10) + '% steps=' + row.steps + ' ms=' + row.ms);
+  console.log('  L' + (row.index + 1) + ' ' + row.name + ' steel=' + row.steel + ' mouths=' + row.mouths + ' reached=' + row.reached + '/' + row.breakable + ' sim=' + (Math.round(row.pct * 1000) / 10) + '% ' + row.seconds + 's ' + row.ms + 'ms livesLost=' + row.livesLost);
 });
 denseAudit.errors.forEach(function (msg) { errors.push('Crystal Mass: ' + msg); });
 

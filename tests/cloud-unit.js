@@ -282,11 +282,83 @@ try {
   record('the profiles migration does not change player_saves', !/\b(insert into|update|delete from|drop table|alter table)\s+public\.player_saves\b/i.test(migration));
 
   const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.')).sort();
-  record('Pages and the debug APK are the only workflows', workflows.join(',') === 'android-debug.yml,pages.yml');
+  record('Pages, the debug APK, and the release workflow are the only workflows', workflows.join(',') === 'android-debug.yml,android-release.yml,pages.yml');
   record('Pages deploy still publishes only the game files', yml.includes('no tests/, scripts/') && yml.includes('cp -r index.html') && !/\btests\//.test(yml.split('cp -r')[1] || '') && !yml.includes('android-debug'));
   const apk = fs.readFileSync(path.join(root, '.github/workflows/android-debug.yml'), 'utf8');
   record('debug APK workflow validates, syncs, and uploads the debug artifact',
     apk.includes('android-actions/setup-android@v4') && apk.includes('platforms;android-36') && apk.includes('npm run validate') && apk.includes('node scripts/copy-web.js') && apk.includes('npx cap sync android') && apk.includes('assembleDebug') && apk.includes('name: prismburst-debug-apk') && apk.includes('app-debug.apk') && !/\$\{\{\s*secrets\./.test(apk) && !/KEYSTORE_/.test(apk));
+  const releaseYml = fs.readFileSync(path.join(root, '.github/workflows/android-release.yml'), 'utf8');
+  const releaseSecrets = ['KEYSTORE_BASE64', 'KEYSTORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD'];
+  record('release workflow signs on demand and proves signing on pull requests with a throwaway key',
+    releaseYml.includes('workflow_dispatch:') &&
+    /tags:\s*\n\s*- ['"]v\*['"]/.test(releaseYml) &&
+    releaseYml.includes('signed-build-smoke:') &&
+    releaseYml.includes("github.event_name == 'pull_request'") &&
+    releaseYml.includes("github.event_name == 'workflow_dispatch' || github.event_name == 'push'") &&
+    releaseYml.includes('bundleRelease') &&
+    releaseYml.includes('assembleRelease') &&
+    releaseYml.includes('VERSION_NAME: ${{ inputs.versionName }}') &&
+    releaseYml.includes('VERSION_CODE: ${{ inputs.versionCode }}') &&
+    releaseYml.split('\n').filter(line => /\$\{\{\s*inputs\./.test(line)).every(line => /^\s+VERSION_(NAME|CODE):\s+\$\{\{\s*inputs\.version(Name|Code)\s*\}\}\s*$/.test(line)) &&
+    releaseYml.includes('name: prismburst-release-aab') &&
+    releaseYml.includes('name: prismburst-release-apk') &&
+    releaseYml.includes('apksigner verify --print-certs') &&
+    (releaseYml.match(/\$ANDROID_HOME"\/build-tools\/\*\//g) || []).length === 2 &&
+    releaseYml.includes('jarsigner -verify') &&
+    releaseYml.includes('sha256sum') &&
+    releaseSecrets.every(name => releaseYml.includes(name)) &&
+    releaseYml.includes('RUNNER_TEMP') &&
+    releaseYml.includes('if: always()') &&
+    releaseYml.includes('rm -f "$RUNNER_TEMP/prismburst-upload.jks"') &&
+    releaseYml.includes('rm -f "$RUNNER_TEMP/prismburst-smoke.jks"') &&
+    releaseYml.includes('Missing GitHub Actions secret(s):') &&
+    !releaseYml.includes('echo "$KEYSTORE_BASE64"') &&
+    !releaseYml.includes('echo "$KEYSTORE_PASSWORD"') &&
+    !releaseYml.includes('echo "$KEY_ALIAS"') &&
+    !releaseYml.includes('echo "$KEY_PASSWORD"') &&
+    !/\.jks['"]?\s*$/m.test(releaseYml.split('\n').filter(line => /keystoreFile|storeFile/.test(line)).join('\n')));
+  const pkg = require('../package.json');
+  const appGradle = fs.readFileSync(path.join(root, 'android/app/build.gradle'), 'utf8');
+  const { execFileSync } = require('child_process');
+  const decodeScript = path.join(root, 'scripts/decode-upload-keystore.py');
+  const sample = Buffer.from('throwaway-keystore-bytes');
+  const sampleB64 = sample.toString('base64');
+  const decodedPath = path.join(require('os').tmpdir(), 'pb-keystore-decode-test.bin');
+  const decodeOut = execFileSync('python3', [decodeScript], {
+    env: Object.assign({}, process.env, { KEYSTORE_BASE64: sampleB64, KEYSTORE_PATH: decodedPath }),
+    encoding: 'utf8'
+  });
+  let emptyFailed = false;
+  try {
+    execFileSync('python3', [decodeScript], {
+      env: Object.assign({}, process.env, { KEYSTORE_BASE64: '   ', KEYSTORE_PATH: decodedPath }),
+      encoding: 'utf8',
+      stdio: 'pipe'
+    });
+  } catch (err) {
+    emptyFailed = true;
+  }
+  record('keystore decoder writes the bytes and does not print the secret',
+    releaseYml.includes('python3 scripts/decode-upload-keystore.py') &&
+    fs.readFileSync(decodedPath).equals(sample) &&
+    !decodeOut.includes(sampleB64) &&
+    !decodeOut.includes(sample.toString()) &&
+    emptyFailed);
+  fs.rmSync(decodedPath, { force: true });
+  record('release version, R8, and signing env come from package.json without printing secrets',
+    pkg.version === '1.3.1' && pkg.androidVersionCode === 1 &&
+    appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&
+    appGradle.includes('debuggable false') &&
+    appGradle.includes('minifyEnabled true') &&
+    appGradle.includes('shrinkResources true') &&
+    appGradle.includes('proguard-rules.pro') &&
+    appGradle.includes('PRISMBURST_KEYSTORE') &&
+    appGradle.includes('v1SigningEnabled true') &&
+    appGradle.includes('v2SigningEnabled true') &&
+    appGradle.includes('Values are not printed'));
+  const variables = fs.readFileSync(path.join(root, 'android/variables.gradle'), 'utf8');
+  record('compile and target SDK meet the Play API 36 requirement and minSdk stays 24',
+    /compileSdkVersion = 36/.test(variables) && /targetSdkVersion = 36/.test(variables) && /minSdkVersion = 24/.test(variables));
   const copy = require('../scripts/copy-web');
   const banned = ['tests', 'scripts', 'supabase', 'docs', 'node_modules', '.github'];
   record('Capacitor web copy is the shipped game only',
@@ -306,6 +378,10 @@ try {
   record('Capacitor app id and name match the debug app', cap.includes('"appId": "com.hamzaxali.prismburst"') && cap.includes('"appName": "PRISMBURST"') && cap.includes('"webDir": "www"'));
   const manifest = fs.readFileSync(path.join(root, 'android/app/src/main/AndroidManifest.xml'), 'utf8');
   record('Android manifest accepts the auth return scheme', manifest.includes('android:scheme="com.hamzaxali.prismburst"') && manifest.includes('android:host="auth"'));
+  record('release manifest blocks backup and cleartext, and WebView debugging is not forced on',
+    manifest.includes('android:allowBackup="false"') &&
+    manifest.includes('android:usesCleartextTraffic="false"') &&
+    !cap.includes('webContentsDebuggingEnabled'));
 
   const nameUi = fs.readFileSync(path.join(root, 'js/account.js'), 'utf8')
     + fs.readFileSync(path.join(root, 'js/profile.js'), 'utf8')

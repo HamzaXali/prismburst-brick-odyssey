@@ -4,11 +4,11 @@
  * No network and no DOM. Campaign worlds stay 5 x 20.
  * Progress is save.dense. Old saves omit it and load unchanged.
  *
- * The field is a cell grid (not one sprite per shard). Steel is a sparse
- * separator on later masses, with openings wide enough for the ball.
- * Early masses have no steel. Balls cap at 300; extras merge into the
- * nearest live ball instead of going past the cap. A mass is clear when
- * every breakable cell is gone. Steel never counts.
+ * The field is a cell grid (not one sprite per shard). Every mass has a
+ * steel border: solid left and right walls, and top and bottom bars with
+ * openings wide enough for the ball. The ball enters, stays inside, and
+ * chews the shards. Balls cap at 300; extras merge into the nearest live
+ * ball. A mass is clear when every breakable cell is gone. Steel never counts.
  */
 (function (root, factory) {
   var api = factory();
@@ -367,22 +367,64 @@
 
   var ERODE = 2;
   var WIDE = 12;
-  var MIN_MOUTHS = 1;
-  var SIM_STEPS = 420;
+  var FRAME = 3;
+  var GAP = 28;
+  var TOP_GAP_X = 16;
+  var BOTTOM_GAPS = [14, 66, 118];
+  var MIN_MOUTHS = 4;
+  var WORLD_W = 720;
+  var WORLD_H = 1280;
+  var PHYS_TOP = 150;
+  var PADDLE_Y = 1100;
+  var PADDLE_H = 26;
+  var PADDLE_W = 150;
+  var BALL_SPEED = 540;
+  var DROP_FALL = 340;
+  var SIM_SECONDS = 120;
+  var SIM_LIVES = 3;
+  var SPLIT_CAP = 16;
+  var DROPS = {
+    bomb: 0.06,
+    multi: 0.04,
+    pierce: 0.035,
+    wide: 0.02,
+    coin: 0.02,
+    caps: { bomb: 48, multi: 28, pierce: 24, wide: 12, coin: 8 },
+    pierceSeconds: 8,
+    wideSeconds: 14,
+    wideScale: 1.62,
+    bombRadius: 30
+  };
 
-  function accentSteel(g, i) {
-    if (i < 5) return;
-    var bands = i < 10 ? 1 : (i < 15 ? 2 : 3);
-    var gap = WIDE + 4;
-    for (var b = 0; b < bands; b++) {
-      var y = 28 + b * 48;
-      if (y < 8 || y >= ROWS - 24) continue;
-      var hole = 18 + ((i * 17 + b * 23) % (COLS - gap - 36));
-      for (var c = 8; c < COLS - 8; c++) {
-        if (c >= hole && c < hole + gap) continue;
-        g[y * COLS + c] = STEEL;
+  function borderFrame(g) {
+    var t = FRAME;
+    rect(g, 0, 0, t, ROWS, STEEL);
+    rect(g, COLS - t, 0, t, ROWS, STEEL);
+    rect(g, 0, 0, COLS, t, STEEL);
+    rect(g, 0, ROWS - t, COLS, t, STEEL);
+    rect(g, TOP_GAP_X, 0, GAP, t, 0);
+    for (var i = 0; i < BOTTOM_GAPS.length; i++) rect(g, BOTTOM_GAPS[i], ROWS - t, GAP, t, 0);
+  }
+
+  function frameOk(g) {
+    var t = FRAME;
+    var r, k, c, y, i, x0, c2, y2;
+    for (r = 0; r < ROWS; r++) {
+      for (k = 0; k < t; k++) {
+        if (g[r * COLS + k] !== STEEL) return false;
+        if (g[r * COLS + (COLS - 1 - k)] !== STEEL) return false;
       }
     }
+    for (c = TOP_GAP_X; c < TOP_GAP_X + GAP; c++) {
+      for (y = 0; y < t; y++) if (g[y * COLS + c]) return false;
+    }
+    for (i = 0; i < BOTTOM_GAPS.length; i++) {
+      x0 = BOTTOM_GAPS[i];
+      for (c2 = x0; c2 < x0 + GAP; c2++) {
+        for (y2 = ROWS - t; y2 < ROWS; y2++) if (g[y2 * COLS + c2]) return false;
+      }
+    }
+    return GAP * CELL >= BALL_R * 2 + 8;
   }
 
   function dilateSteel(g) {
@@ -481,6 +523,7 @@
         }
       }
     }
+    runs(function (c) { return c < 0 ? COLS : c; });
     runs(function (c) { return c < 0 ? COLS : (ROWS - 1) * COLS + c; });
     runs(function (r) { return r < 0 ? ROWS : r * COLS; });
     runs(function (r) { return r < 0 ? ROWS : r * COLS + COLS - 1; });
@@ -509,67 +552,359 @@
     };
   }
 
-  function nearBall(i, vis, grid, wall) {
-    var r = (i / COLS) | 0;
-    var c = i - r * COLS;
-    if (ROWS - r <= ERODE) {
-      var blocked = false;
-      for (var rr = r + 1; rr < ROWS; rr++) {
-        var below = rr * COLS + c;
-        if (wall[below] || grid[below]) { blocked = true; break; }
+  function worldX(index) { return OX + (index % COLS) * CELL + CELL / 2; }
+  function worldY(index) { return OY + ((index / COLS) | 0) * CELL + CELL / 2; }
+
+  function hitCell(grid, b, hit) {
+    hit.pen = 0;
+    hit.index = -1;
+    var c0 = Math.floor((b.x - BALL_R - OX) / CELL);
+    var c1 = Math.floor((b.x + BALL_R - OX) / CELL);
+    var r0 = Math.floor((b.y - BALL_R - OY) / CELL);
+    var r1 = Math.floor((b.y + BALL_R - OY) / CELL);
+    if (c0 < 0) c0 = 0;
+    if (r0 < 0) r0 = 0;
+    if (c1 >= COLS) c1 = COLS - 1;
+    if (r1 >= ROWS) r1 = ROWS - 1;
+    if (c1 < c0 || r1 < r0) return false;
+    for (var r = r0; r <= r1; r++) {
+      var row = r * COLS;
+      var top = OY + r * CELL;
+      for (var c = c0; c <= c1; c++) {
+        var kind = grid[row + c];
+        if (!kind) continue;
+        var left = OX + c * CELL;
+        var cx = b.x < left ? left : (b.x > left + CELL ? left + CELL : b.x);
+        var cy = b.y < top ? top : (b.y > top + CELL ? top + CELL : b.y);
+        var dx = b.x - cx;
+        var dy = b.y - cy;
+        var d2 = dx * dx + dy * dy;
+        if (d2 >= BALL_R * BALL_R) continue;
+        var pen, nx, ny;
+        if (d2 > 1e-4) {
+          var dist = Math.sqrt(d2);
+          nx = dx / dist;
+          ny = dy / dist;
+          pen = BALL_R - dist;
+        } else {
+          var ox = CELL / 2 + BALL_R - Math.abs(b.x - (left + CELL / 2));
+          var oy = CELL / 2 + BALL_R - Math.abs(b.y - (top + CELL / 2));
+          if (ox < oy) { nx = b.x < left + CELL / 2 ? -1 : 1; ny = 0; pen = ox; }
+          else { nx = 0; ny = b.y < top + CELL / 2 ? -1 : 1; pen = oy; }
+        }
+        if (pen > hit.pen) {
+          hit.pen = pen;
+          hit.nx = nx;
+          hit.ny = ny;
+          hit.kind = kind;
+          hit.index = row + c;
+        }
       }
-      if (!blocked) return true;
     }
-    for (var dy = -ERODE; dy <= ERODE; dy++) {
-      var rr2 = r + dy;
-      if (rr2 < 0 || rr2 >= ROWS) continue;
-      var row = rr2 * COLS;
-      for (var dx = -ERODE; dx <= ERODE; dx++) {
-        var cc = c + dx;
-        if (cc < 0 || cc >= COLS) continue;
-        if (vis[row + cc]) return true;
-      }
-    }
-    return false;
+    return hit.index >= 0;
   }
 
-  function simulate(g) {
-    var wall = dilateSteel(g);
-    var grid = new Uint8Array(g);
-    var vis = floodEmpty(grid, wall);
-    var total = 0;
-    for (var n = 0; n < grid.length; n++) if (grid[n] && grid[n] !== STEEL) total++;
-    var left = total;
-    var steps = 0;
-    var t0 = Date.now();
-    while (left > 0 && steps < SIM_STEPS) {
-      var waves = (steps % 6 === 5) ? 3 : 1;
-      var progressed = false;
-      for (var w = 0; w < waves && left > 0; w++) {
-        var hit = [];
-        for (var i = 0; i < grid.length; i++) {
-          if (!grid[i] || grid[i] === STEEL) continue;
-          if (nearBall(i, vis, grid, wall)) hit.push(i);
-        }
-        if (!hit.length) break;
-        progressed = true;
-        for (var h = 0; h < hit.length; h++) {
-          grid[hit[h]] = 0;
-          left--;
-        }
-        vis = floodEmpty(grid, wall);
+  function integrateBall(env, b, dt, onBreak) {
+    var speed = env.speed;
+    var n = Math.ceil((speed * dt) / 8);
+    if (n < 1) n = 1;
+    if (n > 4) n = 4;
+    var sdt = dt / n;
+    var p = env.paddle;
+    var ptop = PADDLE_Y - PADDLE_H / 2;
+    var hit = env.hit;
+    var pierce = !!env.pierce;
+    var grid = env.grid;
+    for (var s = 0; s < n; s++) {
+      if (!b.active) return false;
+      b.x += b.vx * sdt;
+      b.y += b.vy * sdt;
+      if (b.x < BALL_R) { b.x = BALL_R; b.vx = Math.abs(b.vx); }
+      else if (b.x > WORLD_W - BALL_R) { b.x = WORLD_W - BALL_R; b.vx = -Math.abs(b.vx); }
+      if (b.y < PHYS_TOP + BALL_R) { b.y = PHYS_TOP + BALL_R; b.vy = Math.abs(b.vy); }
+      if (b.vy > 0 && b.y + BALL_R >= ptop && b.y < PADDLE_Y + 8 && Math.abs(b.x - p.x) <= p.w / 2 + BALL_R) {
+        var off = (b.x - p.x) / (p.w / 2);
+        if (off < -1) off = -1;
+        else if (off > 1) off = 1;
+        var ang = off * 1.05;
+        b.vx = Math.sin(ang) * speed;
+        b.vy = -Math.cos(ang) * speed;
+        b.y = ptop - BALL_R;
       }
-      steps++;
-      if (!progressed) break;
+      if (b.y > OY - BALL_R && b.y < OY + ROWS * CELL + BALL_R && hitCell(grid, b, hit)) {
+        var steel = hit.kind === STEEL;
+        if (pierce && !steel) {
+          if (onBreak) onBreak(hit.index, hit.kind, worldX(hit.index), worldY(hit.index));
+        } else {
+          b.x += hit.nx * hit.pen;
+          b.y += hit.ny * hit.pen;
+          var dot = b.vx * hit.nx + b.vy * hit.ny;
+          if (dot < 0) {
+            b.vx -= 2 * dot * hit.nx;
+            b.vy -= 2 * dot * hit.ny;
+          }
+          var len = Math.sqrt(b.vx * b.vx + b.vy * b.vy) || 1;
+          b.vx = b.vx / len * speed;
+          b.vy = b.vy / len * speed;
+          if (Math.abs(b.vy) < speed * 0.22) b.vy = (b.vy < 0 ? -1 : 1) * speed * 0.22;
+          if (!steel && onBreak) onBreak(hit.index, hit.kind, worldX(hit.index), worldY(hit.index));
+        }
+      }
+      if (b.y > WORLD_H + 30) {
+        b.active = false;
+        return false;
+      }
     }
-    var ms = Date.now() - t0;
-    return {
-      total: total,
-      removed: total - left,
-      pct: total ? (total - left) / total : 1,
-      steps: steps,
-      ms: ms
+    return !!b.active;
+  }
+
+  function clearDisk(grid, x, y, radius, mark) {
+    var cc = Math.floor((x - OX) / CELL);
+    var rr = Math.floor((y - OY) / CELL);
+    var r2 = radius * radius;
+    var n = 0;
+    var dy, dx, r, c, i, kind;
+    for (dy = -radius; dy <= radius; dy++) {
+      r = rr + dy;
+      if (r < 0 || r >= ROWS) continue;
+      for (dx = -radius; dx <= radius; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        c = cc + dx;
+        if (c < 0 || c >= COLS) continue;
+        i = r * COLS + c;
+        kind = grid[i];
+        if (!kind || kind === STEEL || mark[i]) continue;
+        mark[i] = 1;
+        grid[i] = 0;
+        n++;
+      }
+    }
+    if (rr >= 0 && rr < ROWS) {
+      var row = rr * COLS;
+      for (c = 0; c < COLS; c++) {
+        i = row + c;
+        kind = grid[i];
+        if (!kind || kind === STEEL || mark[i]) continue;
+        mark[i] = 1;
+        grid[i] = 0;
+        n++;
+      }
+    }
+    return n;
+  }
+
+  function detonate(state) {
+    var mark = new Uint8Array(state.grid.length);
+    var balls = state.balls;
+    var n = 0;
+    for (var i = 0; i < balls.length; i++) {
+      var b = balls[i];
+      if (!b || !b.active) continue;
+      n += clearDisk(state.grid, b.x, b.y, DROPS.bombRadius, mark);
+    }
+    if (n && state.breakableLeft != null) state.breakableLeft -= n;
+    if (n && state.onClear) {
+      for (var k = 0; k < mark.length; k++) if (mark[k]) state.onClear(k);
+    }
+    settleClear(state);
+    return n;
+  }
+
+  function settleClear(state) {
+    if (state.breakableLeft > 0) return;
+    state.breakableLeft = 0;
+    state.cleared = true;
+    if (state.ended) return;
+    state.ended = true;
+    if (state.onWin) state.onWin();
+  }
+
+  function splitBalls(state) {
+    var live = [];
+    var balls = state.balls;
+    for (var i = 0; i < balls.length; i++) {
+      var b = balls[i];
+      if (b && b.active && !b.attached) live.push(b);
+    }
+    if (!live.length) return 0;
+    var target = Math.min(SPLIT_CAP, live.length * 3);
+    var guard = 0;
+    var made = 0;
+    while (activeCount(balls) < target && guard < SPLIT_CAP) {
+      var src = live[guard % live.length];
+      var ang = guard % 2 === 0 ? 0.5 : -0.5;
+      var cs = Math.cos(ang);
+      var sn = Math.sin(ang);
+      var res = addBall(balls, {
+        x: src.x,
+        y: src.y,
+        vx: src.vx * cs - src.vy * sn,
+        vy: src.vx * sn + src.vy * cs,
+        attached: false
+      }, BALL_CAP);
+      if (!res.ok || res.merged) break;
+      if (res.ball) res.ball.attached = false;
+      made++;
+      guard++;
+    }
+    return made;
+  }
+
+  function applyPower(state, kind) {
+    if (kind === 'multi') splitBalls(state);
+    else if (kind === 'pierce') state.pierceT = DROPS.pierceSeconds;
+    else if (kind === 'wide') state.wideT = DROPS.wideSeconds;
+    else if (kind === 'bomb') detonate(state);
+  }
+
+  function rollDrop(rng, budget) {
+    var roll = rng();
+    var order = ['bomb', 'multi', 'pierce', 'wide', 'coin'];
+    var acc = 0;
+    for (var i = 0; i < order.length; i++) {
+      var key = order[i];
+      acc += DROPS[key];
+      if (roll < acc && budget[key] > 0) {
+        budget[key]--;
+        return key;
+      }
+    }
+    return '';
+  }
+
+  function stepDrops(drops, paddle, dt, onCatch) {
+    for (var d = 0; d < drops.length; d++) {
+      var drop = drops[d];
+      if (!drop || !drop.active) continue;
+      drop.y += DROP_FALL * dt;
+      if (drop.y > WORLD_H + 20) drop.active = false;
+      else if (Math.abs(drop.y - PADDLE_Y) < 24 && Math.abs(drop.x - paddle.x) < paddle.w / 2 + 18) {
+        if (onCatch) onCatch(drop);
+      }
+    }
+  }
+
+  function stepMatch(state, dt) {
+    var p = state.paddle;
+    if (state.bot && state.aim) p.tx = state.aim(state);
+    if (state.bot) p.x = p.tx;
+    else p.x += (p.tx - p.x) * Math.min(1, dt * 24);
+    var half = p.w / 2;
+    if (p.x < half) p.x = half;
+    if (p.x > WORLD_W - half) p.x = WORLD_W - half;
+    if (state.ended || state.paused) return;
+    if (state.pierceT > 0) {
+      state.pierceT -= dt;
+      if (state.pierceT < 0) state.pierceT = 0;
+    }
+    if (state.wideT > 0) {
+      state.wideT -= dt;
+      if (state.wideT < 0) state.wideT = 0;
+    }
+    p.w = state.wideT > 0 ? PADDLE_W * DROPS.wideScale : (state.baseW || PADDLE_W);
+    var env = {
+      grid: state.grid,
+      paddle: p,
+      speed: state.speed,
+      pierce: state.pierceT > 0,
+      hit: state.hit
     };
+    var alive = 0;
+    var balls = state.balls;
+    for (var i = 0; i < balls.length; i++) {
+      var b = balls[i];
+      if (!b || !b.active) continue;
+      if (b.attached) {
+        b.x = p.x;
+        b.y = PADDLE_Y - PADDLE_H / 2 - BALL_R;
+        alive++;
+        continue;
+      }
+      integrateBall(env, b, dt, state.onBreak);
+      if (b.active) alive++;
+    }
+    stepDrops(state.drops, p, dt, state.onCatch);
+    if (state.started && alive === 0 && !state.ended && state.onDead) state.onDead();
+  }
+
+  function gapCenter(cell) {
+    return OX + (cell + GAP / 2) * CELL;
+  }
+
+  function foldX(land) {
+    var span = WORLD_W - 2 * BALL_R;
+    var u = (land - BALL_R) % (2 * span);
+    if (u < 0) u += 2 * span;
+    return BALL_R + (u > span ? 2 * span - u : u);
+  }
+
+  function nearestGapX(x) {
+    var best = gapCenter(BOTTOM_GAPS[0]);
+    var bestD = Math.abs(x - best);
+    for (var i = 1; i < BOTTOM_GAPS.length; i++) {
+      var gx = gapCenter(BOTTOM_GAPS[i]);
+      var d = Math.abs(x - gx);
+      if (d < bestD) { bestD = d; best = gx; }
+    }
+    return best;
+  }
+
+  function aimIntoGap(ballX, halfW, gapX) {
+    var dy = (PADDLE_Y - PADDLE_H / 2 - BALL_R) - (OY + (ROWS - FRAME) * CELL);
+    if (dy < 48) dy = 48;
+    var ang = Math.atan2(gapX - ballX, dy);
+    if (ang > 0.9) ang = 0.9;
+    if (ang < -0.9) ang = -0.9;
+    var px = ballX - (ang / 1.05) * halfW;
+    var limit = halfW * 0.92;
+    if (px < ballX - limit) px = ballX - limit;
+    if (px > ballX + limit) px = ballX + limit;
+    return px;
+  }
+
+  function aimPaddle(state) {
+    var bestT = 1e9;
+    var x = gapCenter(BOTTOM_GAPS[1]);
+    var balls = state.balls;
+    var lowest = null;
+    var mouthY = OY + (ROWS - FRAME) * CELL;
+    var halfW = (state.paddle.w || PADDLE_W) / 2;
+    var i, b, t, land, gapX;
+    for (i = 0; i < balls.length; i++) {
+      b = balls[i];
+      if (!b || !b.active || b.attached) continue;
+      if (!lowest || b.y > lowest.y) lowest = b;
+    }
+    if (lowest && lowest.y < mouthY) state.aimedServe = false;
+    if (lowest) {
+      if (lowest.y >= mouthY && lowest.vy > 40) {
+        if (!state.aimedServe) {
+          state.serveGap = ((state.serveGap | 0) + 1) % BOTTOM_GAPS.length;
+          state.aimedServe = true;
+        }
+        t = (PADDLE_Y - lowest.y) / lowest.vy;
+        if (t < 0) t = 0;
+        land = foldX(lowest.x + lowest.vx * Math.min(t, 0.5));
+        gapX = gapCenter(BOTTOM_GAPS[state.serveGap]);
+        x = aimIntoGap(land, halfW, gapX);
+        bestT = t;
+      } else if (lowest.y >= mouthY) {
+        gapX = gapCenter(BOTTOM_GAPS[(state.serveGap | 0) % BOTTOM_GAPS.length]);
+        x = aimIntoGap(lowest.x, halfW, gapX);
+        bestT = 0.25;
+      } else {
+        x = nearestGapX(lowest.x);
+        bestT = 0.75;
+      }
+    }
+    var drops = state.drops;
+    for (i = 0; i < drops.length; i++) {
+      var drop = drops[i];
+      if (!drop || !drop.active) continue;
+      t = (PADDLE_Y - drop.y) / DROP_FALL;
+      if (t >= 0 && t < bestT) { bestT = t; x = drop.x; }
+    }
+    return x;
   }
 
   function isCleared(g) {
@@ -581,17 +916,169 @@
     return !!kind && kind !== STEEL;
   }
 
+  function freshBudget() {
+    return {
+      bomb: DROPS.caps.bomb,
+      multi: DROPS.caps.multi,
+      pierce: DROPS.caps.pierce,
+      wide: DROPS.caps.wide,
+      coin: DROPS.caps.coin
+    };
+  }
+
+  function breakFor(state, index) {
+    var kind = state.grid[index];
+    if (!kind || kind === STEEL) return;
+    state.grid[index] = 0;
+    if (state.breakableLeft != null) state.breakableLeft--;
+    if (state.onShard) state.onShard(index);
+    var kindDrop = rollDrop(function () { return state.rng(); }, state.budget);
+    if (kindDrop) spawnDrop(state, kindDrop, worldX(index), worldY(index));
+    settleClear(state);
+  }
+
+  function spawnDrop(state, kind, x, y) {
+    var drops = state.drops;
+    for (var i = 0; i < drops.length; i++) {
+      var d = drops[i];
+      if (d.active) continue;
+      d.active = true;
+      d.kind = kind;
+      d.x = x;
+      d.y = y;
+      d.collected = false;
+      d.value = kind === 'coin' ? COIN_VALUE : 0;
+      return d;
+    }
+    return null;
+  }
+
+  function launchAttached(state) {
+    var balls = state.balls;
+    var any = false;
+    for (var i = 0; i < balls.length; i++) {
+      var b = balls[i];
+      if (!b.active || !b.attached) continue;
+      var ang = (state.rng() - 0.5) * 0.5;
+      b.attached = false;
+      b.vx = Math.sin(ang) * state.speed;
+      b.vy = -Math.cos(ang) * state.speed;
+      any = true;
+    }
+    if (any) state.started = true;
+    return any;
+  }
+
+  function createMatch(index) {
+    var lv = level(index);
+    var state = {
+      grid: new Uint8Array(lv.grid),
+      balls: [],
+      drops: [],
+      paddle: { x: WORLD_W / 2, tx: WORLD_W / 2, w: PADDLE_W },
+      baseW: PADDLE_W,
+      speed: BALL_SPEED,
+      seed: (index + 1) * 7919 + 13,
+      budget: freshBudget(),
+      breakableLeft: lv.breakable,
+      ended: false,
+      cleared: false,
+      started: false,
+      paused: false,
+      bot: true,
+      lives: SIM_LIVES,
+      livesLost: 0,
+      pierceT: 0,
+      wideT: 0,
+      serveGap: 0,
+      aimedServe: false,
+      hit: { pen: 0, nx: 0, ny: 0, kind: 0, index: -1 },
+      aim: aimPaddle
+    };
+    state.rng = function () {
+      state.seed = (state.seed * 1103515245 + 12345) >>> 0;
+      return state.seed / 4294967296;
+    };
+    for (var d = 0; d < 24; d++) state.drops.push({ active: false, kind: '', x: 0, y: 0, collected: false, value: 0 });
+    state.onBreak = function (cell) { breakFor(state, cell); };
+    state.onCatch = function (drop) {
+      if (!drop || !drop.active) return;
+      drop.active = false;
+      if (drop.kind === 'coin') { drop.collected = true; return; }
+      if (drop.collected) return;
+      drop.collected = true;
+      applyPower(state, drop.kind);
+    };
+    state.onDead = function () {
+      if (state.ended) return;
+      state.lives--;
+      state.livesLost++;
+      if (state.lives <= 0) {
+        state.lives = 0;
+        state.ended = true;
+        return;
+      }
+      state.started = false;
+      var res = addBall(state.balls, {
+        x: state.paddle.x,
+        y: PADDLE_Y - PADDLE_H / 2 - BALL_R,
+        vx: 0,
+        vy: 0,
+        attached: true
+      }, BALL_CAP);
+      if (res.ball) res.ball.attached = true;
+    };
+    addBall(state.balls, {
+      x: state.paddle.x,
+      y: PADDLE_Y - PADDLE_H / 2 - BALL_R,
+      vx: 0,
+      vy: 0,
+      attached: true
+    }, BALL_CAP);
+    state.balls[0].attached = true;
+    return state;
+  }
+
+  function playLevel(index) {
+    var state = createMatch(index);
+    var total = state.breakableLeft;
+    var dt = 1 / 60;
+    var maxSteps = SIM_SECONDS * 60;
+    var steps = 0;
+    var t0 = Date.now();
+    while (!state.ended && state.breakableLeft > 0 && steps < maxSteps) {
+      if (!state.started) launchAttached(state);
+      stepMatch(state, dt);
+      steps++;
+    }
+    var left = state.breakableLeft;
+    return {
+      index: index,
+      total: total,
+      left: left,
+      removed: total - left,
+      pct: total ? (total - left) / total : 1,
+      cleared: left <= 0,
+      seconds: steps / 60,
+      steps: steps,
+      ms: Date.now() - t0,
+      livesLost: state.livesLost,
+      livesLeft: state.lives
+    };
+  }
+
   function auditLevel(i) {
     var lv = level(i);
     var info = analyze(lv.grid);
-    var sim = simulate(lv.grid);
-    var early = i < 5;
+    var sim = playLevel(i);
     var ok = info.total >= 2000
       && info.reached === info.total
       && info.mouths >= MIN_MOUTHS
-      && sim.pct >= 0.95
-      && sim.steps <= SIM_STEPS
-      && (early ? info.steel === 0 : info.steel > 0)
+      && frameOk(lv.grid)
+      && info.steel > 0
+      && sim.cleared
+      && sim.seconds <= SIM_SECONDS
+      && sim.livesLost < SIM_LIVES
       && isCleared(clearedGrid(lv.grid));
     return {
       index: i,
@@ -602,7 +1089,9 @@
       mouths: info.mouths,
       pct: sim.pct,
       steps: sim.steps,
+      seconds: sim.seconds,
       ms: sim.ms,
+      livesLost: sim.livesLost,
       ok: ok
     };
   }
@@ -662,7 +1151,7 @@
     var g = new Uint8Array(COLS * ROWS);
     BUILDERS[i](g);
     band(g, (i % 3) + 1, ((i + 1) % 3) + 1);
-    accentSteel(g, i);
+    borderFrame(g);
     var breakable = 0, steel = 0;
     for (var n = 0; n < g.length; n++) {
       if (g[n] === STEEL) steel++;
@@ -838,10 +1327,11 @@
           slot.active = true;
           slot.x = ball.x; slot.y = ball.y; slot.vx = ball.vx; slot.vy = ball.vy;
           slot.merged = 1;
+          slot.attached = !!ball.attached;
           return { ok: true, merged: false, count: n + 1, ball: slot };
         }
       }
-      var spawned = { active: true, x: ball.x, y: ball.y, vx: ball.vx, vy: ball.vy, merged: 1 };
+      var spawned = { active: true, x: ball.x, y: ball.y, vx: ball.vx, vy: ball.vy, merged: 1, attached: !!ball.attached };
       list.push(spawned);
       return { ok: true, merged: false, count: n + 1, ball: spawned };
     }
@@ -874,11 +1364,27 @@
     NAMES: NAMES,
     ERODE: ERODE,
     WIDE: WIDE,
+    FRAME: FRAME,
+    GAP: GAP,
     MIN_MOUTHS: MIN_MOUTHS,
+    DROPS: DROPS,
+    PADDLE_W: PADDLE_W,
+    PADDLE_Y: PADDLE_Y,
+    PADDLE_H: PADDLE_H,
+    BALL_SPEED: BALL_SPEED,
+    SIM_SECONDS: SIM_SECONDS,
+    SIM_LIVES: SIM_LIVES,
     level: level,
     signature: signature,
     analyze: analyze,
-    simulate: simulate,
+    frameOk: frameOk,
+    playLevel: playLevel,
+    stepMatch: stepMatch,
+    integrateBall: integrateBall,
+    applyPower: applyPower,
+    rollDrop: rollDrop,
+    freshBudget: freshBudget,
+    breakShard: breakFor,
     isCleared: isCleared,
     countsForClear: countsForClear,
     auditAll: auditAll,

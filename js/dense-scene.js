@@ -20,10 +20,24 @@
     2: [255, 64, 210, 255, 255, 186, 236, 255],
     3: [168, 124, 255, 255, 226, 214, 255, 255],
     4: [255, 208, 96, 255, 255, 244, 210, 255],
-    8: [12, 18, 46, 255, 80, 236, 255, 255]
+    8: [96, 122, 150, 255, 214, 240, 255, 255]
   };
 
-  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  function gem(ctx, cx, cy, rx, ry, fill, edge) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - ry);
+    ctx.lineTo(cx + rx, cy);
+    ctx.lineTo(cx, cy + ry);
+    ctx.lineTo(cx - rx, cy);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  var POWER_LABEL = { multi: 'MULTI BALL', pierce: 'PIERCE', wide: 'WIDE PADDLE', bomb: 'PRISM BURST' };
 
   function paintCell(data, c, r, kind) {
     var colors = KIND[kind];
@@ -62,7 +76,7 @@
         var row = (i / cols) | 0;
         var x = 110 + col * 168;
         var y = 280 + row * 176;
-        var open = i < save.unlocked;
+      var open = (PB.levelsOpen && PB.levelsOpen()) || i < save.unlocked;
         var rec = save.levels[String(i)];
         (function (index, unlocked) {
           var b = PB.button(self, x, y, 148, 112, String(index + 1), function () {
@@ -101,13 +115,18 @@
       this.livesLost = 0;
       this.combo = 0;
       this.comboT = 0;
-      this.speed = 540;
+      this.speed = Dense.BALL_SPEED;
       this.started = false;
       this.ended = false;
+      this.cleared = false;
       this.paused = false;
       this.over = false;
+      this.bot = false;
+      this.baseW = PADDLE_W;
+      this.pierceT = 0;
+      this.wideT = 0;
       this.seed = (this.levelIdx + 1) * 7919 + 13;
-      this.budget = { coin: 8, plus: 16, triple: 5 };
+      this.budget = Dense.freshBudget();
       this.dropSeq = 0;
       this.sfxAt = 0;
       this.frameMs = [];
@@ -118,6 +137,12 @@
       this.buildActors();
       this.buildHud();
       this.spawnAttached();
+      this.onBreak = function (index) { Dense.breakShard(self, index); };
+      this.onShard = function (index) { self.noteShard(index); };
+      this.onClear = function (index) { self.noteShard(index); };
+      this.onWin = function () { self.win(); };
+      this.onDead = function () { self.loseLife(); };
+      this.onCatch = function (drop) { self.catchDrop(drop); };
       this.input.on('pointerdown', function (p) {
         if (self.over || self.paused) return;
         self.paddle.tx = p.x;
@@ -192,24 +217,44 @@
       this.hit = { pen: 0, nx: 0, ny: 0, kind: 0, index: -1 };
     }
     makeDropTextures() {
-      if (this.textures.exists('dense_plus')) return;
-      var plus = document.createElement('canvas');
-      plus.width = 32; plus.height = 32;
-      var pctx = plus.getContext('2d');
-      pctx.fillStyle = '#22e8ff';
-      pctx.beginPath(); pctx.arc(16, 16, 14, 0, Math.PI * 2); pctx.fill();
-      pctx.fillStyle = '#ffffff';
-      pctx.fillRect(7, 14, 18, 4);
-      pctx.fillRect(14, 7, 4, 18);
-      this.textures.addCanvas('dense_plus', plus);
-      var triple = document.createElement('canvas');
-      triple.width = 40; triple.height = 32;
-      var tctx = triple.getContext('2d');
-      tctx.fillStyle = '#ff3df0';
-      tctx.beginPath(); tctx.arc(10, 16, 8, 0, Math.PI * 2); tctx.fill();
-      tctx.beginPath(); tctx.arc(22, 10, 8, 0, Math.PI * 2); tctx.fill();
-      tctx.beginPath(); tctx.arc(30, 20, 8, 0, Math.PI * 2); tctx.fill();
-      this.textures.addCanvas('dense_x3', triple);
+      if (this.textures.exists('dense_bomb')) return;
+      function canvas(w, h, draw) {
+        var c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        draw(c.getContext('2d'));
+        return c;
+      }
+      this.textures.addCanvas('dense_multi', canvas(40, 36, function (ctx) {
+        gem(ctx, 12, 20, 8, 12, '#22e8ff', '#e8fdff');
+        gem(ctx, 24, 12, 7, 10, '#ff3df0', '#ffe0f8');
+        gem(ctx, 30, 24, 7, 10, '#ffd166', '#fff6d8');
+      }));
+      this.textures.addCanvas('dense_pierce', canvas(36, 36, function (ctx) {
+        gem(ctx, 18, 18, 8, 16, '#ff7a1a', '#fff1d0');
+        gem(ctx, 18, 16, 3, 8, '#fff6c0', '#ffffff');
+      }));
+      this.textures.addCanvas('dense_wide', canvas(44, 28, function (ctx) {
+        ctx.fillStyle = '#3dffa0';
+        ctx.beginPath();
+        ctx.moveTo(6, 14);
+        ctx.lineTo(14, 6);
+        ctx.lineTo(30, 6);
+        ctx.lineTo(38, 14);
+        ctx.lineTo(30, 22);
+        ctx.lineTo(14, 22);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#e8fff4';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }));
+      this.textures.addCanvas('dense_bomb', canvas(36, 36, function (ctx) {
+        gem(ctx, 18, 20, 12, 14, '#b06bff', '#ffe7ff');
+        gem(ctx, 18, 18, 5, 7, '#ff3df0', '#ffffff');
+        ctx.fillStyle = '#ffd166';
+        ctx.fillRect(16, 2, 4, 6);
+      }));
     }
     buildHud() {
       var self = this;
@@ -280,13 +325,6 @@
       }
       return null;
     }
-    maybeDrop(x, y) {
-      if (this.budget.coin + this.budget.plus + this.budget.triple <= 0) return;
-      var roll = this.rng();
-      if (roll < 0.012 && this.budget.triple > 0) { this.budget.triple--; this.spawnDrop('triple', x, y); }
-      else if (roll < 0.05 && this.budget.plus > 0) { this.budget.plus--; this.spawnDrop('plus', x, y); }
-      else if (roll < 0.09 && this.budget.coin > 0) { this.budget.coin--; this.spawnDrop('coin', x, y); }
-    }
     catchDrop(drop) {
       if (!drop || !drop.active) return false;
       drop.active = false;
@@ -300,163 +338,32 @@
       }
       if (drop.collected) return false;
       drop.collected = true;
-      if (drop.kind === 'plus') this.spawnFree(drop.x, drop.y, 1);
-      else if (drop.kind === 'triple') this.multiplyBalls();
+      Dense.applyPower(this, drop.kind);
+      this.flashPower(POWER_LABEL[drop.kind] || 'POWER');
       Sfx.play('power');
       return true;
     }
-    spawnFree(x, y, n) {
-      for (var i = 0; i < n; i++) {
-        var a = (this.rng() - 0.5) * 1.2;
-        Dense.addBall(this.balls, {
-          x: x,
-          y: y,
-          vx: Math.sin(a) * this.speed,
-          vy: -Math.abs(Math.cos(a)) * this.speed
-        }, BALL_CAP);
-      }
-    }
-    multiplyBalls() {
-      var live = [];
-      for (var i = 0; i < this.balls.length; i++) {
-        var b = this.balls[i];
-        if (b.active && !b.attached) live.push(b);
-      }
-      if (!live.length) return;
-      var target = Math.min(BALL_CAP, live.length * 3);
-      var guard = 0;
-      while (Dense.activeCount(this.balls) < target && guard < BALL_CAP) {
-        var src = live[guard % live.length];
-        var a = (guard + 1) * 0.85;
-        var res = Dense.addBall(this.balls, {
-          x: src.x,
-          y: src.y,
-          vx: Math.sin(a) * this.speed,
-          vy: Math.cos(a) * this.speed
-        }, BALL_CAP);
-        if (!res.ok || res.merged) break;
-        guard++;
-      }
-    }
-    breakCell(index, x, y) {
-      if (this.ended) return;
-      var kind = this.grid[index];
-      if (!Dense.countsForClear(kind)) return;
-      this.grid[index] = 0;
+    noteShard(index) {
       var c = index % COLS;
       var r = (index / COLS) | 0;
       paintCell(this.pixels, c, r, 0);
       this.fieldDirty = true;
-      this.breakableLeft--;
       this.combo = this.comboT < 1.2 ? this.combo + 1 : 1;
       this.comboT = 0;
       this.score += 10 + Math.min(20, this.combo);
-      this.maybeDrop(x, y);
-      if (this.breakableLeft <= 0) this.win();
     }
-    hitCell(b) {
-      var h = this.hit;
-      h.pen = 0; h.index = -1;
-      var c0 = Math.floor((b.x - BALL_R - OX) / CELL);
-      var c1 = Math.floor((b.x + BALL_R - OX) / CELL);
-      var r0 = Math.floor((b.y - BALL_R - OY) / CELL);
-      var r1 = Math.floor((b.y + BALL_R - OY) / CELL);
-      if (c0 < 0) c0 = 0; if (r0 < 0) r0 = 0;
-      if (c1 >= COLS) c1 = COLS - 1; if (r1 >= ROWS) r1 = ROWS - 1;
-      if (c1 < c0 || r1 < r0) return false;
-      for (var r = r0; r <= r1; r++) {
-        var row = r * COLS;
-        var top = OY + r * CELL;
-        for (var c = c0; c <= c1; c++) {
-          var kind = this.grid[row + c];
-          if (!kind) continue;
-          var left = OX + c * CELL;
-          var cx = b.x < left ? left : (b.x > left + CELL ? left + CELL : b.x);
-          var cy = b.y < top ? top : (b.y > top + CELL ? top + CELL : b.y);
-          var dx = b.x - cx, dy = b.y - cy, d2 = dx * dx + dy * dy;
-          if (d2 >= BALL_R * BALL_R) continue;
-          var pen, nx, ny;
-          if (d2 > 1e-4) {
-            var dist = Math.sqrt(d2);
-            nx = dx / dist; ny = dy / dist; pen = BALL_R - dist;
-          } else {
-            var ox = CELL / 2 + BALL_R - Math.abs(b.x - (left + CELL / 2));
-            var oy = CELL / 2 + BALL_R - Math.abs(b.y - (top + CELL / 2));
-            if (ox < oy) { nx = b.x < left + CELL / 2 ? -1 : 1; ny = 0; pen = ox; }
-            else { nx = 0; ny = b.y < top + CELL / 2 ? -1 : 1; pen = oy; }
-          }
-          if (pen > h.pen) { h.pen = pen; h.nx = nx; h.ny = ny; h.kind = kind; h.index = row + c; }
-        }
-      }
-      return h.index >= 0;
-    }
-    stepBall(b, dt) {
-      var n = Math.ceil((this.speed * dt) / 8);
-      if (n < 1) n = 1;
-      if (n > 4) n = 4;
-      var sdt = dt / n;
-      var p = this.paddle;
-      var ptop = PADDLE_Y - PADDLE_H / 2;
-      for (var s = 0; s < n; s++) {
-        b.x += b.vx * sdt;
-        b.y += b.vy * sdt;
-        if (b.x < BALL_R) { b.x = BALL_R; b.vx = Math.abs(b.vx); }
-        else if (b.x > W - BALL_R) { b.x = W - BALL_R; b.vx = -Math.abs(b.vx); }
-        if (b.y < TOP + BALL_R) { b.y = TOP + BALL_R; b.vy = Math.abs(b.vy); }
-        if (b.vy > 0 && b.y + BALL_R >= ptop && b.y < PADDLE_Y + 8 && Math.abs(b.x - p.x) <= p.w / 2 + BALL_R) {
-          var off = clamp((b.x - p.x) / (p.w / 2), -1, 1);
-          var a = off * 1.05;
-          b.vx = Math.sin(a) * this.speed;
-          b.vy = -Math.cos(a) * this.speed;
-          b.y = ptop - BALL_R;
-        }
-        if (b.y > OY - BALL_R && b.y < OY + ROWS * CELL + BALL_R && this.hitCell(b)) {
-          var h = this.hit;
-          b.x += h.nx * h.pen;
-          b.y += h.ny * h.pen;
-          var dot = b.vx * h.nx + b.vy * h.ny;
-          if (dot < 0) { b.vx -= 2 * dot * h.nx; b.vy -= 2 * dot * h.ny; }
-          var len = Math.sqrt(b.vx * b.vx + b.vy * b.vy) || 1;
-          b.vx = b.vx / len * this.speed;
-          b.vy = b.vy / len * this.speed;
-          if (Math.abs(b.vy) < this.speed * 0.22) b.vy = (b.vy < 0 ? -1 : 1) * this.speed * 0.22;
-          if (h.kind === STEEL) {
-            /* frame bricks stay */
-          } else {
-            this.breakCell(h.index, OX + (h.index % COLS) * CELL + CELL / 2, OY + ((h.index / COLS) | 0) * CELL + CELL / 2);
-          }
-        }
-        if (b.y > H + 30) { b.active = false; return; }
-      }
+    flashPower(name) {
+      if (this.powerLabel) this.powerLabel.destroy();
+      this.powerLabel = PB.text(this, W / 2, 220, name, 28, '#ffe7a3', { glow: '#ff3df0' }).setDepth(45);
+      this.powerLabel.name = 'densePower';
     }
     simulate(dt) {
-      var p = this.paddle;
-      p.x += (p.tx - p.x) * Math.min(1, dt * 24);
-      p.x = clamp(p.x, p.w / 2, W - p.w / 2);
-      this.paddleSpr.x = p.x;
-      if (this.ended || this.paused || this.over) return;
+      Dense.stepMatch(this, dt);
       this.comboT += dt;
-      var alive = 0;
-      for (var i = 0; i < this.balls.length; i++) {
-        var b = this.balls[i];
-        if (!b.active) continue;
-        if (b.attached) {
-          b.x = p.x;
-          b.y = PADDLE_Y - PADDLE_H / 2 - BALL_R;
-          alive++;
-          continue;
-        }
-        this.stepBall(b, dt);
-        if (b.active) alive++;
-      }
-      for (var d = 0; d < this.drops.length; d++) {
-        var drop = this.drops[d];
-        if (!drop.active) continue;
-        drop.y += 340 * dt;
-        if (drop.y > H + 20) drop.active = false;
-        else if (Math.abs(drop.y - PADDLE_Y) < 24 && Math.abs(drop.x - p.x) < p.w / 2 + 18) this.catchDrop(drop);
-      }
-      if (this.started && alive === 0 && !this.ended) this.loseLife();
+      var p = this.paddle;
+      this.paddleSpr.x = p.x;
+      var sx = p.w / PADDLE_W;
+      if (this.paddleSpr.scaleX !== sx) this.paddleSpr.setScale(sx, 1);
     }
     loseLife() {
       if (this.ended) return;
@@ -474,7 +381,7 @@
       if (this.hint) this.hint.setVisible(true);
     }
     win() {
-      if (this.ended) return;
+      if (this.over) return;
       this.ended = true;
       this.over = true;
       var stars = 1;
@@ -568,6 +475,11 @@
         }
         spr.setPosition(b.x, b.y);
         if (!spr.visible) spr.setVisible(true);
+        var tint = this.pierceT > 0 ? 0xffb15a : 0xffffff;
+        if (spr._tint !== tint) {
+          spr._tint = tint;
+          spr.setTint(tint);
+        }
         var merged = b.merged | 0;
         if (spr._m !== merged) {
           spr._m = merged;
@@ -582,8 +494,17 @@
           if (icon.visible) icon.setVisible(false);
           continue;
         }
-        var key = drop.kind === 'plus' ? 'dense_plus' : (drop.kind === 'triple' ? 'dense_x3' : 'coin');
+        var key = drop.kind === 'multi' ? 'dense_multi'
+          : drop.kind === 'pierce' ? 'dense_pierce'
+          : drop.kind === 'wide' ? 'dense_wide'
+          : drop.kind === 'bomb' ? 'dense_bomb'
+          : 'coin';
         if (icon.texture.key !== key) icon.setTexture(key);
+        var size = drop.kind === 'coin' ? 26 : 36;
+        if (icon._sz !== size) {
+          icon._sz = size;
+          icon.setDisplaySize(size, size);
+        }
         icon.setPosition(drop.x, drop.y);
         if (!icon.visible) icon.setVisible(true);
       }

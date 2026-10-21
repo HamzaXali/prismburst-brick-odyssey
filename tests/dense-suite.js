@@ -99,6 +99,26 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       hud.title === 'Quartz Spines' && hud.score === '\u2605 0' && hud.lives === 3 && hud.text === '\u00d73' && hud.filled === 3 && !hud.countVisible && hud.visible && hud.y < 160 && hud.left >= 0 && hud.right <= 720 && hud.hearts.every(h => h.visible && h.w >= 36 && h.h >= 32) && hud.breakable >= 2000, hud);
     await page.screenshot({ path: SHOTS + '/dense-spines.png' });
     await page.screenshot({ path: SHOTS + '/crystal-mass-1.png' });
+    const swarm = await page.evaluate(() => __PB.denseSwarm(300));
+    record('a swarm fills the ball cap and does not pass it', swarm === 300, swarm);
+    await sleep(700);
+    await page.evaluate(() => {
+      const g = PB.currentDense;
+      g.frameMs = [];
+      g.workMs = [];
+    });
+    await page.waitForFunction(() => {
+      const p = __PB.densePerf();
+      return p && p.samples >= 40 && p.balls >= 200;
+    }, null, { timeout: 8000 });
+    const perf = await page.evaluate(() => __PB.densePerf());
+    await page.screenshot({ path: SHOTS + '/dense-swarm.png' });
+    record('a 300-ball swarm stays inside a 60fps CPU budget on Pixel 5 emulation',
+      perf && perf.samples >= 40 && perf.balls >= 200 && perf.workAvg <= 8 && perf.avg <= 50 && perf.fps >= 24,
+      perf);
+    await page.evaluate(() => __PB.startDense(0));
+    await page.waitForFunction(() => __PB.dense() && __PB.dense().name === 'Quartz Spines' && __PB.dense().lives === 3, null, { timeout: 8000 });
+    await sleep(200);
     await page.evaluate(() => { const g = PB.currentDense; g.loseLife(); g.updateHud(); });
     await sleep(200);
     const lostHeart = await page.evaluate(() => {
@@ -144,18 +164,72 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const coin = await page.evaluate(() => __PB.denseCoin());
     record('the paddle collects a coin drop once', coin && coin.ok && coin.after === coin.before + 2 && coin.again === coin.after && coin.after >= 0, coin);
 
-    const swarm = await page.evaluate(() => __PB.denseSwarm(300));
-    record('a swarm fills the ball cap and does not pass it', swarm === 300, swarm);
-    await sleep(200);
-    await page.screenshot({ path: SHOTS + '/dense-swarm.png' });
-    await page.waitForFunction(() => {
-      const p = __PB.densePerf();
-      return p && p.samples >= 30 && p.balls >= 200;
-    }, null, { timeout: 8000 });
-    const perf = await page.evaluate(() => __PB.densePerf());
-    record('a 300-ball swarm stays inside a 60fps CPU budget on Pixel 5 emulation',
-      perf && perf.samples >= 30 && perf.balls >= 200 && perf.workAvg <= 8 && perf.avg <= 50 && perf.fps >= 24,
-      perf);
+    await page.evaluate(() => {
+      const g = PB.currentDense;
+      g.paddle.tx = 360;
+      g.launch();
+      PB.Dense.applyPower(g, 'pierce');
+      g.spawnDrop('bomb', 300, 400);
+      g.spawnDrop('multi', 440, 500);
+      g.spawnDrop('wide', 230, 600);
+      g.flashPower('PIERCE');
+    });
+    await sleep(400);
+    const power = await page.evaluate(() => {
+      const g = PB.currentDense;
+      g.paused = true;
+      g.flashPower('PIERCE');
+      return {
+        pierce: g.pierceT > 0,
+        bomb: g.drops.some(d => d.active && d.kind === 'bomb'),
+        wide: g.drops.some(d => d.active && d.kind === 'wide'),
+        label: g.powerLabel ? g.powerLabel.text : ''
+      };
+    });
+    await page.screenshot({ path: SHOTS + '/crystal-mass-power.png' });
+    record('a piercing ball and prism power gems are on screen', power.pierce && power.bomb && power.wide && power.label === 'PIERCE', power);
+
+    const beforeSave = await page.evaluate(() => localStorage.getItem('prismburst.save.v1'));
+    await page.evaluate(() => {
+      PB.game.scene.getScenes(true).forEach(s => PB.game.scene.stop(s.scene.key));
+      PB.BUILD.debugUnlock = false;
+      PB.BUILD.levelsOpen = false;
+      PB.game.scene.start('Settings', { from: 'Menu' });
+    });
+    await sleep(450);
+    const missing = await findUI('Settings', 'toggle_unlock');
+    record('the shipped settings screen has no unlock toggle', !missing && (await page.evaluate(() => PB.levelsOpen() === false)));
+
+    await page.evaluate(() => {
+      PB.game.scene.stop('Settings');
+      PB.BUILD.debugUnlock = true;
+      PB.BUILD.levelsOpen = false;
+      PB.game.scene.start('Settings', { from: 'Menu' });
+    });
+    await sleep(450);
+    const off = await findUI('Settings', 'toggle_unlock');
+    record('the debug settings screen offers unlock all levels', off && off.text.indexOf('OFF') >= 0, off);
+    await tapUI('Settings', 'toggle_unlock');
+    await sleep(250);
+    const on = await findUI('Settings', 'toggle_unlock');
+    const saved = await page.evaluate(() => ({
+      open: PB.levelsOpen(),
+      raw: localStorage.getItem('prismburst.save.v1')
+    }));
+    record('unlock all levels flips in memory and does not write the save',
+      saved.open === true && saved.raw === beforeSave && on && on.text.indexOf('ON') >= 0, { on, open: saved.open, same: saved.raw === beforeSave });
+    await page.screenshot({ path: SHOTS + '/debug-unlock-toggle.png' });
+
+    await page.evaluate(() => {
+      PB.game.scene.stop('Settings');
+      PB.game.scene.start('DenseSelect');
+    });
+    await page.waitForFunction(() => __PB.scenes().includes('DenseSelect'), null, { timeout: 8000 });
+    await sleep(300);
+    const crown = await findUI('DenseSelect', 'dense-19');
+    const world = await page.evaluate(() => PB.Save.worldUnlocked(4) && PB.Save.isUnlocked(4, 19));
+    record('the debug unlock opens every Crystal Mass level and the campaign', crown && !crown.disabled && world === true, { crown, world });
+
     record('dense scene produced no page errors', errors.length === 0, errors);
   } catch (err) {
     record('dense playwright suite ran', false, err && err.stack ? err.stack : String(err));

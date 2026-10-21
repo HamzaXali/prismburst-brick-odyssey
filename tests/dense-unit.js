@@ -43,8 +43,8 @@ try {
     const info = Dense.analyze(lv.grid);
     if (!lv || lv.grid.length !== Dense.COLS * Dense.ROWS) thin += ' bad grid ' + i;
     if (lv.breakable < 2000) thin += ' ' + lv.name + ' breakable ' + lv.breakable;
-    if (i < 5 && lv.steel !== 0) thin += ' ' + lv.name + ' early steel ' + lv.steel;
-    if (i >= 5 && lv.steel < 1) thin += ' ' + lv.name + ' missing steel';
+    if (lv.steel < 1) thin += ' ' + lv.name + ' missing steel';
+    if (!Dense.frameOk(lv.grid)) thin += ' ' + lv.name + ' frame';
     if (info.reached !== info.total) thin += ' ' + lv.name + ' reached ' + info.reached + '/' + info.total;
     if (info.mouths < Dense.MIN_MOUTHS) thin += ' ' + lv.name + ' mouths ' + info.mouths;
     if (!Dense.isCleared(clearedCopy(lv.grid))) thin += ' ' + lv.name + ' steel blocks clear';
@@ -56,7 +56,7 @@ try {
     else sigs.set(lv.signature, lv.name);
     if (lv.name.indexOf('Dense') >= 0) thin += ' copied name ' + lv.name;
   }
-  record('Crystal Mass has 20 distinct solvable levels with wide entrances',
+  record('Crystal Mass has 20 distinct steel-framed levels the physics sim clears',
     Dense.COUNT === 20 && sigs.size === 20 && names.size === 20 && L.worldCount() === 5 && L.LEVELS_PER_WORLD === 20 && audit.ok && !thin,
     thin || audit.errors.join('; '));
   record('the campaign track is still five worlds of twenty', L.worldCount() === 5 && L.LEVELS_PER_WORLD === 20);
@@ -122,6 +122,64 @@ try {
   const uploaded = sync.toCloudData(kept.save, '2026-10-02T00:00:00.000Z');
   record('an unknown dense field is kept',
     kept.ok === true && kept.save.dense.extra.flag === true && kept.save.dense.levels['0'].badge === 'mass' && kept.save.dense.levels['0'].stars === 3 && uploaded.dense.extra.flag === true && uploaded.dense.levels['0'].badge === 'mass');
+
+  const rates = Dense.DROPS;
+  record('power-up drops are tuned and capped',
+    rates.bomb === 0.06 && rates.multi === 0.04 && rates.pierce === 0.035 && rates.wide === 0.02 && rates.coin === 0.02
+    && rates.caps.bomb === 48 && rates.caps.multi === 28 && rates.caps.pierce === 24 && rates.caps.wide === 12 && rates.caps.coin === 8
+    && rates.pierceSeconds === 8 && rates.wideSeconds === 14 && rates.wideScale === 1.62 && rates.bombRadius === 30
+    && Dense.SIM_LIVES === 3 && Dense.SIM_SECONDS === 120);
+
+  function fly(kind) {
+    const grid = new Uint8Array(Dense.COLS * Dense.ROWS);
+    const index = 50 * Dense.COLS + 50;
+    grid[index] = kind;
+    const ball = {
+      active: true,
+      x: Dense.OX + 50 * Dense.CELL + Dense.CELL / 2,
+      y: Dense.OY + 50 * Dense.CELL + Dense.CELL / 2 + 30,
+      vx: 0,
+      vy: -540,
+      attached: false
+    };
+    const env = {
+      grid: grid,
+      paddle: { x: 360, w: Dense.PADDLE_W },
+      speed: 540,
+      pierce: true,
+      hit: { pen: 0, nx: 0, ny: 0, kind: 0, index: -1 }
+    };
+    let calls = 0;
+    for (let step = 0; step < 12; step++) {
+      Dense.integrateBall(env, ball, 1 / 60, function (hitIndex) {
+        calls++;
+        if (grid[hitIndex] !== Dense.STEEL) grid[hitIndex] = 0;
+      });
+    }
+    return { calls: calls, kind: grid[index], vy: ball.vy };
+  }
+  const steelFly = fly(Dense.STEEL);
+  const shardFly = fly(1);
+  record('a piercing ball breaks a shard and still bounces off steel',
+    steelFly.calls === 0 && steelFly.kind === Dense.STEEL && steelFly.vy > 0 && shardFly.calls >= 1 && shardFly.kind === 0 && shardFly.vy < 0,
+    { steelFly, shardFly });
+
+  const bombGrid = new Uint8Array(Dense.COLS * Dense.ROWS);
+  const bx = 80;
+  const by = 90;
+  bombGrid[by * Dense.COLS + bx] = 1;
+  bombGrid[by * Dense.COLS + bx + 1] = Dense.STEEL;
+  const bomb = {
+    grid: bombGrid,
+    balls: [{ active: true, x: Dense.OX + bx * Dense.CELL + 2, y: Dense.OY + by * Dense.CELL + 2, vx: 0, vy: 0 }],
+    breakableLeft: 1,
+    ended: false,
+    cleared: false,
+    onWin: function () { bomb.won = true; }
+  };
+  Dense.applyPower(bomb, 'bomb');
+  record('a bomb clears shards around the ball and leaves steel standing',
+    bombGrid[by * Dense.COLS + bx] === 0 && bombGrid[by * Dense.COLS + bx + 1] === Dense.STEEL && bomb.cleared === true && bomb.won === true);
 } catch (err) {
   record('dense unit suite ran', false, err && err.stack ? err.stack : String(err));
 }

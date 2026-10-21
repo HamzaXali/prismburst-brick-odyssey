@@ -210,9 +210,17 @@
       toggle(top + 150, 'sound', 'Sound');
       toggle(top + 280, 'vibration', 'Vibration');
       toggle(top + 410, 'shake', 'Screen shake');
-      PB.text(this, W / 2, top + 490, navigator.vibrate ? 'Vibration uses your phone\'s motor when supported.' : 'Vibration is not supported by this browser.', 20, '#8a90c0', { strokeThickness: 0, wrap: 540 });
+      var debugUnlock = !this.overlay && PB.BUILD && PB.BUILD.debugUnlock === true;
+      if (debugUnlock) {
+        var unlock = PB.button(self, W / 2, top + 540, 540, 100, 'Unlock all levels: ' + (PB.BUILD.levelsOpen === true ? 'ON' : 'OFF'), function () {
+          PB.BUILD.levelsOpen = PB.BUILD.levelsOpen !== true;
+          unlock.setLabel('Unlock all levels: ' + (PB.BUILD.levelsOpen === true ? 'ON' : 'OFF'));
+        }, { color: PB.BUILD.levelsOpen === true ? 0xffd166 : 0x6a6f9a, size: 32 });
+        unlock.name = 'toggle_unlock';
+      }
       if (!this.overlay) {
-        PB.button(this, W / 2, top + 620, 540, 96, 'Reset progress', function () { self.confirmReset(); }, { color: 0xff2e63, size: 32 });
+        PB.text(this, W / 2, top + (debugUnlock ? 660 : 490), navigator.vibrate ? 'Vibration uses your phone\'s motor when supported.' : 'Vibration is not supported by this browser.', 20, '#8a90c0', { strokeThickness: 0, wrap: 540 });
+        PB.button(this, W / 2, top + (debugUnlock ? 780 : 620), 540, 96, 'Reset progress', function () { self.confirmReset(); }, { color: 0xff2e63, size: 32 });
         PB.text(this, W / 2, H - 170, 'PRISMBURST — BRICK ODYSSEY v' + PB.VERSION, 22, '#9fa8e0', { strokeThickness: 0 });
         PB.text(this, W / 2, H - 130, 'No ads and no tracking. Progress stays on this device. Cloud save is optional.', 18, '#6a70a8', { strokeThickness: 0, wrap: 600 });
       } else {

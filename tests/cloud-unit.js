@@ -346,7 +346,7 @@ try {
     emptyFailed);
   fs.rmSync(decodedPath, { force: true });
   record('release version, R8, and signing env come from package.json without printing secrets',
-    pkg.version === '1.3.1' && pkg.androidVersionCode === 1 &&
+    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 1 &&
     appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&
     appGradle.includes('debuggable false') &&
     appGradle.includes('minifyEnabled true') &&

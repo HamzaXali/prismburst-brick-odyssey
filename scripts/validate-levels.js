@@ -6,7 +6,7 @@
 'use strict';
 const L = require('../levels.js');
 const VALID = new Set(['.', ...Object.keys(L.BRICK_INFO)]);
-const errors = [], seen = new Map();
+const errors = [], seen = new Map(), shapes = new Map();
 let total = 0, counts = { clear: 0, score: 0, time: 0, targets: 0 }, patterns = new Set();
 
 function reachable(grid) { // BFS from the open row below the formation (4-neighbour)
@@ -61,8 +61,12 @@ for (let w = 0; w < L.worldCount(); w++) {
     if (lv.star3 > minScore * 1.6) err('3-star score unrealistically high');
     const key = JSON.stringify([g, o.type]);
     if (seen.has(key)) err(`identical to ${seen.get(key)}`); else seen.set(key, id);
+    const shape = L.shapeSignature(g);
+    if (shapes.has(shape)) err(`near-duplicate silhouette of ${shapes.get(shape)} (shift or mirror)`);
+    else shapes.set(shape, id);
   }
 }
+if (L.worldCount() !== 5 || L.LEVELS_PER_WORLD !== 20) errors.push(`expected 5 worlds x 20 levels, got ${L.worldCount()} x ${L.LEVELS_PER_WORLD}`);
 console.log(`Checked ${total} levels in ${L.worldCount()} worlds.`);
 console.log(`Objectives: ${JSON.stringify(counts)}; layout patterns used: ${patterns.size}`);
 if (errors.length) { console.error(`FAILED (${errors.length} problems):\n  ` + errors.join('\n  ')); process.exit(1); }

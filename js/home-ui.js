@@ -116,7 +116,12 @@
 
     var barY = 1168;
     var items = [
-      ['Shop', function () { comingSoon(scene, 'Shop'); }],
+      ['Shop', function () {
+        Home.mode = { type: 'one', items: ['shop'], index: 0 };
+        if (scene.scene.isActive('HomePop')) scene.scene.stop('HomePop');
+        scene.scene.launch('HomePop');
+        scene.scene.bringToTop('HomePop');
+      }],
       ['Achievements', function () { comingSoon(scene, 'Achievements'); }],
       ['Modes', function () { comingSoon(scene, 'Modes'); }],
       ['Settings', function () { PB.fadeTo(scene, 'Settings', { from: 'Menu' }); }]
@@ -165,14 +170,16 @@
       var self = this;
       this.root.removeAll(true);
       var id = this.current();
-      this.root.add(PB.panel(this, W / 2, H / 2 + 10, 640, 980, id === 'wheel' ? 0xff3df0 : id === 'tasks' ? 0x22e8ff : 0xffd166));
+      var tall = id === 'shop';
+      this.root.add(PB.panel(this, W / 2, H / 2 + 10, 640, tall ? 1140 : 980, id === 'wheel' ? 0xff3df0 : id === 'tasks' ? 0x22e8ff : id === 'shop' ? 0xffd166 : 0xffd166));
       var close = PB.button(this, W - 96, 196, 88, 72, 'X', function () { self.close(); }, { size: 32, color: 0xff2e63 });
       close.name = 'popupClose';
       this.root.add(close);
-      if (id === 'tasks') this.tasks();
+      if (id === 'shop') this.shop();
+      else if (id === 'tasks') this.tasks();
       else if (id === 'wheel') this.wheel();
       else this.bonus();
-      var noteY = id === 'bonus' ? 940 : (id === 'wheel' ? 1000 : 1096);
+      var noteY = id === 'bonus' ? 940 : (id === 'wheel' ? 1000 : (id === 'shop' ? 1148 : 1096));
       this.noteText = PB.text(this, W / 2, noteY, '', 24, '#ffe7a3', { strokeThickness: 0 });
       this.noteText.name = 'popupNote';
       this.root.add(this.noteText);
@@ -292,6 +299,92 @@
         }, { color: ready ? 0xffd166 : 0x4a4f78, size: 24, disabled: !ready });
         b.name = 'milestone' + i;
         self.root.add(b);
+      });
+    }
+    shop() {
+      var self = this;
+      var Shop = PB.Shop;
+      Shop.ensure(Save.data);
+      var title = PB.text(this, W / 2, 210, 'PRISM SHOP', 44, '#ffe7a3', { glow: '#ffd166' });
+      title.name = 'shopTitle';
+      this.root.add(title);
+      var coins = PB.text(this, W / 2, 258, 'Coins: ' + Save.data.coins, 24, '#ffe7a3', { strokeThickness: 0 });
+      coins.name = 'shopCoins';
+      this.root.add(coins);
+      this.root.add(PB.text(this, W / 2, 300, 'Boosts apply to the next level only', 18, '#c9d4ff', { strokeThickness: 0 }));
+      function refreshCoins() {
+        coins.setText('Coins: ' + Save.data.coins);
+        var menu = self.scene.get('Menu');
+        if (!menu) return;
+        var walk = function (list) {
+          (list || []).forEach(function (o) {
+            if (o.name === 'coinBadge' && o.refresh) o.refresh();
+            if (o.list) walk(o.list);
+          });
+        };
+        walk(menu.children.list);
+      }
+      function guarded(id, fn) {
+        return function () {
+          var now = Date.now();
+          self._buyAt = self._buyAt || {};
+          if (self._buyAt[id] && now - self._buyAt[id] < 500) return;
+          self._buyAt[id] = now;
+          fn();
+        };
+      }
+      Shop.BOOSTS.forEach(function (boost, i) {
+        var x = (i % 2) ? W / 2 + 150 : W / 2 - 150;
+        var y = 370 + Math.floor(i / 2) * 82;
+        var queued = Save.data.shop.boosts[boost.id].length;
+        var label = boost.name + '  ' + boost.price + (queued ? '  x' + queued : '');
+        var b = PB.button(self, x, y, 280, 70, label, guarded('boost-' + boost.id, function () {
+          var before = Save.data.coins | 0;
+          var got = Shop.buyBoost(Save.data, boost.id);
+          if (!got.ok) {
+            self.note(got.reason === 'coins' ? 'Need ' + (boost.price - before) + ' more coins' : 'Cannot buy that');
+            return;
+          }
+          Save.persist();
+          Sfx.play('coin');
+          refreshCoins();
+          self.render();
+          self.note(boost.name + ' ready for the next level');
+        }), { color: Save.data.coins >= boost.price ? 0x22e8ff : 0x4a4f78, size: 18 });
+        b.name = 'boost-' + boost.id;
+        self.root.add(b);
+      });
+      this.root.add(PB.text(this, W / 2, 548, 'Looks — buy once, equip one', 18, '#c9d4ff', { strokeThickness: 0 }));
+      Shop.LOOKS.forEach(function (look, i) {
+        var x = (i % 2) ? W / 2 + 150 : W / 2 - 150;
+        var y = 630 + Math.floor(i / 2) * 150;
+        var owned = Save.data.shop.owned.indexOf(look.id) >= 0;
+        var eq = (look.kind === 'trail' ? Save.data.shop.trail : Save.data.shop.paddle) === look.id;
+        var label = eq ? 'Equipped' : owned ? 'Equip' : (look.price + ' coins');
+        var b = PB.button(self, x, y, 280, 72, label, guarded('look-' + look.id, function () {
+          if (!owned) {
+            var before = Save.data.coins | 0;
+            var got = Shop.buyLook(Save.data, look.id);
+            if (!got.ok) {
+              self.note(got.reason === 'coins' ? 'Need ' + (look.price - before) + ' more coins' : 'Already owned');
+              return;
+            }
+            Save.persist();
+            Sfx.play('coin');
+            refreshCoins();
+            self.render();
+            self.note(look.name + ' unlocked');
+            return;
+          }
+          if (eq) return;
+          Shop.equip(Save.data, look.id);
+          Save.persist();
+          self.render();
+          self.note(look.name + ' equipped');
+        }), { color: eq ? 0xffd166 : owned ? 0x22e8ff : (Save.data.coins >= look.price ? 0xff3df0 : 0x4a4f78), size: 20 });
+        b.name = 'look-' + look.id;
+        self.root.add(b);
+        self.root.add(PB.text(self, x, y - 46, look.name, 16, '#ffffff', { strokeThickness: 0 }));
       });
     }
     wheel() {

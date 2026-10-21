@@ -251,13 +251,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const soon = await page.evaluate(() => {
       let text = '';
       const walk = list => (list || []).forEach(o => {
-        if (o.name === 'soonBody' && o.text) text = o.text;
+        if (o.name === 'shopTitle' && o.text) text = o.text;
         if (o.list) walk(o.list);
       });
-      walk(PB.game.scene.getScene('Menu').children.list);
+      const pop = PB.game.scene.getScene('HomePop');
+      if (pop) walk(pop.children.list);
       return text;
     });
-    record('Shop opens a Coming soon panel', soon === 'Coming soon', soon);
+    record('Shop opens the prism coin shop', soon === 'PRISM SHOP', soon);
     await page.evaluate(() => { PB.Save.track('clears', 2); PB.Save.track('powerups', 1); });
     const hooked = await page.evaluate(() => __PB.save().home.tasks.progress);
     record('clearing a level and using a power-up advance the live tasks', hooked.clears === 2 && hooked.powerups === 1, hooked);
@@ -312,7 +313,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       dotBefore === true && claimed.text === 'Claimed' && Math.abs(claimed.localCenter) < 2
         && claimed.note.indexOf('saved on this device') >= 0
         && claimed.noteTop >= claimed.panelTop + 12 && claimed.noteBottom <= claimed.panelBottom - 12
-        && claimed.dot === false && claimed.footer.indexOf('v1.3.1') === 0,
+        && claimed.dot === false && claimed.footer.indexOf('v1.3.2') === 0,
       claimed);
     await tapUI('HomePop', 'popupClose');
     await sleep(200);

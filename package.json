@@ -1,6 +1,6 @@
 {
   "name": "prismburst-brick-odyssey",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "androidVersionCode": 1,
   "description": "PRISMBURST — Brick Odyssey: a mobile-first neon-crystal brick-breaker (Phaser 3, static site, offline-ready).",
   "private": true,
@@ -8,7 +8,7 @@
   "scripts": {
     "start": "npx --yes http-server . -p 8080 -c-1",
     "serve": "npx --yes serve .",
-    "validate": "node scripts/validate-levels.js && node scripts/check-paths.js && node scripts/check-secrets.js && node tests/cloud-unit.js && node tests/home-unit.js",
+    "validate": "node scripts/validate-levels.js && node scripts/check-paths.js && node scripts/check-secrets.js && node tests/cloud-unit.js && node tests/home-unit.js && node tests/lives-unit.js",
     "icons": "python3 scripts/make-icons.py",
     "copy-web": "node scripts/copy-web.js"
   },

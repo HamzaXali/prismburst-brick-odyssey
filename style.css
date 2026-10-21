@@ -85,3 +85,48 @@ body { position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 30%
 }
 #pb-confirm[hidden], #pb-migrate[hidden] { display: none !important; }
 #pb-account .pb-modal { border-color: #ffd166; }
+
+/* Demo rewarded ad. Drawn locally. No remote images. */
+#pb-ad {
+  position: fixed; inset: 0; z-index: 80; background: #05060f;
+  display: flex; justify-content: center; touch-action: manipulation;
+  font-family: "Trebuchet MS", "Segoe UI", Roboto, Arial, sans-serif; color: #fff;
+}
+.pb-ad-frame {
+  position: relative; width: min(100vw, 480px); height: 100%; overflow: hidden;
+  background: radial-gradient(circle at 50% 18%, #3a1870 0%, #070814 68%);
+}
+.pb-ad-frame.is-live { animation: pb-ad-hold 4.2s ease-in-out infinite; }
+@keyframes pb-ad-hold {
+  0% { transform: scale(1) translate3d(0, 0, 0); }
+  50% { transform: scale(1.06) translate3d(-1.6%, 1.2%, 0); }
+  100% { transform: scale(1) translate3d(0, 0, 0); }
+}
+.pb-ad-badge, .pb-ad-count {
+  position: absolute; top: 18px; z-index: 3; font-weight: 800; letter-spacing: 0.5px;
+  padding: 6px 12px; border-radius: 10px;
+}
+.pb-ad-badge { left: 16px; background: #ffd166; color: #1a1200; }
+.pb-ad-count { right: 16px; background: rgba(0, 0, 0, 0.55); }
+.pb-ad-avatar { position: absolute; top: 7%; left: 50%; width: 46%; transform: translateX(-50%); }
+.pb-ad-clip {
+  position: absolute; left: 8%; width: 84%; bottom: 28%; height: 34%;
+  border-radius: 18px; background: #0b1028; border: 3px solid rgba(34, 232, 255, 0.8);
+}
+.pb-ad-caption {
+  position: absolute; left: 6%; right: 6%; bottom: 16%; z-index: 3;
+  font-size: 28px; font-weight: 900; line-height: 1.15; text-align: center;
+  text-shadow: 0 2px 0 #000, 0 0 16px #000;
+}
+.pb-ad-word {
+  position: absolute; left: 0; right: 0; bottom: 12%; text-align: center;
+  letter-spacing: 4px; font-weight: 800; color: #9fe9ff; font-size: 14px;
+}
+.pb-ad-close {
+  position: absolute; left: 10%; right: 10%; bottom: 3%; height: 52px; z-index: 3;
+  border-radius: 26px; border: 2px solid #ffd166; background: rgba(8, 10, 30, 0.82);
+  color: #fff; font-weight: 800; font-size: 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pb-ad-frame.is-live { animation: none; }
+}

@@ -32,7 +32,11 @@
       this.add.image(W / 2, H / 2, 'bg' + this.worldIdx);
 
       // ---- state
-      this.score = 0; this.shownScore = 0; this.lives = 3; this.livesLost = 0;
+      var boost = PB.Shop ? PB.Shop.takeNext(Save.data) : { life: 0, wide: false, multi: false, slow: false, used: false };
+      if (boost.used) Save.persist();
+      this.levelWide = !!boost.wide; this.levelMulti = !!boost.multi; this.levelSlow = !!boost.slow;
+      this.lifeAdUsed = false; this.continuesUsed = 0;
+      this.score = 0; this.shownScore = 0; this.lives = 3 + (boost.life | 0); this.livesLost = 0;
       this.combo = 0; this.maxCombo = 0; this.comboT = 0; this.elapsed = 0; this.t = 0;
       this.ended = false; this.started = false; this.freeze = 0; this.resumeGuard = 0;
       this.timeScale = 1; this.bot = false; this.botOffset = 0;
@@ -49,6 +53,11 @@
       this.createPools();
       this.createHud();
       this.spawnBall(true);
+      if (this.levelMulti) {
+        var extraL = this.spawnBall(true), extraR = this.spawnBall(true);
+        if (extraL) extraL.offset = -36;
+        if (extraR) extraR.offset = 36;
+      }
       this.showIntro();
 
       // ---- input: paddle follows the finger, release = launch
@@ -175,7 +184,10 @@
 
     createPaddle() {
       var skin = Save.data.equipped.paddle;
-      this.paddle = { x: W / 2, tx: W / 2, w: PADDLE_W, targetW: PADDLE_W };
+      var shopLook = PB.Shop ? PB.Shop.equipped(Save.data) : null;
+      if (shopLook && shopLook.paddle) skin = shopLook.paddle.id;
+      this.trailLook = shopLook && shopLook.trail ? shopLook.trail : null;
+      this.paddle = { x: W / 2, tx: W / 2, w: PADDLE_W, targetW: this.levelWide ? PADDLE_W * 1.5 : PADDLE_W };
       this.paddleSpr = this.add.image(W / 2, PADDLE_Y, 'paddle_' + skin).setDepth(10);
       this.cannonL = this.add.image(0, PADDLE_Y - 18, 'cannon').setVisible(false).setDepth(9);
       this.cannonR = this.add.image(0, PADDLE_Y - 18, 'cannon').setVisible(false).setDepth(9);
@@ -219,8 +231,10 @@
       g.lineStyle(2, this.wd.accent2, 0.35); g.lineBetween(1, TOP, 1, H); g.lineBetween(W - 1, TOP, W - 1, H);
       PB.text(this, 24, 30, 'SCORE', 20, '#9fa8e0', { ox: 0, strokeThickness: 0 }).setDepth(41);
       this.scoreText = PB.text(this, 24, 66, '0', 40, '#ffffff', { ox: 0, glow: PB.hex(this.wd.accent) }).setDepth(41);
-      this.livesIcons = [];
-      for (var i = 0; i < 5; i++) this.livesIcons.push(this.add.image(36 + i * 30, 116, 'life').setDepth(41).setVisible(i < this.lives));
+      this.livesHud = PB.attachLifeHud(this, 140, 118);
+      this.livesIcons = this.livesHud.livesIcons;
+      this.livesCount = this.livesHud.livesCount;
+      PB.syncLifeHud(this.livesHud, this.lives);
       PB.text(this, W / 2, 30, this.wd.name.toUpperCase() + ' · ' + (this.levelIdx + 1), 22, PB.hex(this.wd.accent), { strokeThickness: 0 }).setDepth(41);
       this.objText = PB.text(this, W / 2, 70, '', 30, '#ffe7a3').setDepth(41);
       this.comboText = PB.text(this, W / 2, 112, '', 24, '#ff9cf6', { glow: '#ff3df0' }).setDepth(41);
@@ -257,7 +271,10 @@
       var m = this.mult();
       var cs = this.combo >= 3 ? 'COMBO ' + this.combo + '  ×' + m.toFixed(1) : '';
       if (cs !== this.hud.combo) { this.hud.combo = cs; this.comboText.setText(cs); }
-      if (this.lives !== this.hud.lives) { this.hud.lives = this.lives; for (var i = 0; i < 5; i++) this.livesIcons[i].setVisible(i < this.lives); }
+      if (this.lives !== this.hud.lives) {
+        this.hud.lives = this.lives;
+        PB.syncLifeHud(this.livesHud, this.lives);
+      }
       for (var k in this.powIcons) {
         var t = this.timers[k], ic = this.powIcons[k];
         if (t > 0) {
@@ -415,7 +432,7 @@
     loseLife() {
       this.lives--; this.livesLost++; this.combo = 0;
       for (var k in this.timers) this.timers[k] = 0;
-      this.paddle.targetW = PADDLE_W; this.updateBallLook();
+      this.paddle.targetW = this.levelWide ? PADDLE_W * 1.5 : PADDLE_W; this.updateBallLook();
       this.capsules.forEach(function (c) { c.active = false; c.spr.setVisible(false); });
       Sfx.play('lose'); PB.vibrate(120); this.shake(220, 0.01);
       this.cameras.main.flash(200, 255, 40, 90);
@@ -625,8 +642,34 @@
       this.ended = true; this.stopBalls(); this.commitStats();
       Sfx.play('over');
       var self = this;
-      this.result = { world: this.worldIdx, level: this.levelIdx, score: this.score, reason: reason, left: this.breakableLeft };
+      this.result = {
+        world: this.worldIdx, level: this.levelIdx, score: this.score, reason: reason, left: this.breakableLeft,
+        lifeAdUsed: !!this.lifeAdUsed, continuesUsed: this.continuesUsed | 0
+      };
       this.time.delayedCall(700, function () { self.scene.launch('GameOver', self.result); self.scene.bringToTop('GameOver'); });
+    }
+    grantLifeAd() {
+      if (this.lifeAdUsed || !this.ended) return false;
+      this.lifeAdUsed = true;
+      this.ended = false;
+      this.lives = 3;
+      this.spawnBall(true);
+      if (this.hint) this.hint.setVisible(true);
+      this.updateHud();
+      return true;
+    }
+    grantContinue() {
+      if (!this.ended || !PB.Shop) return false;
+      var pay = PB.Shop.payContinue(Save.data, this.continuesUsed | 0);
+      if (!pay.ok) return false;
+      Save.persist();
+      this.continuesUsed = (this.continuesUsed | 0) + 1;
+      this.ended = false;
+      this.lives = 1;
+      this.spawnBall(true);
+      if (this.hint) this.hint.setVisible(true);
+      this.updateHud();
+      return true;
     }
 
     // ================================================================ update
@@ -671,8 +714,9 @@
         else {
           if (this.started) this.elapsed += dt;
           this.speed = this.lv.speed * (1 + Math.min(0.1, this.elapsed / 300));
+          if (this.levelSlow) this.speed *= 0.72;
           var expired = false;
-          for (var key in this.timers) if (this.timers[key] > 0) { this.timers[key] -= dt; if (this.timers[key] <= 0) { this.timers[key] = 0; expired = true; if (key === 'wide') p.targetW = PADDLE_W; } }
+          for (var key in this.timers) if (this.timers[key] > 0) { this.timers[key] -= dt; if (this.timers[key] <= 0) { this.timers[key] = 0; expired = true; if (key === 'wide') p.targetW = this.levelWide ? PADDLE_W * 1.5 : PADDLE_W; } }
           if (expired) this.updateBallLook();
           // balls
           for (var i = 0; i < this.balls.length; i++) {
@@ -756,6 +800,11 @@
           for (var j = 1; j < tb.tn; j++) {
             var idx = ((tb.ti - 1 - j) % 10 + 10) % 10;
             g.fillStyle(tc, 0.32 * (1 - j / 10)); g.fillCircle(tb.trail[idx * 2], tb.trail[idx * 2 + 1], BALL_R * (1 - j / 12));
+            if (this.trailLook) {
+              g.fillStyle(this.trailLook.color, 0.45 * (1 - j / 10));
+              var spread = this.trailLook.id === 'rose-ribbon' ? Math.sin(j + this.t * 6) * 8 : 0;
+              g.fillCircle(tb.trail[idx * 2] + spread, tb.trail[idx * 2 + 1], (this.trailLook.id === 'solar-flare' ? 16 : 8) * (1 - j / 12));
+            }
           }
         }
       }
@@ -778,7 +827,7 @@
   // ---- page guards: no zoom, no context menu, no pull-to-refresh
   function inAccount(e) {
     var t = e.target;
-    return t && t.closest && t.closest('#pb-account');
+    return t && t.closest && (t.closest('#pb-account') || t.closest('#pb-ad'));
   }
   document.addEventListener('contextmenu', function (e) { if (!inAccount(e)) e.preventDefault(); });
   ['gesturestart', 'gesturechange', 'dblclick'].forEach(function (n) { document.addEventListener(n, function (e) { if (!inAccount(e)) e.preventDefault(); }, { passive: false }); });
@@ -795,6 +844,7 @@
       var g = PB.currentGame; if (!g) return null;
       return {
         world: g.worldIdx, level: g.levelIdx, score: g.score, lives: g.lives, left: g.breakableLeft, targetsLeft: g.targetsLeft,
+        lifeAdUsed: !!g.lifeAdUsed, continuesUsed: g.continuesUsed | 0, levelSlow: !!g.levelSlow, levelWide: !!g.levelWide, levelMulti: !!g.levelMulti,
         balls: g.balls.filter(function (b) { return b.active; }).map(function (b) { return { x: b.x, y: b.y, vx: b.vx, vy: b.vy, attached: b.attached }; }),
         paddle: { x: g.paddle.x, w: g.paddle.w }, timers: Object.assign({}, g.timers), ended: g.ended, started: g.started,
         counters: Object.assign({}, g.counters), elapsed: g.elapsed, combo: g.combo, maxCombo: g.maxCombo, objective: g.lv.objective, bolts: g.bolts.filter(function (b) { return b.active; }).length,

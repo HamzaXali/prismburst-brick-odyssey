@@ -49,24 +49,6 @@ If that redirect URL is missing, Supabase sends the player to the Site URL inste
 
 The Google Cloud **Authorized redirect URI** is still the Supabase callback (`https://qogqnutpqzatxnbhcznc.supabase.co/auth/v1/callback`, or whatever the Supabase Google page shows). Do not put the `com.hamzaxali.prismburst` address into Google Cloud. That address belongs only in Supabase's redirect allow list.
 
-## 5. Later: a release key (not done yet)
+## 5. Play Store build
 
-A Play Store build needs a release keystore that you keep forever. This pull request does not create one and does not sign a release APK.
-
-When you want that, on the phone with [Termux](https://f-droid.org/packages/com.termux/):
-
-1. `pkg install openjdk-17`
-2. `keytool -genkeypair -v -keystore prismburst-release.keystore -alias prismburst -keyalg RSA -keysize 2048 -validity 10000`
-3. Store the keystore file somewhere safe, off the phone if you can. Losing it means you cannot update the Play listing.
-4. `base64 -w 0 prismburst-release.keystore` and copy that long text.
-
-In the GitHub repository, **Settings → Secrets and variables → Actions → New repository secret**. Create these four. The values stay in GitHub. They do not go in the repo or in chat.
-
-| Secret | What it is |
-| --- | --- |
-| `KEYSTORE_BASE64` | The base64 text of the keystore file |
-| `KEYSTORE_PASSWORD` | The store password you typed for keytool |
-| `KEY_ALIAS` | `prismburst`, unless you chose another alias |
-| `KEY_PASSWORD` | The key password you typed for keytool |
-
-A later change can teach the workflow to build a release APK with those secrets. Do not add them until you have the keystore.
+The signed Play bundle is a different workflow from this debug APK. The phone steps, the upload keystore, and the four GitHub secrets are in [PLAY-RELEASE.md](PLAY-RELEASE.md). The alias is `prismburst-upload`. Do not paste the keystore or the passwords into chat.

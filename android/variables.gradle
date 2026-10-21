@@ -1,4 +1,6 @@
 ext {
+    // New Play apps and updates must target Android 16 (API 36) as of 31 Aug 2026:
+    // https://developer.android.com/google/play/requirements/target-sdk
     minSdkVersion = 24
     compileSdkVersion = 36
     targetSdkVersion = 36

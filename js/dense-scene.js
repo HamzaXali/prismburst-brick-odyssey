@@ -341,7 +341,7 @@
     breakCell(index, x, y) {
       if (this.ended) return;
       var kind = this.grid[index];
-      if (!kind || kind === STEEL) return;
+      if (!Dense.countsForClear(kind)) return;
       this.grid[index] = 0;
       var c = index % COLS;
       var r = (index / COLS) | 0;
@@ -481,6 +481,14 @@
       if (this.livesLost === 0) stars = 2;
       if (stars === 2 && this.score >= this.lv.star3 && this.combo >= 12) stars = 3;
       this.clearResult = Dense.recordClear(Save.data, this.levelIdx, this.score, stars);
+      this._achTag = '';
+      this._achToast = '';
+      if (PB.Achievements) {
+        var fresh = PB.Achievements.settle(Save.data, { flawless: this.livesLost === 0 });
+        var latest = PB.Achievements.latest(Save.data);
+        this._achTag = latest ? latest.name : '';
+        if (fresh.length) this._achToast = fresh[fresh.length - 1].name;
+      }
       Save.persist();
       this.showEnd(true);
     }
@@ -496,6 +504,12 @@
       if (cleared && this.clearResult) {
         root.add(PB.text(this, W / 2, H / 2 - 140, '+' + this.clearResult.added + ' coins', 32, '#ffe7a3'));
       }
+      if (cleared && this._achTag) {
+        var tag = PB.text(this, W / 2, H / 2 - 80, this._achTag, 22, '#ffe7a3', { strokeThickness: 0 });
+        tag.name = 'denseClearTag';
+        root.add(tag);
+      }
+      if (cleared && this._achToast && PB.Achievements) PB.Achievements.showToast(this, this._achToast);
       var retry = PB.button(this, W / 2, H / 2 + 20, 420, 88, 'Retry', function () {
         self.scene.start('Dense', { level: self.levelIdx });
       }, { size: 32, color: 0xff3df0 });

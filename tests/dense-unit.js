@@ -23,35 +23,42 @@ function wallet(coins) {
   };
 }
 
-function sealedCount(grid) {
-  const vis = Dense.flood(grid);
-  let n = 0;
-  for (let i = 0; i < grid.length; i++) {
-    if (grid[i] && grid[i] !== Dense.STEEL && !vis[i]) n++;
-  }
-  return n;
+function clearedCopy(grid) {
+  const copy = new Uint8Array(grid);
+  for (let i = 0; i < copy.length; i++) if (copy[i] !== Dense.STEEL) copy[i] = 0;
+  return copy;
 }
 
 try {
   const sigs = new Map();
   const names = new Set();
   let thin = '';
+  const audit = Dense.auditAll();
+  audit.rows.forEach(function (row) {
+    console.log('BOT L' + (row.index + 1) + ' ' + row.name + ' clear=' + (Math.round(row.pct * 1000) / 10) + '% steps=' + row.steps + ' ms=' + row.ms + ' steel=' + row.steel + ' mouths=' + row.mouths);
+    if (!row.ok) thin += ' ' + row.name + ' bot ' + row.pct;
+  });
   for (let i = 0; i < Dense.COUNT; i++) {
     const lv = Dense.level(i);
+    const info = Dense.analyze(lv.grid);
     if (!lv || lv.grid.length !== Dense.COLS * Dense.ROWS) thin += ' bad grid ' + i;
     if (lv.breakable < 2000) thin += ' ' + lv.name + ' breakable ' + lv.breakable;
-    if (lv.steel < 30) thin += ' ' + lv.name + ' steel ' + lv.steel;
-    const sealed = sealedCount(lv.grid);
-    if (sealed) thin += ' ' + lv.name + ' sealed ' + sealed;
+    if (i < 5 && lv.steel !== 0) thin += ' ' + lv.name + ' early steel ' + lv.steel;
+    if (i >= 5 && lv.steel < 1) thin += ' ' + lv.name + ' missing steel';
+    if (info.reached !== info.total) thin += ' ' + lv.name + ' reached ' + info.reached + '/' + info.total;
+    if (info.mouths < Dense.MIN_MOUTHS) thin += ' ' + lv.name + ' mouths ' + info.mouths;
+    if (!Dense.isCleared(clearedCopy(lv.grid))) thin += ' ' + lv.name + ' steel blocks clear';
+    if (Dense.isCleared(lv.grid)) thin += ' ' + lv.name + ' empty';
+    if (!Dense.countsForClear(1) || Dense.countsForClear(Dense.STEEL) || Dense.countsForClear(0)) thin += ' clear rule';
     if (names.has(lv.name)) thin += ' duplicate name ' + lv.name;
     names.add(lv.name);
     if (sigs.has(lv.signature)) thin += ' silhouette ' + lv.name + ' == ' + sigs.get(lv.signature);
     else sigs.set(lv.signature, lv.name);
     if (lv.name.indexOf('Dense') >= 0) thin += ' copied name ' + lv.name;
   }
-  record('Crystal Mass has 20 distinct reachable levels with thousands of shards',
-    Dense.COUNT === 20 && sigs.size === 20 && names.size === 20 && L.worldCount() === 5 && L.LEVELS_PER_WORLD === 20 && !thin,
-    thin);
+  record('Crystal Mass has 20 distinct solvable levels with wide entrances',
+    Dense.COUNT === 20 && sigs.size === 20 && names.size === 20 && L.worldCount() === 5 && L.LEVELS_PER_WORLD === 20 && audit.ok && !thin,
+    thin || audit.errors.join('; '));
   record('the campaign track is still five worlds of twenty', L.worldCount() === 5 && L.LEVELS_PER_WORLD === 20);
 
   const poor = wallet(10);

@@ -344,19 +344,29 @@
     if (off > limit) off = limit;
     if (off < -limit) off = -limit;
     var spinTurns = turns == null ? 5 : turns;
-    return spinTurns * 360 + index * slice + off;
+    // Slices are drawn clockwise from the top. A positive container angle
+    // turns clockwise, so segment i reaches the pointer by rotating back.
+    return spinTurns * 360 - index * slice + off;
+  }
+
+  function labelOffset(index, angleDeg) {
+    var slice = Math.PI * 2 / SEGMENTS.length;
+    var mid = -Math.PI / 2 + index * slice;
+    var x = Math.cos(mid) * 108;
+    var y = Math.sin(mid) * 108;
+    var a = angleDeg * Math.PI / 180;
+    var cos = Math.cos(a);
+    var sin = Math.sin(a);
+    return { x: x * cos - y * sin, y: x * sin + y * cos };
   }
 
   function segmentAtPointer(angleDeg) {
-    var slice = wheelSliceDeg();
-    var norm = ((angleDeg % 360) + 360) % 360;
     var best = 0;
-    var bestDist = 1e9;
+    var bestScore = 1e9;
     for (var i = 0; i < SEGMENTS.length; i++) {
-      var center = i * slice;
-      var d = Math.abs(norm - center);
-      if (d > 180) d = 360 - d;
-      if (d < bestDist) { bestDist = d; best = i; }
+      var p = labelOffset(i, angleDeg);
+      var score = p.y + Math.abs(p.x) * 0.02;
+      if (score < bestScore) { bestScore = score; best = i; }
     }
     return best;
   }

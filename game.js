@@ -631,10 +631,18 @@
       var coins = 10 + stars * 5 + (res.first ? 20 : 0) + (prev && stars > prev.stars ? 10 : 0);
       Save.addCoins(coins);
       Save.track('clears', 1); if (stars === 3) Save.track('stars3', 1);
+      var achName = '';
+      var achToast = '';
+      if (PB.Achievements) {
+        var fresh = PB.Achievements.settle(Save.data, { flawless: this.livesLost === 0 });
+        var latest = PB.Achievements.latest(Save.data);
+        achName = latest ? latest.name : '';
+        if (fresh.length) achToast = fresh[fresh.length - 1].name;
+      }
       this.commitStats();
       var unlockMsg = '';
       if (res.unlockedNext) unlockMsg = this.levelIdx + 1 < L.LEVELS_PER_WORLD ? 'Level ' + (this.levelIdx + 2) + ' unlocked!' : 'New world unlocked: ' + L.WORLDS[this.worldIdx + 1].name + '!';
-      this.result = { world: this.worldIdx, level: this.levelIdx, name: lv.name, score: this.score, stars: stars, coins: coins, best: Save.levelRec(this.worldIdx, this.levelIdx).best, newBest: res.newBest || res.first, star3: lv.star3, unlockMsg: unlockMsg };
+      this.result = { world: this.worldIdx, level: this.levelIdx, name: lv.name, score: this.score, stars: stars, coins: coins, best: Save.levelRec(this.worldIdx, this.levelIdx).best, newBest: res.newBest || res.first, star3: lv.star3, unlockMsg: unlockMsg, achievement: achName, achievementToast: achToast };
       this.time.delayedCall(1100, function () { self.scene.launch('Complete', self.result); self.scene.bringToTop('Complete'); });
     }
     gameOver(reason) {

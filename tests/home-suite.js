@@ -4,7 +4,9 @@
  */
 const fs = require('fs');
 const { chromium, devices } = require('playwright-core');
+const SHOTS = process.env.SHOTS_DIR || '/opt/cursor/artifacts';
 fs.mkdirSync('shots', { recursive: true });
+fs.mkdirSync(SHOTS, { recursive: true });
 const URL = process.env.PB_URL || 'http://127.0.0.1:8090/index.html';
 const results = [];
 function record(name, pass, detail) {
@@ -96,6 +98,52 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     record('daily bonus cards and status text sit inside the panel',
       inside && Math.abs(leftGap - rightGap) < 2 && Math.abs(leftGap - row2Right) < 2 && layout.cards[6].w > layout.cards[0].w && noteInside,
       { leftGap, rightGap, row2Right, day7: layout.cards[6].w, day1: layout.cards[0].w, noteY: layout.noteY, panel });
+    const beforePick = await page.evaluate(() => __PB.save().coins);
+    await tapUI('HomePop', 'dayCard3');
+    await sleep(200);
+    const otherDay = await page.evaluate(() => {
+      const s = PB.game.scene.getScene('HomePop');
+      let burst = false;
+      let hot = false;
+      const walk = list => (list || []).forEach(o => {
+        if (o.name === 'bonusBurst') burst = true;
+        if (o.name === 'dayHot') hot = true;
+        if (o.list) walk(o.list);
+      });
+      walk(s.children.list);
+      return { note: s.noteText ? s.noteText.text : '', burst, hot, coins: PB.Save.data.coins };
+    });
+    record('tapping a later day card does not claim it',
+      otherDay.note === 'Come back on Day 3' && otherDay.burst === false && otherDay.hot === true && otherDay.coins === beforePick,
+      otherDay);
+    await tapUI('HomePop', 'dayCard1');
+    await sleep(250);
+    const picked = await page.evaluate(before => {
+      const s = PB.game.scene.getScene('HomePop');
+      let card = null;
+      let burst = null;
+      let claimed = null;
+      const walk = list => (list || []).forEach(o => {
+        if (o.name === 'dayCard1') card = o;
+        if (o.name === 'bonusBurst') burst = o;
+        if (o.name === 'dayClaimed') claimed = o;
+        if (o.list) walk(o.list);
+      });
+      walk(s.children.list);
+      return {
+        note: s.noteText ? s.noteText.text : '',
+        coins: PB.Save.data.coins - before,
+        cardX: card ? card.x : null,
+        burstX: burst ? burst.x : null,
+        claimedX: claimed ? claimed.x : null,
+        claimedText: claimed ? claimed.text : ''
+      };
+    }, beforePick);
+    await page.screenshot({ path: SHOTS + '/lucky-box.png' });
+    record('the tapped day card is the one that claims and shows the burst',
+      picked.note.indexOf('Day 1') >= 0 && picked.coins === 20 && picked.claimedText === 'Claimed'
+        && Math.abs(picked.burstX - picked.cardX) < 2 && Math.abs(picked.claimedX - picked.cardX) < 2,
+      picked);
     const beforeDouble = await page.evaluate(() => __PB.save().coins);
     await tapUI('HomePop', 'claimDouble');
     await sleep(200);
@@ -313,7 +361,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       dotBefore === true && claimed.text === 'Claimed' && Math.abs(claimed.localCenter) < 2
         && claimed.note.indexOf('saved on this device') >= 0
         && claimed.noteTop >= claimed.panelTop + 12 && claimed.noteBottom <= claimed.panelBottom - 12
-        && claimed.dot === false && claimed.footer.indexOf('v1.3.3') === 0,
+        && claimed.dot === false && claimed.footer.indexOf('v1.3.4') === 0,
       claimed);
     await tapUI('HomePop', 'popupClose');
     await sleep(200);
@@ -356,10 +404,20 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         coins: PB.Save.data.coins, gems: PB.Save.data.home.gems,
         wide: PB.Save.data.home.powers.wide, multi: PB.Save.data.home.powers.multi
       };
+      const labels = [];
+      (s.wheelGfx.list || []).forEach(o => {
+        if (!o || !o.text || !o.getWorldTransformMatrix) return;
+        const m = o.getWorldTransformMatrix();
+        labels.push({ text: o.text, y: m.ty, x: m.tx });
+      });
+      labels.sort((a, b) => (a.y - b.y) || (Math.abs(a.x - s.wheelGfx.x) - Math.abs(b.x - s.wheelGfx.x)));
+      const short = seg.kind === 'coins' ? String(seg.amount) : (seg.kind === 'gems' ? (seg.amount + (seg.amount === 1 ? ' gem' : ' gems')) : seg.label.split(' ')[0]);
       return {
         toast: s.noteText.text,
         label: seg.label,
         id: seg.id,
+        top: labels[0] ? labels[0].text : '',
+        short,
         used: PB.Save.data.home.wheel.used,
         pending: PB.Save.data.home.wheel.pending.length,
         coins: now.coins - before.coins,
@@ -373,7 +431,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       };
     }, beforeWheel);
     record('the wheel stops on the awarded segment and the toast matches the balance',
-      landed.toast === landed.label && landed.used === 1 && landed.pending === 0
+      landed.toast === landed.label && landed.top === landed.short && landed.used === 1 && landed.pending === 0
         && landed.coins === landed.expectCoins && landed.gems === landed.expectGems
         && landed.wide === landed.expectWide && landed.multi === landed.expectMulti,
       landed);
@@ -412,6 +470,52 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     record('a double tap uses exactly one spin',
       doubleTap.used === 1 && doubleTap.pending === 1 && afterDoubleTap.used === 1 && afterDoubleTap.pending === 0 && afterDoubleTap.toast.length > 0,
       { doubleTap, afterDoubleTap });
+
+    await page.evaluate(() => localStorage.clear());
+    await boot();
+    await page.evaluate(() => {
+      PB.game.scene.stop('HomePop');
+      PB.Home.mode = { type: 'one', items: ['achievements'], index: 0 };
+      const menu = PB.game.scene.getScene('Menu');
+      menu.scene.launch('HomePop');
+      menu.scene.bringToTop('HomePop');
+    });
+    await sleep(400);
+    const achPanel = await page.evaluate(() => {
+      const s = PB.game.scene.getScene('HomePop');
+      let title = '';
+      let prog = '';
+      const walk = list => (list || []).forEach(o => {
+        if (o.name === 'achievementsTitle') title = o.text;
+        if (o.name === 'ach-prog-clear-10') prog = o.text;
+        if (o.list) walk(o.list);
+      });
+      walk(s.children.list);
+      return { title, prog };
+    });
+    await page.screenshot({ path: SHOTS + '/achievements-panel.png' });
+    record('Home opens an achievements panel with locked progress', achPanel.title === 'ACHIEVEMENTS' && achPanel.prog === '0/10', achPanel);
+    const toast = await page.evaluate(() => {
+      PB.Save.recordResult(0, 0, 400, 1);
+      const fresh = PB.Achievements.settle(PB.Save.data, { flawless: false, now: Date.now() });
+      const again = PB.Achievements.settle(PB.Save.data, { now: Date.now() + 1 });
+      PB.Save.persist();
+      const scene = PB.game.scene.getScene('HomePop');
+      scene.render();
+      if (fresh[0]) PB.Achievements.showToast(scene, fresh[0].name);
+      let text = '';
+      const walk = list => (list || []).forEach(o => {
+        if (o.name === 'achievementToast') text = o.text;
+        if (o.list) walk(o.list);
+      });
+      walk(scene.children.list);
+      return { fresh: fresh.map(row => row.name), again: again.length, text, coins: PB.Save.data.coins };
+    });
+    await sleep(200);
+    await page.screenshot({ path: SHOTS + '/achievement-toast.png' });
+    record('a new clear toasts once and a second settle does not toast again',
+      toast.fresh.indexOf('First Clear') >= 0 && toast.again === 0 && toast.text === 'Achievement unlocked: First Clear' && toast.coins >= 15,
+      toast);
 
     record('popup run has no page errors', errors.length === 0, errors.slice(0, 5));
   } catch (err) {

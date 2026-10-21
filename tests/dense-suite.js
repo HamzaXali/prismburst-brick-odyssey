@@ -98,6 +98,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     record('a dense level shows the name, star score, and three hearts',
       hud.title === 'Quartz Spines' && hud.score === '\u2605 0' && hud.lives === 3 && hud.text === '\u00d73' && hud.filled === 3 && !hud.countVisible && hud.visible && hud.y < 160 && hud.left >= 0 && hud.right <= 720 && hud.hearts.every(h => h.visible && h.w >= 36 && h.h >= 32) && hud.breakable >= 2000, hud);
     await page.screenshot({ path: SHOTS + '/dense-spines.png' });
+    await page.screenshot({ path: SHOTS + '/crystal-mass-1.png' });
     await page.evaluate(() => { const g = PB.currentDense; g.loseLife(); g.updateHud(); });
     await sleep(200);
     const lostHeart = await page.evaluate(() => {
@@ -123,6 +124,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.screenshot({ path: SHOTS + '/dense-core.png' });
     const core = await page.evaluate(() => __PB.dense());
     record('Carved Core loads a tunneled mass', core && core.name === 'Carved Core' && core.breakable >= 2000, core);
+
+    await page.evaluate(() => __PB.startDense(4));
+    await page.waitForFunction(() => __PB.dense() && __PB.dense().name === 'Vein Maze', null, { timeout: 8000 });
+    await sleep(350);
+    await page.screenshot({ path: SHOTS + '/crystal-mass-5.png' });
+    await page.evaluate(() => __PB.startDense(9));
+    await page.waitForFunction(() => __PB.dense() && __PB.dense().name === 'Tide Ribs', null, { timeout: 8000 });
+    await sleep(350);
+    await page.screenshot({ path: SHOTS + '/crystal-mass-10.png' });
+    await page.evaluate(() => __PB.startDense(19));
+    await page.waitForFunction(() => __PB.dense() && __PB.dense().name === 'Crown Diamond', null, { timeout: 8000 });
+    await sleep(350);
+    await page.screenshot({ path: SHOTS + '/crystal-mass-20.png' });
 
     await page.evaluate(() => __PB.startDense(0));
     await page.waitForFunction(() => __PB.dense() && __PB.dense().name === 'Quartz Spines', null, { timeout: 8000 });

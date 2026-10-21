@@ -71,6 +71,17 @@
     });
   }
 
+  function refreshBadges(scene) {
+    if (!scene || !scene.children) return;
+    var walk = function (list) {
+      (list || []).forEach(function (o) {
+        if ((o.name === 'coinBadge' || o.name === 'gemBadge') && o.refresh) o.refresh();
+        if (o.list) walk(o.list);
+      });
+    };
+    walk(scene.children.list);
+  }
+
   function comingSoon(scene, title) {
     if (scene._soon) scene._soon.destroy();
     var layer = scene.add.container(0, 0).setDepth(40);
@@ -122,7 +133,7 @@
         scene.scene.launch('HomePop');
         scene.scene.bringToTop('HomePop');
       }],
-      ['Achievements', function () { comingSoon(scene, 'Achievements'); }],
+      ['Achievements', function () { open('achievements'); }],
       ['Modes', function () {
         Home.mode = { type: 'one', items: ['modes'], index: 0 };
         if (scene.scene.isActive('HomePop')) scene.scene.stop('HomePop');
@@ -184,11 +195,37 @@
       else if (id === 'tasks') this.tasks();
       else if (id === 'wheel') this.wheel();
       else if (id === 'modes') this.modes();
+      else if (id === 'achievements') this.achievements();
       else this.bonus();
       var noteY = id === 'bonus' ? 940 : (id === 'wheel' ? 1000 : (id === 'shop' ? 1148 : 1096));
       this.noteText = PB.text(this, W / 2, noteY, '', 24, '#ffe7a3', { strokeThickness: 0 });
       this.noteText.name = 'popupNote';
       this.root.add(this.noteText);
+    }
+    achievements() {
+      var self = this;
+      var Ach = PB.Achievements;
+      var title = PB.text(this, W / 2, 230, 'ACHIEVEMENTS', 42, '#f3e9ff', { glow: '#9b6bff' });
+      title.name = 'achievementsTitle';
+      this.root.add(title);
+      if (!Ach) return;
+      var rows = Ach.board(Save.data);
+      rows.forEach(function (row) {
+        var col = row.index % 2;
+        var line = Math.floor(row.index / 2);
+        var x = col ? W / 2 + 165 : W / 2 - 165;
+        var y = 300 + line * 78;
+        self.root.add(Ach.drawBadge(self, x - 108, y, row.index, row.unlocked));
+        var name = PB.text(self, x - 72, y - 14, row.name, 16, row.unlocked ? '#ffffff' : '#9aa3c7', { ox: 0, strokeThickness: 0 });
+        name.name = 'ach-name-' + row.id;
+        self.root.add(name);
+        var prog = PB.text(self, x - 72, y + 12, row.current + '/' + row.need, 16, '#ffe7a3', { ox: 0, strokeThickness: 0 });
+        prog.name = 'ach-prog-' + row.id;
+        self.root.add(prog);
+        var state = PB.text(self, x + 108, y, row.unlocked ? 'Unlocked' : 'Locked', 14, row.unlocked ? '#7dffa6' : '#8d97c9', { strokeThickness: 0 });
+        state.name = 'ach-state-' + row.id;
+        self.root.add(state);
+      });
     }
     modes() {
       var self = this;
@@ -243,10 +280,29 @@
         }
         return { x: x, y: y, w: w };
       }
+      this.hotDay = streak;
+      function claimToday() {
+        var got = Home.claimBonus(Save.data, Date.now());
+        if (!got.ok) {
+          self.note('Day ' + streak + ' is already claimed');
+          return;
+        }
+        Save.persist();
+        Sfx.play('coin');
+        var menu = self.scene.get('Menu');
+        if (menu) {
+          refreshMarks(menu);
+          refreshBadges(menu);
+        }
+        self._burstDay = got.day;
+        self.render();
+        self.note('Day ' + got.streak + ' saved on this device.');
+      }
       for (var i = 0; i < 7; i++) {
         var spec = Home.BONUS[i];
         var box = cardBox(spec.day);
         var today = spec.day === streak;
+        var claimed = !avail && spec.day === streak;
         var finale = spec.day === 7;
         var g = this.add.graphics();
         g.fillStyle(today || finale ? 0xffd166 : 0x1c2250, today ? 0.45 : (finale ? 0.22 : 0.95));
@@ -254,10 +310,24 @@
         g.lineStyle(finale || today ? 4 : 3, today || finale ? 0xffd166 : 0x3a3f6a, 1);
         g.strokeRoundedRect(box.x - box.w / 2, box.y - cardH / 2, box.w, cardH, 16);
         this.root.add(g);
-        var zone = this.add.zone(box.x, box.y, box.w, cardH);
+        var zone = this.add.zone(box.x, box.y, box.w, cardH).setInteractive({ useHandCursor: true });
         zone.name = 'dayCard' + spec.day;
+        zone.on('pointerup', (function (day) {
+          return function () {
+            if (day !== streak) {
+              self.note('Come back on Day ' + day);
+              return;
+            }
+            claimToday();
+          };
+        })(spec.day));
         this.root.add(zone);
         this.root.add(PB.text(this, box.x, box.y - 28, 'Day ' + spec.day, finale ? 22 : 18, '#9fa8e0', { strokeThickness: 0 }));
+        if (today) {
+          var hot = PB.text(this, box.x, box.y + 36, claimed ? 'Claimed' : 'Today', 14, '#ffe7a3', { strokeThickness: 0 });
+          hot.name = claimed ? 'dayClaimed' : 'dayHot';
+          this.root.add(hot);
+        }
         var lines = [];
         if (spec.coins) lines.push(qty(spec.coins, 'coin', 'coins'));
         if (spec.gems) lines.push(qty(spec.gems, 'gem', 'gems'));
@@ -265,15 +335,28 @@
           self.root.add(PB.text(self, box.x, box.y + (lines.length === 1 ? 8 : n * 22), line, 18, '#ffe7a3', { strokeThickness: 0 }));
         });
       }
+      if (this._burstDay) {
+        var burstBox = cardBox(this._burstDay);
+        var origin = this.add.zone(burstBox.x, burstBox.y, 20, 20);
+        origin.name = 'bonusBurst';
+        this.root.add(origin);
+        for (var b = 0; b < 8; b++) {
+          var coin = this.add.image(burstBox.x, burstBox.y, 'coin').setScale(0.55);
+          coin.name = 'coinBurst';
+          this.root.add(coin);
+          this.tweens.add({
+            targets: coin,
+            x: burstBox.x + Math.cos(b) * 70,
+            y: burstBox.y - 40 - (b % 3) * 18,
+            alpha: 0,
+            duration: 700,
+            onComplete: function (tw, targets) { targets[0].destroy(); }
+          });
+        }
+        this._burstDay = 0;
+      }
       var claim = PB.button(this, W / 2 - 150, 820, 260, 84, avail ? 'Claim' : 'Claimed', function () {
-        var got = Home.claimBonus(Save.data, Date.now());
-        if (!got.ok) return;
-        Save.persist();
-        Sfx.play('coin');
-        var menu = self.scene.get('Menu');
-        if (menu) refreshMarks(menu);
-        self.render();
-        self.note('Day ' + got.streak + ' saved on this device.');
+        claimToday();
       }, { color: avail ? 0xffd166 : 0x4a4f78, size: 30, disabled: !avail });
       claim.name = 'claimBonus';
       this.root.add(claim);

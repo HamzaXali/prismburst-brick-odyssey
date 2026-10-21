@@ -7,7 +7,7 @@
   'use strict';
   var PB = window.PB, L = window.PB_LEVELS, Save = PB.Save, Sfx = PB.Sfx;
   var W = PB.W, H = PB.H;
-  PB.VERSION = '1.3.3';
+  PB.VERSION = '1.3.4';
 
   function backButton(scene, cb) {
     return PB.button(scene, 92, 70, 140, 76, '‹ Back', cb, { size: 30, color: 0x9b6bff });
@@ -373,6 +373,12 @@
       p.add(PB.panel(this, W / 2, H / 2 + 20, 620, 1100, 0xffd166));
       p.add(PB.text(this, W / 2, H / 2 - 410, 'LEVEL CLEAR!', 64, '#ffffff', { glow: '#ffd166' }));
       p.add(PB.text(this, W / 2, H / 2 - 350, d.name, 28, '#c9d4ff', { strokeThickness: 0 }));
+      if (d.achievement) {
+        var tag = PB.text(this, W / 2, H / 2 - 308, d.achievement, 22, '#ffe7a3', { strokeThickness: 0 });
+        tag.name = 'clearTag';
+        p.add(tag);
+      }
+      if (d.achievementToast && PB.Achievements) PB.Achievements.showToast(this, d.achievementToast);
       var stars = PB.stars(this, W / 2, H / 2 - 230, 0, 120, 150);
       stars.forEach(function (s, i) {
         p.add(s);

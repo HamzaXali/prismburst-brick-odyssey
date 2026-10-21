@@ -4,10 +4,11 @@
  * No network and no DOM. Campaign worlds stay 5 x 20.
  * Progress is save.dense. Old saves omit it and load unchanged.
  *
- * The field is a cell grid (not one sprite per shard). Steel cells are
- * a dotted frame: every other edge cell, so corridors stay open and
- * shards beside them can still break. Balls cap at 300; extras merge
- * into the nearest live ball instead of going past the cap.
+ * The field is a cell grid (not one sprite per shard). Steel is a sparse
+ * separator on later masses, with openings wide enough for the ball.
+ * Early masses have no steel. Balls cap at 300; extras merge into the
+ * nearest live ball instead of going past the cap. A mass is clear when
+ * every breakable cell is gone. Steel never counts.
  */
 (function (root, factory) {
   var api = factory();
@@ -104,20 +105,6 @@
         g[row + c] = ((r >> 3) + (c >> 4)) & 1 ? v1 : v2;
       }
     }
-  }
-
-  function dotSteel(g) {
-    var mark = [];
-    for (var r = 0; r < ROWS; r++) {
-      for (var c = 0; c < COLS; c++) {
-        var i = r * COLS + c;
-        var v = g[i];
-        if (!v || v === STEEL) continue;
-        var edge = at(g, c - 1, r) === 0 || at(g, c + 1, r) === 0 || at(g, c, r - 1) === 0 || at(g, c, r + 1) === 0;
-        if (edge && ((c + r) & 1) === 0) mark.push(i);
-      }
-    }
-    for (var m = 0; m < mark.length; m++) g[mark[m]] = STEEL;
   }
 
   function arch(g, cx, base, rx, ry, thick, v) {
@@ -378,12 +365,50 @@
 
   var BUILDERS = [spines, halo, bloom, nested, vein, carved, keels, iris, well, ribs, cloister, weave, arches, cogs, spire, garden, aqueduct, spiralVault, helix, crown];
 
-  function flood(g) {
-    var vis = new Uint8Array(COLS * ROWS);
-    var q = new Int32Array(COLS * ROWS);
+  var ERODE = 2;
+  var WIDE = 12;
+  var MIN_MOUTHS = 1;
+  var SIM_STEPS = 420;
+
+  function accentSteel(g, i) {
+    if (i < 5) return;
+    var bands = i < 10 ? 1 : (i < 15 ? 2 : 3);
+    var gap = WIDE + 4;
+    for (var b = 0; b < bands; b++) {
+      var y = 28 + b * 48;
+      if (y < 8 || y >= ROWS - 24) continue;
+      var hole = 18 + ((i * 17 + b * 23) % (COLS - gap - 36));
+      for (var c = 8; c < COLS - 8; c++) {
+        if (c >= hole && c < hole + gap) continue;
+        g[y * COLS + c] = STEEL;
+      }
+    }
+  }
+
+  function dilateSteel(g) {
+    var wall = new Uint8Array(g.length);
+    for (var i = 0; i < g.length; i++) {
+      if (g[i] !== STEEL) continue;
+      var r = (i / COLS) | 0;
+      var c = i - r * COLS;
+      var r0 = r - ERODE; if (r0 < 0) r0 = 0;
+      var r1 = r + ERODE; if (r1 >= ROWS) r1 = ROWS - 1;
+      var c0 = c - ERODE; if (c0 < 0) c0 = 0;
+      var c1 = c + ERODE; if (c1 >= COLS) c1 = COLS - 1;
+      for (var rr = r0; rr <= r1; rr++) {
+        var row = rr * COLS;
+        for (var cc = c0; cc <= c1; cc++) wall[row + cc] = 1;
+      }
+    }
+    return wall;
+  }
+
+  function floodPassable(wall) {
+    var vis = new Uint8Array(wall.length);
+    var q = new Int32Array(wall.length);
     var h = 0, t = 0;
     function push(i) {
-      if (vis[i] || g[i] === STEEL) return;
+      if (vis[i] || wall[i]) return;
       vis[i] = 1;
       q[t++] = i;
     }
@@ -401,59 +426,202 @@
     return vis;
   }
 
-  function ensureEntry(g) {
-    var open = 0;
+  function floodEmpty(grid, wall) {
+    var vis = new Uint8Array(grid.length);
+    var q = new Int32Array(grid.length);
+    var h = 0, t = 0;
+    function push(i) {
+      if (vis[i] || wall[i] || grid[i]) return;
+      vis[i] = 1;
+      q[t++] = i;
+    }
     var base = (ROWS - 1) * COLS;
-    for (var c = 0; c < COLS; c++) if (g[base + c] !== STEEL) open++;
-    if (open >= 8) return;
-    var c0 = (COLS >> 1) - 5;
-    for (var r = ROWS - 1; r >= ROWS - 18; r--) rect(g, c0, r, 10, 1, 0);
+    for (var c = 0; c < COLS; c++) push(base + c);
+    while (h < t) {
+      var i = q[h++];
+      var r = (i / COLS) | 0;
+      var col = i - r * COLS;
+      if (col > 0) push(i - 1);
+      if (col + 1 < COLS) push(i + 1);
+      if (r > 0) push(i - COLS);
+      if (r + 1 < ROWS) push(i + COLS);
+    }
+    return vis;
   }
 
-  function repair(g) {
-    ensureEntry(g);
-    for (var guard = 0; guard < 48; guard++) {
-      var vis = flood(g);
-      var start = -1;
-      for (var i = 0; i < g.length; i++) {
-        if (g[i] && g[i] !== STEEL && !vis[i]) { start = i; break; }
+  function cellReached(vis, i) {
+    if (vis[i]) return true;
+    var r = (i / COLS) | 0;
+    var c = i - r * COLS;
+    for (var dy = -ERODE; dy <= ERODE; dy++) {
+      var rr = r + dy;
+      if (rr < 0 || rr >= ROWS) continue;
+      var row = rr * COLS;
+      for (var dx = -ERODE; dx <= ERODE; dx++) {
+        var cc = c + dx;
+        if (cc < 0 || cc >= COLS) continue;
+        if (vis[row + cc]) return true;
       }
-      if (start < 0) return;
-      var prev = new Int32Array(g.length);
-      for (var p = 0; p < prev.length; p++) prev[p] = -1;
-      var seen = new Uint8Array(g.length);
-      var q = [start];
-      seen[start] = 1;
-      var found = -1;
-      for (var qi = 0; qi < q.length && found < 0; qi++) {
-        var cur = q[qi];
-        var r = (cur / COLS) | 0;
-        var col = cur - r * COLS;
-        var nexts = [col > 0 ? cur - 1 : -1, col + 1 < COLS ? cur + 1 : -1, r > 0 ? cur - COLS : -1, r + 1 < ROWS ? cur + COLS : -1];
-        for (var k = 0; k < 4; k++) {
-          var n = nexts[k];
-          if (n < 0 || seen[n]) continue;
-          seen[n] = 1;
-          prev[n] = cur;
-          if (vis[n]) { found = n; break; }
-          q.push(n);
+    }
+    return false;
+  }
+
+  function countMouths(wall) {
+    var n = 0;
+    function runs(at) {
+      var run = 0;
+      var last = at(-1);
+      var len = last;
+      for (var i = 0; i <= len; i++) {
+        var open = i < len && !wall[at(i)];
+        if (open) run++;
+        else {
+          if (run >= WIDE) n++;
+          run = 0;
         }
       }
-      if (found < 0) break;
-      var walk = prev[found];
-      var steps = 0;
-      while (walk >= 0 && walk !== start && steps < 100) {
-        var wr = (walk / COLS) | 0;
-        var wc = walk - wr * COLS;
-        for (var dc = -2; dc <= 2; dc++) put(g, wc + dc, wr, 0);
-        walk = prev[walk];
-        steps++;
+    }
+    runs(function (c) { return c < 0 ? COLS : (ROWS - 1) * COLS + c; });
+    runs(function (r) { return r < 0 ? ROWS : r * COLS; });
+    runs(function (r) { return r < 0 ? ROWS : r * COLS + COLS - 1; });
+    return n;
+  }
+
+  function analyze(g) {
+    var wall = dilateSteel(g);
+    var vis = floodPassable(wall);
+    var total = 0;
+    var reached = 0;
+    var steel = 0;
+    for (var i = 0; i < g.length; i++) {
+      if (g[i] === STEEL) { steel++; continue; }
+      if (!g[i]) continue;
+      total++;
+      if (cellReached(vis, i)) reached++;
+    }
+    return {
+      total: total,
+      reached: reached,
+      steel: steel,
+      mouths: countMouths(wall),
+      wide: WIDE,
+      erode: ERODE
+    };
+  }
+
+  function nearBall(i, vis, grid, wall) {
+    var r = (i / COLS) | 0;
+    var c = i - r * COLS;
+    if (ROWS - r <= ERODE) {
+      var blocked = false;
+      for (var rr = r + 1; rr < ROWS; rr++) {
+        var below = rr * COLS + c;
+        if (wall[below] || grid[below]) { blocked = true; break; }
+      }
+      if (!blocked) return true;
+    }
+    for (var dy = -ERODE; dy <= ERODE; dy++) {
+      var rr2 = r + dy;
+      if (rr2 < 0 || rr2 >= ROWS) continue;
+      var row = rr2 * COLS;
+      for (var dx = -ERODE; dx <= ERODE; dx++) {
+        var cc = c + dx;
+        if (cc < 0 || cc >= COLS) continue;
+        if (vis[row + cc]) return true;
       }
     }
-    var vis = flood(g);
-    for (var i = 0; i < g.length; i++) {
-      if (g[i] && g[i] !== STEEL && !vis[i]) g[i] = 0;
+    return false;
+  }
+
+  function simulate(g) {
+    var wall = dilateSteel(g);
+    var grid = new Uint8Array(g);
+    var vis = floodEmpty(grid, wall);
+    var total = 0;
+    for (var n = 0; n < grid.length; n++) if (grid[n] && grid[n] !== STEEL) total++;
+    var left = total;
+    var steps = 0;
+    var t0 = Date.now();
+    while (left > 0 && steps < SIM_STEPS) {
+      var waves = (steps % 6 === 5) ? 3 : 1;
+      var progressed = false;
+      for (var w = 0; w < waves && left > 0; w++) {
+        var hit = [];
+        for (var i = 0; i < grid.length; i++) {
+          if (!grid[i] || grid[i] === STEEL) continue;
+          if (nearBall(i, vis, grid, wall)) hit.push(i);
+        }
+        if (!hit.length) break;
+        progressed = true;
+        for (var h = 0; h < hit.length; h++) {
+          grid[hit[h]] = 0;
+          left--;
+        }
+        vis = floodEmpty(grid, wall);
+      }
+      steps++;
+      if (!progressed) break;
     }
+    var ms = Date.now() - t0;
+    return {
+      total: total,
+      removed: total - left,
+      pct: total ? (total - left) / total : 1,
+      steps: steps,
+      ms: ms
+    };
+  }
+
+  function isCleared(g) {
+    for (var i = 0; i < g.length; i++) if (g[i] && g[i] !== STEEL) return false;
+    return true;
+  }
+
+  function countsForClear(kind) {
+    return !!kind && kind !== STEEL;
+  }
+
+  function auditLevel(i) {
+    var lv = level(i);
+    var info = analyze(lv.grid);
+    var sim = simulate(lv.grid);
+    var early = i < 5;
+    var ok = info.total >= 2000
+      && info.reached === info.total
+      && info.mouths >= MIN_MOUTHS
+      && sim.pct >= 0.95
+      && sim.steps <= SIM_STEPS
+      && (early ? info.steel === 0 : info.steel > 0)
+      && isCleared(clearedGrid(lv.grid));
+    return {
+      index: i,
+      name: lv.name,
+      breakable: info.total,
+      steel: info.steel,
+      reached: info.reached,
+      mouths: info.mouths,
+      pct: sim.pct,
+      steps: sim.steps,
+      ms: sim.ms,
+      ok: ok
+    };
+  }
+
+  function clearedGrid(g) {
+    var copy = new Uint8Array(g);
+    for (var i = 0; i < copy.length; i++) if (copy[i] !== STEEL) copy[i] = 0;
+    return copy;
+  }
+
+  function auditAll() {
+    var rows = [];
+    var errors = [];
+    for (var i = 0; i < COUNT; i++) {
+      var row = auditLevel(i);
+      rows.push(row);
+      if (!row.ok) errors.push(row.name + ' reached ' + row.reached + '/' + row.breakable + ' steel ' + row.steel + ' mouths ' + row.mouths + ' clear ' + Math.round(row.pct * 1000) / 10 + '%');
+    }
+    return { ok: errors.length === 0, rows: rows, errors: errors };
   }
 
   function signature(g) {
@@ -494,8 +662,7 @@
     var g = new Uint8Array(COLS * ROWS);
     BUILDERS[i](g);
     band(g, (i % 3) + 1, ((i + 1) % 3) + 1);
-    dotSteel(g);
-    repair(g);
+    accentSteel(g, i);
     var breakable = 0, steel = 0;
     for (var n = 0; n < g.length; n++) {
       if (g[n] === STEEL) steel++;
@@ -705,9 +872,16 @@
     COIN_VALUE: COIN_VALUE,
     TRACK: TRACK,
     NAMES: NAMES,
+    ERODE: ERODE,
+    WIDE: WIDE,
+    MIN_MOUTHS: MIN_MOUTHS,
     level: level,
     signature: signature,
-    flood: flood,
+    analyze: analyze,
+    simulate: simulate,
+    isCleared: isCleared,
+    countsForClear: countsForClear,
+    auditAll: auditAll,
     defaultDense: defaultDense,
     normalize: normalize,
     validate: validate,

@@ -190,16 +190,16 @@ try {
   record('the database save function does not reject unknown keys', !/unknown field/i.test(sql) && !/jsonb_object_keys/.test(sql));
 
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  record('service worker cache version was bumped and precaches supabase-js', sw.includes('prismburst-v1.3.3') && sw.includes('./js/dense.js') && sw.includes('./js/dense-scene.js') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
+  record('service worker cache version was bumped and precaches supabase-js', sw.includes('prismburst-v1.3.4') && sw.includes('./js/achievements.js') && sw.includes('./js/dense.js') && sw.includes('./js/dense-scene.js') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.3.3') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
-  record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '1.3.3'") && sw.includes('prismburst-v1.3.3'));
+  record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '1.3.4'") && sw.includes('prismburst-v1.3.4'));
   record('service worker keeps Supabase network-only and skips OAuth returns', sw.includes('supabase\\.co') && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
 
   const yml = fs.readFileSync(path.join(root, '.github/workflows/pages.yml'), 'utf8');
   record('Pages workflow validates secrets and publishes config and privacy', yml.includes('check-secrets.js') && yml.includes('config.js') && yml.includes('privacy.html') && yml.includes('cloud-unit.js'));
 
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/dense.js', 'js/core.js', 'js/home.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'js/dense-scene.js', 'game.js'];
+const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/dense.js', 'js/core.js', 'js/home.js', 'js/achievements.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'js/dense-scene.js', 'game.js'];
   let pos = -1;
   let orderOk = true;
   for (const file of order) {

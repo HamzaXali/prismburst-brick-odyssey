@@ -58,29 +58,29 @@ create policy player_saves_select_own
   on public.player_saves
   for select
   to authenticated
-  using (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id);
 
 drop policy if exists player_saves_insert_own on public.player_saves;
 create policy player_saves_insert_own
   on public.player_saves
   for insert
   to authenticated
-  with check (auth.uid() = user_id);
+  with check ((select auth.uid()) = user_id);
 
 drop policy if exists player_saves_update_own on public.player_saves;
 create policy player_saves_update_own
   on public.player_saves
   for update
   to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
 
 drop policy if exists player_saves_delete_own on public.player_saves;
 create policy player_saves_delete_own
   on public.player_saves
   for delete
   to authenticated
-  using (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id);
 
 create or replace function public.player_saves_require_revision_bump()
 returns trigger
@@ -186,7 +186,8 @@ grant execute on function public.upsert_player_save(jsonb, integer, timestamptz,
 comment on table public.player_saves is
   'One save per signed-in player. data is the game save plus save_version and client_updated_at. Max 64 KB.';
 
--- Display names. Same script as supabase/migrations/002_profiles.sql.
+-- Display names. Table, grants, and trigger match supabase/migrations/002_profiles.sql.
+-- Policies match supabase/migrations/003_rls_initplan.sql: (select auth.uid()).
 -- Does not read or write player_saves. Safe to run more than once.
 
 create table if not exists public.profiles (
@@ -221,22 +222,22 @@ create policy profiles_select_own
   on public.profiles
   for select
   to authenticated
-  using (auth.uid() = id);
+  using ((select auth.uid()) = id);
 
 drop policy if exists profiles_insert_own on public.profiles;
 create policy profiles_insert_own
   on public.profiles
   for insert
   to authenticated
-  with check (auth.uid() = id);
+  with check ((select auth.uid()) = id);
 
 drop policy if exists profiles_update_own on public.profiles;
 create policy profiles_update_own
   on public.profiles
   for update
   to authenticated
-  using (auth.uid() = id)
-  with check (auth.uid() = id);
+  using ((select auth.uid()) = id)
+  with check ((select auth.uid()) = id);
 
 create or replace function public.profiles_guard()
 returns trigger

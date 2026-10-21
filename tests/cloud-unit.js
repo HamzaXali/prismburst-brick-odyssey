@@ -180,7 +180,7 @@ try {
 
   const sql = fs.readFileSync(path.join(root, 'supabase/schema.sql'), 'utf8');
   record('schema enables RLS', /enable row level security/i.test(sql));
-  record('schema restricts rows with auth.uid() = user_id', /auth\.uid\(\)\s*=\s*user_id/.test(sql));
+  record('schema restricts rows with (select auth.uid()) = user_id', /\(select auth\.uid\(\)\)\s*=\s*user_id/.test(sql));
   record('policies are for authenticated only', /to authenticated/.test(sql) && !/for (select|insert|update|delete|all)[\s\S]{0,120}to anon/i.test(sql));
   record('anon and public are revoked on the table', /revoke all on table public\.player_saves from public, anon/i.test(sql));
   record('no permissive using (true) policy', !/using\s*\(\s*true\s*\)/i.test(sql));
@@ -256,8 +256,8 @@ try {
       && /revoke all on table public\.profiles from public, anon/i.test(text)
       && /grant select, insert on table public\.profiles to authenticated/i.test(text)
       && /grant update \(display_name\) on table public\.profiles to authenticated/i.test(text)
-      && /auth\.uid\(\)\s*=\s*id/.test(text)
-      && /for update[\s\S]{0,180}using \(auth\.uid\(\) = id\)[\s\S]{0,80}with check \(auth\.uid\(\) = id\)/i.test(text)
+      && /(?:\(select\s+auth\.uid\(\)\)|auth\.uid\(\))\s*=\s*id/.test(text)
+      && /for update[\s\S]{0,220}using \((?:\(select auth\.uid\(\)\)|auth\.uid\(\)) = id\)[\s\S]{0,140}with check \((?:\(select auth\.uid\(\)\)|auth\.uid\(\)) = id\)/i.test(text)
       && /char_length\(display_name\) between 3 and 20/.test(text)
       && /security invoker/i.test(text)
       && /set search_path = pg_catalog, public/i.test(text)
@@ -280,6 +280,54 @@ try {
   const guardStart = migration.indexOf('create or replace function public.profiles_guard()');
   record('schema.sql profiles trigger matches the migration', guardStart > 0 && profileSql.includes(migration.slice(guardStart)));
   record('the profiles migration does not change player_saves', !/\b(insert into|update|delete from|drop table|alter table)\s+public\.player_saves\b/i.test(migration));
+
+  const initplan = fs.readFileSync(path.join(root, 'supabase/migrations/003_rls_initplan.sql'), 'utf8');
+  function parsePolicies(text) {
+    const out = [];
+    const re = /create policy\s+([a-z0-9_]+)\s+on\s+(public\.[a-z0-9_]+)\s+for\s+(select|insert|update|delete)\s+to\s+([a-z0-9_]+)\s+([\s\S]*?);/gi;
+    let match;
+    while ((match = re.exec(text))) {
+      out.push([
+        match[1],
+        match[2],
+        match[3].toLowerCase(),
+        match[4].toLowerCase(),
+        match[5].replace(/\s+/g, ' ').trim().toLowerCase()
+      ]);
+    }
+    return out;
+  }
+  const initplanPolicies = parsePolicies(initplan);
+  const schemaPolicies = parsePolicies(sql);
+  const expectedPolicies = [
+    ['player_saves_select_own', 'public.player_saves', 'select', 'authenticated', 'using ((select auth.uid()) = user_id)'],
+    ['player_saves_insert_own', 'public.player_saves', 'insert', 'authenticated', 'with check ((select auth.uid()) = user_id)'],
+    ['player_saves_update_own', 'public.player_saves', 'update', 'authenticated', 'using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id)'],
+    ['player_saves_delete_own', 'public.player_saves', 'delete', 'authenticated', 'using ((select auth.uid()) = user_id)'],
+    ['profiles_select_own', 'public.profiles', 'select', 'authenticated', 'using ((select auth.uid()) = id)'],
+    ['profiles_insert_own', 'public.profiles', 'insert', 'authenticated', 'with check ((select auth.uid()) = id)'],
+    ['profiles_update_own', 'public.profiles', 'update', 'authenticated', 'using ((select auth.uid()) = id) with check ((select auth.uid()) = id)']
+  ];
+  const initplanBare = initplan.replace(/\(select\s+auth\.(?:uid|jwt|role)\(\)\)/gi, '');
+  record('initplan policies are the seven owner checks', eq(initplanPolicies, expectedPolicies));
+  record('schema.sql policies match the initplan migration', eq(schemaPolicies, initplanPolicies));
+  record('every initplan policy uses (select auth.uid())',
+    initplanPolicies.length === 7
+    && initplanPolicies.every(function (policy) { return policy[4].indexOf('(select auth.uid())') !== -1; })
+    && initplanPolicies.reduce(function (count, policy) {
+      return count + (policy[4].match(/\(select auth\.uid\(\)\)/g) || []).length;
+    }, 0) === 9);
+  record('initplan migration has no bare auth.uid()',
+    !/auth\.uid\(\)/i.test(initplanBare) && !/auth\.jwt\(\)/i.test(initplanBare) && !/auth\.role\(\)/i.test(initplanBare));
+  record('initplan migration does not disable row level security',
+    !/disable row level security/i.test(initplan)
+    && !/disable row level security/i.test(sql)
+    && !/using\s*\(\s*true\s*\)/i.test(initplan)
+    && (sql.match(/enable row level security/gi) || []).length === 2
+    && /\bbegin\s*;/i.test(initplan)
+    && /\bcommit\s*;/i.test(initplan)
+    && initplan.toLowerCase().indexOf('begin;') < initplan.toLowerCase().indexOf('create policy')
+    && initplan.toLowerCase().lastIndexOf('create policy') < initplan.toLowerCase().lastIndexOf('commit;'));
 
   const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.')).sort();
   record('Pages, the debug APK, and the release workflow are the only workflows', workflows.join(',') === 'android-debug.yml,android-release.yml,pages.yml');

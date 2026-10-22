@@ -7,7 +7,7 @@
   'use strict';
   var PB = window.PB, L = window.PB_LEVELS, Save = PB.Save, Sfx = PB.Sfx;
   var W = PB.W, H = PB.H;
-  PB.VERSION = '1.3.2';
+  PB.VERSION = '1.4.0';
 
   function backButton(scene, cb) {
     return PB.button(scene, 92, 70, 140, 76, '‹ Back', cb, { size: 30, color: 0x9b6bff });
@@ -210,9 +210,17 @@
       toggle(top + 150, 'sound', 'Sound');
       toggle(top + 280, 'vibration', 'Vibration');
       toggle(top + 410, 'shake', 'Screen shake');
-      PB.text(this, W / 2, top + 490, navigator.vibrate ? 'Vibration uses your phone\'s motor when supported.' : 'Vibration is not supported by this browser.', 20, '#8a90c0', { strokeThickness: 0, wrap: 540 });
+      var debugUnlock = !this.overlay && PB.BUILD && PB.BUILD.debugUnlock === true;
+      if (debugUnlock) {
+        var unlock = PB.button(self, W / 2, top + 540, 540, 100, 'Unlock all levels: ' + (PB.BUILD.levelsOpen === true ? 'ON' : 'OFF'), function () {
+          PB.BUILD.levelsOpen = PB.BUILD.levelsOpen !== true;
+          unlock.setLabel('Unlock all levels: ' + (PB.BUILD.levelsOpen === true ? 'ON' : 'OFF'));
+        }, { color: PB.BUILD.levelsOpen === true ? 0xffd166 : 0x6a6f9a, size: 32 });
+        unlock.name = 'toggle_unlock';
+      }
       if (!this.overlay) {
-        PB.button(this, W / 2, top + 620, 540, 96, 'Reset progress', function () { self.confirmReset(); }, { color: 0xff2e63, size: 32 });
+        PB.text(this, W / 2, top + (debugUnlock ? 660 : 490), navigator.vibrate ? 'Vibration uses your phone\'s motor when supported.' : 'Vibration is not supported by this browser.', 20, '#8a90c0', { strokeThickness: 0, wrap: 540 });
+        PB.button(this, W / 2, top + (debugUnlock ? 780 : 620), 540, 96, 'Reset progress', function () { self.confirmReset(); }, { color: 0xff2e63, size: 32 });
         PB.text(this, W / 2, H - 170, 'PRISMBURST — BRICK ODYSSEY v' + PB.VERSION, 22, '#9fa8e0', { strokeThickness: 0 });
         PB.text(this, W / 2, H - 130, 'No ads and no tracking. Progress stays on this device. Cloud save is optional.', 18, '#6a70a8', { strokeThickness: 0, wrap: 600 });
       } else {
@@ -373,6 +381,12 @@
       p.add(PB.panel(this, W / 2, H / 2 + 20, 620, 1100, 0xffd166));
       p.add(PB.text(this, W / 2, H / 2 - 410, 'LEVEL CLEAR!', 64, '#ffffff', { glow: '#ffd166' }));
       p.add(PB.text(this, W / 2, H / 2 - 350, d.name, 28, '#c9d4ff', { strokeThickness: 0 }));
+      if (d.achievement) {
+        var tag = PB.text(this, W / 2, H / 2 - 308, d.achievement, 22, '#ffe7a3', { strokeThickness: 0 });
+        tag.name = 'clearTag';
+        p.add(tag);
+      }
+      if (d.achievementToast && PB.Achievements) PB.Achievements.showToast(this, d.achievementToast);
       var stars = PB.stars(this, W / 2, H / 2 - 230, 0, 120, 150);
       stars.forEach(function (s, i) {
         p.add(s);

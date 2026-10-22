@@ -67,7 +67,7 @@
       owned: { ball: ['classic'], paddle: ['classic'] }, equipped: { ball: 'classic', paddle: 'classic' },
       settings: { sound: true, vibration: true, shake: true },
       daily: { last: null, streak: 0 }, missions: { date: null, list: [] },
-      stats: { bricks: 0, played: 0, cleared: 0 }, last: null, home: null, shop: null
+      stats: { bricks: 0, played: 0, cleared: 0 }, last: null, home: null, shop: null, achievements: null
     };
   }
   function merge(base, src) {
@@ -112,8 +112,14 @@
       this.data = defaults(); this.refreshMissions(); this.persist();
     },
     levelRec: function (w, l) { return this.data.levels[w + '-' + l] || null; },
-    isUnlocked: function (w, l) { return (this.data.unlocked[w] || 0) > l; },
-    worldUnlocked: function (w) { return (this.data.unlocked[w] || 0) > 0; },
+    isUnlocked: function (w, l) {
+      if (PB.levelsOpen && PB.levelsOpen()) return true;
+      return (this.data.unlocked[w] || 0) > l;
+    },
+    worldUnlocked: function (w) {
+      if (PB.levelsOpen && PB.levelsOpen()) return true;
+      return (this.data.unlocked[w] || 0) > 0;
+    },
     worldStars: function (w) {
       var s = 0; for (var l = 0; l < L.LEVELS_PER_WORLD; l++) { var r = this.levelRec(w, l); if (r) s += r.stars; } return s;
     },

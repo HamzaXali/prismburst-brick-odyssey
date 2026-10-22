@@ -25,10 +25,25 @@
     }
   }
 
+  var VIEWS = ['auth', 'forgot', 'recovery', 'account'];
+
+  function show(el, on) { if (el) el.hidden = !on; }
+
+  function providerLabel(name) {
+    if (name === 'google') return 'Google';
+    if (name === 'facebook') return 'Facebook';
+    if (name === 'email') return 'Email';
+    return 'your account';
+  }
+
   var Account = PB.Account = {
-    open: function () {
+    view: 'auth',
+    tab: 'login',
+    open: function (view) {
       var root = $('pb-account');
       if (!root) return;
+      if (view === 'forgot') this.view = 'forgot';
+      else if (view === 'auth' || view === 'recovery' || root.hidden) this.view = 'auth';
       root.hidden = false;
       setGameInput(false);
       this.render();
@@ -38,7 +53,21 @@
       if (root) root.hidden = true;
       var confirm = $('pb-confirm');
       if (confirm) confirm.hidden = true;
+      this.view = 'auth';
       setGameInput(true);
+    },
+    setTab: function (tab) {
+      this.tab = tab === 'signup' ? 'signup' : 'login';
+      this.render();
+    },
+    showView: function (view) {
+      this.view = view === 'forgot' ? 'forgot' : 'auth';
+      this.render();
+    },
+    currentView: function (snap) {
+      if (snap.recovery) return 'recovery';
+      if (this.view === 'forgot') return 'forgot';
+      return snap.signedIn ? 'account' : 'auth';
     },
     attachInputGuard: function () {
       if (this._guard || !PB.game || !PB.game.events) return;
@@ -55,40 +84,98 @@
       var cloud = PB.Cloud;
       if (!cloud || !$('pb-account')) return;
       var snap = cloud.snapshot();
+      var view = this.currentView(snap);
       var who = $('pb-acct-who');
+      // Email addresses and tokens are never written into the page.
       if (snap.signedIn) {
-        var provider = snap.provider ? snap.provider.charAt(0).toUpperCase() + snap.provider.slice(1) : 'Account';
         var parts = [];
         if (snap.displayName) parts.push(snap.displayName);
-        parts.push(snap.email || 'Signed in');
-        parts.push(provider);
+        parts.push('Signed in with ' + providerLabel(snap.provider));
         who.textContent = parts.join(' · ');
       } else {
         who.textContent = snap.displayName ? snap.displayName + ' · Guest on this device' : 'Guest on this device';
       }
+      var title = $('pb-acct-title');
+      if (title) {
+        title.textContent = view === 'auth' ? (this.tab === 'signup' ? 'SIGN UP' : 'LOG IN')
+          : view === 'forgot' ? 'RESET PASSWORD'
+          : view === 'recovery' ? 'NEW PASSWORD' : 'ACCOUNT';
+      }
+      VIEWS.forEach(function (name) {
+        var el = document.querySelector('[data-view="' + name + '"]');
+        show(el, name === view);
+      });
       var shown = $('pb-name-shown');
-      if (shown) shown.textContent = snap.displayName || '';
+      if (shown) {
+        shown.textContent = snap.displayName || '';
+        // The name already leads the status line above, so it is not drawn twice.
+        shown.hidden = true;
+      }
       var nameMsg = $('pb-name-msg');
       if (nameMsg) nameMsg.textContent = snap.nameNote || '';
       var nameInput = $('pb-name-input');
       if (nameInput && document.activeElement !== nameInput) {
         nameInput.value = snap.namePrompt ? (snap.nameSuggestion || '') : (snap.displayName || '');
       }
+      show($('pb-name-box'), view === 'auth' || view === 'account');
       $('pb-acct-sync').textContent = snap.sync;
       $('pb-acct-msg').textContent = snap.error || '';
       $('pb-acct-loading').hidden = !snap.loading;
+
+      // Log in / Sign up tabs.
+      var signup = this.tab === 'signup';
+      document.querySelectorAll('[data-tab]').forEach(function (tab) {
+        var on = tab.getAttribute('data-tab') === (signup ? 'signup' : 'login');
+        tab.setAttribute('aria-selected', on ? 'true' : 'false');
+        tab.classList.toggle('is-on', on);
+      });
+      var lead = $('pb-auth-lead');
+      if (lead) lead.textContent = signup
+        ? 'Create an account to keep your progress in the cloud. Or play as a guest.'
+        : 'Log in to keep your progress in the cloud. Or play as a guest.';
+      show($('pb-password2-row'), signup);
+      show(document.querySelector('[data-action="login"]'), !signup);
+      show(document.querySelector('[data-action="signup"]'), signup);
+      show(document.querySelector('#pb-email-form [data-action="forgot"]'), !signup);
+      var pass = $('pb-password-input');
+      if (pass) pass.setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
+
       var guest = document.querySelector('[data-action="guest"]');
       var link = document.querySelector('[data-action="link"]');
       var logout = document.querySelector('[data-action="logout"]');
       if (guest) guest.hidden = snap.signedIn;
-      if (logout) logout.hidden = !snap.signedIn;
+      if (logout) logout.hidden = !snap.signedIn || view !== 'account';
       var progress = PB.SaveSync.hasProgress(PB.Save.data);
       if (link) link.hidden = snap.signedIn || !progress;
       this.paintProvider('google', snap.loading);
       this.paintProvider('facebook', snap.loading);
       this.paintProvider('email', snap.loading);
-      var recovery = $('pb-recovery');
-      if (recovery) recovery.hidden = !(snap.signedIn && snap.recovery);
+
+      // Set a new password after the reset link returns.
+      var recForm = $('pb-recovery-form');
+      var recState = $('pb-recovery-state');
+      var retry = $('pb-recovery-retry');
+      if (view === 'recovery') {
+        var checking = !snap.signedIn && (snap.loading || !snap.ready);
+        var failed = !snap.signedIn && !checking;
+        show(recForm, snap.signedIn);
+        show(retry, failed);
+        if (recState) {
+          recState.textContent = snap.signedIn ? 'Type a new password twice. Your progress stays on this device.'
+            : checking ? 'Checking your reset link…'
+            : 'This reset link could not be used here. Ask for a new link and open it on this phone.';
+        }
+      }
+      var sendReset = document.querySelector('[data-action="send-reset"]');
+      if (sendReset) {
+        var wait = snap.resetWait || 0;
+        sendReset.textContent = wait > 0 ? 'Link sent · resend in ' + Math.ceil(wait / 1000) + 's' : 'Send reset link';
+        if (wait > 0 && !this._tick) {
+          var self = this;
+          this._tick = setTimeout(function () { self._tick = null; self.render(); }, 1000);
+        }
+      }
+
       var migrate = $('pb-migrate');
       if (migrate) {
         migrate.hidden = !snap.pending;
@@ -104,22 +191,35 @@
         }
       }
       var sheetBusy = snap.loading;
+      var emailOn = cloud.providerEnabled('email');
       document.querySelectorAll('[data-action="save-name"], #pb-name-input').forEach(function (el) {
         setDisabled(el, sheetBusy);
       });
-      document.querySelectorAll('#pb-email-form button, #pb-email-form input, [data-action="guest"], [data-action="logout"], [data-action="link"], [data-action="set-password"]').forEach(function (el) {
-        if (el.closest && el.closest('#pb-migrate')) return;
-        if (el.id === 'pb-email-input' || el.id === 'pb-password-input' || el.getAttribute('data-action') === 'login' || el.getAttribute('data-action') === 'signup' || el.getAttribute('data-action') === 'forgot') {
-          setDisabled(el, sheetBusy || !cloud.providerEnabled('email'));
-        } else if (!el.hidden) {
+      var emailIds = ['pb-email-input', 'pb-password-input', 'pb-password2-input', 'pb-forgot-email'];
+      var emailActions = ['login', 'signup', 'forgot', 'send-reset'];
+      document.querySelectorAll('#pb-account input, #pb-account button').forEach(function (el) {
+        if (el.closest && el.closest('#pb-migrate, #pb-confirm')) return;
+        var action = el.getAttribute('data-action') || '';
+        if (emailIds.indexOf(el.id) >= 0 || emailActions.indexOf(action) >= 0) {
+          var block = sheetBusy || !emailOn;
+          if (action === 'send-reset' && (snap.resetWait || 0) > 0) block = true;
+          setDisabled(el, block);
+        } else if (action === 'set-password' || el.id === 'pb-new-password' || el.id === 'pb-new-password2') {
+          setDisabled(el, sheetBusy || !snap.signedIn);
+        } else if (action === 'guest' || action === 'logout' || action === 'link') {
           setDisabled(el, sheetBusy);
         }
       });
     },
     paintProvider: function (name, loading) {
-      var enabled = PB.Cloud.providerEnabled(name) && !loading;
+      var on = PB.Cloud.providerEnabled(name);
+      var enabled = on && !loading;
       var note = $('pb-note-' + name);
-      if (note) note.textContent = enabled ? '' : 'Not set up yet.';
+      if (note) {
+        if (on) note.textContent = '';
+        else note.textContent = name === 'facebook' ? 'Coming soon. Not set up yet.' : 'Not set up yet.';
+      }
+      if (name === 'facebook') show($('pb-soon-facebook'), !on);
       if (name === 'email') return;
       var btn = document.querySelector('[data-action="' + name + '"]');
       setDisabled(btn, !enabled);
@@ -129,12 +229,39 @@
   function emailValue() { return ($('pb-email-input').value || '').trim(); }
   function passwordValue() { return $('pb-password-input').value || ''; }
 
+  function submitEmail() {
+    if (Account.tab === 'signup') {
+      var second = $('pb-password2-input').value || '';
+      if (second !== passwordValue()) {
+        PB.Cloud.errorText = 'The two passwords do not match.';
+        Account.render();
+        return;
+      }
+      PB.Cloud.signUpEmail(emailValue(), passwordValue()).then(function () {
+        if (!PB.Cloud.session && /confirm the account/i.test(PB.Cloud.errorText || '')) {
+          Account.tab = 'login';
+          $('pb-password2-input').value = '';
+          Account.render();
+        }
+      });
+      return;
+    }
+    PB.Cloud.signInEmail(emailValue(), passwordValue());
+  }
+
   document.getElementById('pb-account').addEventListener('click', function (event) {
     var choice = event.target.closest ? event.target.closest('[data-choice]') : null;
     var actionEl = event.target.closest ? event.target.closest('[data-action]') : null;
+    var tabEl = event.target.closest ? event.target.closest('[data-tab]') : null;
     if (choice) {
       event.preventDefault();
       PB.Cloud.choose(choice.getAttribute('data-choice'));
+      return;
+    }
+    if (tabEl) {
+      event.preventDefault();
+      PB.Cloud.errorText = '';
+      Account.setTab(tabEl.getAttribute('data-tab'));
       return;
     }
     if (!actionEl) return;
@@ -146,28 +273,62 @@
     }
     if (action === 'google' || action === 'facebook') {
       event.preventDefault();
+      // Facebook stays off until its OAuth app is configured: no request is made.
       if (!PB.Cloud.providerEnabled(action)) {
-        PB.Cloud.errorText = 'Not set up yet.';
+        PB.Cloud.errorText = action === 'facebook' ? 'Facebook login is coming soon.' : 'Not set up yet.';
         Account.render();
         return;
       }
       PB.Cloud.signInOAuth(action);
       return;
     }
+    if (action === 'toggle-password') {
+      event.preventDefault();
+      var showing = $('pb-password-input').type === 'text';
+      ['pb-password-input', 'pb-password2-input'].forEach(function (id) { var el = $(id); if (el) el.type = showing ? 'password' : 'text'; });
+      actionEl.textContent = showing ? 'Show' : 'Hide';
+      actionEl.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+      return;
+    }
     if (action === 'signup') {
       event.preventDefault();
-      $('pb-password-input').setAttribute('autocomplete', 'new-password');
-      PB.Cloud.signUpEmail(emailValue(), passwordValue());
+      submitEmail();
       return;
     }
     if (action === 'forgot') {
       event.preventDefault();
-      PB.Cloud.forgotEmail(emailValue());
+      var typed = emailValue();
+      var box = $('pb-forgot-email');
+      if (box && typed && !box.value) box.value = typed;
+      if (PB.Cloud.recovery) PB.Cloud.recovery = false;
+      PB.Cloud.errorText = '';
+      Account.showView('forgot');
+      if (box && !box.disabled) box.focus();
+      return;
+    }
+    if (action === 'send-reset') {
+      event.preventDefault();
+      PB.Cloud.forgotEmail(($('pb-forgot-email').value || '').trim());
+      return;
+    }
+    if (action === 'to-login') {
+      event.preventDefault();
+      PB.Cloud.errorText = '';
+      Account.tab = 'login';
+      Account.showView('auth');
+      return;
+    }
+    if (action === 'cancel-recovery') {
+      event.preventDefault();
+      PB.Cloud.errorText = '';
+      PB.Cloud.cancelRecovery();
+      Account.showView('auth');
       return;
     }
     if (action === 'link') {
       event.preventDefault();
       PB.Cloud.errorText = 'Sign in below to link the progress on this device. You will be asked before anything is replaced.';
+      Account.tab = 'login';
       Account.render();
       var input = $('pb-email-input');
       if (input && !input.disabled) input.focus();
@@ -196,16 +357,27 @@
     }
     if (action === 'set-password') {
       event.preventDefault();
-      PB.Cloud.updatePassword($('pb-new-password').value || '');
+      PB.Cloud.updatePassword($('pb-new-password').value || '', $('pb-new-password2').value || '').then(function () {
+        if (!PB.Cloud.recovery) {
+          $('pb-new-password').value = '';
+          $('pb-new-password2').value = '';
+        }
+        Account.render();
+      });
     }
   });
 
   $('pb-email-form').addEventListener('submit', function (event) {
     event.preventDefault();
-    $('pb-password-input').setAttribute('autocomplete', 'current-password');
-    PB.Cloud.signInEmail(emailValue(), passwordValue());
+    submitEmail();
+  });
+
+  $('pb-forgot-email').addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    PB.Cloud.forgotEmail(($('pb-forgot-email').value || '').trim());
   });
 
   Account.render();
-  if (PB.Cloud.pending || PB.Cloud.errorText) Account.open();
+  if (PB.Cloud.pending || PB.Cloud.errorText || PB.Cloud.recovery) Account.open();
 })();

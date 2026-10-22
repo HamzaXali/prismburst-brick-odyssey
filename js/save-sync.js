@@ -19,6 +19,11 @@
  * on the newer timestamp and are never added together. A level's doubled
  * coin claim is kept if either side has it. Missing shop or doubled fields
  * on an older save stay absent until something new is stored.
+ * Crystal Mass was removed in 1.4.0. A save.dense written by 1.3.5 is no
+ * longer a known field: it is kept as plain JSON like any unknown value,
+ * so an existing save still loads and nothing is dropped.
+ * save.achievements unions unlocked badges and paid gifts. Coins stay on
+ * the newer timestamp, and a gift already marked paid is not granted again.
  * Fields this build does not know are not a reason to reject a save. Known
  * fields stay strict. Unknown JSON values are copied through load, merge, and
  * upload so an older build does not drop data a newer build wrote. Functions,
@@ -54,7 +59,7 @@
   /* Keep these ids in sync with PB.BALL_SKINS and PB.PADDLE_SKINS in js/core.js. */
   var BALLS = ['classic', 'rose', 'venom', 'ember', 'solar', 'void', 'rainbow'];
   var PADDLES = ['classic', 'magenta', 'emerald', 'gold', 'obsidian', 'prism'];
-  var LOCAL_KEYS = ['v', 'coins', 'unlocked', 'levels', 'owned', 'equipped', 'settings', 'daily', 'missions', 'stats', 'last', 'home', 'shop'];
+  var LOCAL_KEYS = ['v', 'coins', 'unlocked', 'levels', 'owned', 'equipped', 'settings', 'daily', 'missions', 'stats', 'last', 'home', 'shop', 'achievements'];
 
   function homeApi() {
     var g = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
@@ -82,6 +87,21 @@
 
   function homeOf(raw) {
     var api = homeApi();
+    if (!api) return raw && typeof raw === 'object' ? raw : null;
+    return api.normalize(raw);
+  }
+
+  function achieveApi() {
+    var g = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
+    if (g.PB && g.PB.Achievements && g.PB.Achievements.merge) return g.PB.Achievements;
+    if (typeof require === 'function') {
+      try { return require('./achievements.js'); } catch (e) { return null; }
+    }
+    return null;
+  }
+
+  function achieveOf(raw) {
+    var api = achieveApi();
     if (!api) return raw && typeof raw === 'object' ? raw : null;
     return api.normalize(raw);
   }
@@ -184,6 +204,12 @@
       shopChecked = shopRef ? shopRef.validate(data.shop) : { ok: false, error: 'shop is invalid' };
       if (!shopChecked.ok) return fail(shopChecked.error || 'shop is invalid');
     }
+    var achChecked = null;
+    if (data.achievements !== undefined) {
+      var achRef = achieveApi();
+      achChecked = achRef ? achRef.validate(data.achievements) : { ok: false, error: 'achievements are invalid' };
+      if (!achChecked.ok) return fail(achChecked.error || 'achievements are invalid');
+    }
     var homeApiRef = homeApi();
     var homeChecked = homeApiRef ? homeApiRef.validateHome(data.home === undefined ? null : data.home) : { ok: data.home == null, home: data.home || null, error: 'home is invalid' };
     if (!homeChecked.ok) return fail(homeChecked.error || 'home is invalid');
@@ -203,7 +229,8 @@
         stats: { bricks: data.stats.bricks, played: data.stats.played, cleared: data.stats.cleared },
         last: last,
         home: homeChecked.home,
-        shop: shopChecked ? shopChecked.shop : shopOf(null)
+        shop: shopChecked ? shopChecked.shop : shopOf(null),
+        achievements: achChecked ? achChecked.achievements : achieveOf(null)
     };
     var absorbed = plain.absorb(save, data, 0, plain.ENVELOPE);
     if (!absorbed.ok) return absorbed;
@@ -294,7 +321,8 @@
       },
       last: src.last ? { world: src.last.world | 0, level: src.last.level | 0 } : null,
       home: homeOf(src.home),
-      shop: shopOf(src.shop)
+      shop: shopOf(src.shop),
+      achievements: achieveOf(src.achievements)
     };
     if (plain) plain.absorb(out, src, 0, plain.ENVELOPE);
     return out;
@@ -329,6 +357,8 @@
     if (api && api.hasHomeProgress(save.home)) return true;
     var shop = shopApi();
     if (shop && shop.hasProgress(save.shop)) return true;
+    var ach = achieveApi();
+    if (ach && ach.hasProgress(save.achievements)) return true;
     return false;
   }
 
@@ -426,6 +456,11 @@
           var api = homeApi();
           if (!api) return homeOf(state.home);
           return api.mergeHome(local.home, remote.home, !remoteNewer);
+        })(),
+        achievements: (function () {
+          var api = achieveApi();
+          if (!api) return achieveOf(remoteNewer ? remote.achievements : local.achievements);
+          return api.merge(local.achievements, remote.achievements);
         })()
       }
     };

@@ -3,11 +3,14 @@
  * and the SQL/policy text. No browser and no network. */
 'use strict';
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const vm = require('vm');
+const { spawnSync, execFileSync } = require('child_process');
 const sync = require('../js/save-sync');
 const profile = require('../js/profile');
 const secrets = require('../scripts/check-secrets');
+const copyWeb = require('../scripts/copy-web');
 
 const root = path.join(__dirname, '..');
 const results = [];
@@ -190,16 +193,18 @@ try {
   record('the database save function does not reject unknown keys', !/unknown field/i.test(sql) && !/jsonb_object_keys/.test(sql));
 
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  record('service worker cache version was bumped and precaches supabase-js', sw.includes('prismburst-v1.3.2') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
+  const shippedVersion = require('../package.json').version;
+  record('service worker cache version matches the semver and precaches the game',
+    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.3.5') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
-  record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '1.3.2'") && sw.includes('prismburst-v1.3.2'));
+  record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '" + shippedVersion + "'") && sw.includes('prismburst-v' + shippedVersion));
   record('service worker keeps Supabase network-only and skips OAuth returns', sw.includes('supabase\\.co') && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
 
   const yml = fs.readFileSync(path.join(root, '.github/workflows/pages.yml'), 'utf8');
   record('Pages workflow validates secrets and publishes config and privacy', yml.includes('check-secrets.js') && yml.includes('config.js') && yml.includes('privacy.html') && yml.includes('cloud-unit.js'));
 
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/core.js', 'js/home.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'game.js'];
+  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/build-flags.js', 'js/core.js', 'js/home.js', 'js/achievements.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'game.js'];
   let pos = -1;
   let orderOk = true;
   for (const file of order) {
@@ -333,9 +338,40 @@ try {
   record('Pages, the debug APK, and the release workflow are the only workflows', workflows.join(',') === 'android-debug.yml,android-release.yml,pages.yml');
   record('Pages deploy still publishes only the game files', yml.includes('no tests/, scripts/') && yml.includes('cp -r index.html') && !/\btests\//.test(yml.split('cp -r')[1] || '') && !yml.includes('android-debug'));
   const apk = fs.readFileSync(path.join(root, '.github/workflows/android-debug.yml'), 'utf8');
+  const releaseYml = fs.readFileSync(path.join(root, '.github/workflows/android-release.yml'), 'utf8');
   record('debug APK workflow validates, syncs, and uploads the debug artifact',
     apk.includes('android-actions/setup-android@v4') && apk.includes('platforms;android-36') && apk.includes('npm run validate') && apk.includes('node scripts/copy-web.js') && apk.includes('npx cap sync android') && apk.includes('assembleDebug') && apk.includes('name: prismburst-debug-apk') && apk.includes('app-debug.apk') && !/\$\{\{\s*secrets\./.test(apk) && !/KEYSTORE_/.test(apk));
-  const releaseYml = fs.readFileSync(path.join(root, '.github/workflows/android-release.yml'), 'utf8');
+  const flagSrc = fs.readFileSync(path.join(root, 'js/build-flags.js'), 'utf8');
+  const flagCtx = { window: {} };
+  flagCtx.globalThis = flagCtx;
+  flagCtx.window = flagCtx;
+  vm.runInNewContext(flagSrc, flagCtx);
+  const flagOff = flagCtx.PB.levelsOpen() === false;
+  flagCtx.PB.BUILD.levelsOpen = true;
+  const flagHalf = flagCtx.PB.levelsOpen() === false;
+  flagCtx.PB.BUILD.debugUnlock = true;
+  const flagOn = flagCtx.PB.levelsOpen() === true;
+  const menusSrc = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
+  const flagDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pb-flags-'));
+  copyWeb.copyWeb(flagDir);
+  const copiedFlag = fs.readFileSync(path.join(flagDir, 'js/build-flags.js'), 'utf8');
+  const wrote = spawnSync(process.execPath, ['scripts/write-build-flag.js', path.join(flagDir, 'js/build-flags.js')], { cwd: root, encoding: 'utf8' });
+  const stamped = fs.readFileSync(path.join(flagDir, 'js/build-flags.js'), 'utf8');
+  const sourceAfter = fs.readFileSync(path.join(root, 'js/build-flags.js'), 'utf8');
+  const refused = spawnSync(process.execPath, ['scripts/write-build-flag.js', path.join(root, 'js/build-flags.js')], { cwd: root, encoding: 'utf8' });
+  fs.rmSync(flagDir, { recursive: true, force: true });
+  const copyBeforeWriter = /debugUnlock:\s*false/.test(copiedFlag) && !/debugUnlock:\s*true/.test(copiedFlag);
+  const writerOnlyWww = wrote.status === 0 && /debugUnlock:\s*true/.test(stamped) && /levelsOpen:\s*false/.test(stamped) && sourceAfter === flagSrc;
+  record('the unlock toggle stays out of Pages and release builds',
+    /debugUnlock:\s*false/.test(flagSrc) && /levelsOpen:\s*false/.test(flagSrc) && !/debugUnlock:\s*true/.test(flagSrc)
+    && flagOff && flagHalf && flagOn
+    && menusSrc.includes('PB.BUILD.debugUnlock === true') && menusSrc.includes("unlock.name = 'toggle_unlock'")
+    && !yml.includes('write-build-flag') && !releaseYml.includes('write-build-flag')
+    && apk.includes('node scripts/write-build-flag.js www/js/build-flags.js')
+    && apk.indexOf('node scripts/copy-web.js') < apk.indexOf('write-build-flag')
+    && apk.indexOf('write-build-flag') < apk.indexOf('npx cap sync android')
+    && copyBeforeWriter && writerOnlyWww && refused.status !== 0,
+    wrote.stderr || refused.stderr);
   const releaseSecrets = ['KEYSTORE_BASE64', 'KEYSTORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD'];
   record('release workflow signs on demand and proves signing on pull requests with a throwaway key',
     releaseYml.includes('workflow_dispatch:') &&
@@ -367,11 +403,10 @@ try {
     !/\.jks['"]?\s*$/m.test(releaseYml.split('\n').filter(line => /keystoreFile|storeFile/.test(line)).join('\n')));
   const pkg = require('../package.json');
   const appGradle = fs.readFileSync(path.join(root, 'android/app/build.gradle'), 'utf8');
-  const { execFileSync } = require('child_process');
   const decodeScript = path.join(root, 'scripts/decode-upload-keystore.py');
   const sample = Buffer.from('throwaway-keystore-bytes');
   const sampleB64 = sample.toString('base64');
-  const decodedPath = path.join(require('os').tmpdir(), 'pb-keystore-decode-test.bin');
+  const decodedPath = path.join(os.tmpdir(), 'pb-keystore-decode-test.bin');
   const decodeOut = execFileSync('python3', [decodeScript], {
     env: Object.assign({}, process.env, { KEYSTORE_BASE64: sampleB64, KEYSTORE_PATH: decodedPath }),
     encoding: 'utf8'
@@ -394,7 +429,7 @@ try {
     emptyFailed);
   fs.rmSync(decodedPath, { force: true });
   record('release version, R8, and signing env come from package.json without printing secrets',
-    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 1 &&
+    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 2 &&
     appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&
     appGradle.includes('debuggable false') &&
     appGradle.includes('minifyEnabled true') &&
@@ -407,13 +442,11 @@ try {
   const variables = fs.readFileSync(path.join(root, 'android/variables.gradle'), 'utf8');
   record('compile and target SDK meet the Play API 36 requirement and minSdk stays 24',
     /compileSdkVersion = 36/.test(variables) && /targetSdkVersion = 36/.test(variables) && /minSdkVersion = 24/.test(variables));
-  const copy = require('../scripts/copy-web');
   const banned = ['tests', 'scripts', 'supabase', 'docs', 'node_modules', '.github'];
   record('Capacitor web copy is the shipped game only',
-    copy.INCLUDE_FILES.indexOf('index.html') >= 0 && copy.INCLUDE_FILES.indexOf('config.js') >= 0 && copy.INCLUDE_FILES.indexOf('privacy.html') >= 0 && copy.INCLUDE_DIRS.indexOf('js') >= 0 && copy.INCLUDE_DIRS.indexOf('lib') >= 0 && copy.INCLUDE_DIRS.indexOf('icons') >= 0 && banned.every(name => copy.INCLUDE_FILES.indexOf(name) < 0 && copy.INCLUDE_DIRS.indexOf(name) < 0));
-  const os = require('os');
+    copyWeb.INCLUDE_FILES.indexOf('index.html') >= 0 && copyWeb.INCLUDE_FILES.indexOf('config.js') >= 0 && copyWeb.INCLUDE_FILES.indexOf('privacy.html') >= 0 && copyWeb.INCLUDE_DIRS.indexOf('js') >= 0 && copyWeb.INCLUDE_DIRS.indexOf('lib') >= 0 && copyWeb.INCLUDE_DIRS.indexOf('icons') >= 0 && banned.every(name => copyWeb.INCLUDE_FILES.indexOf(name) < 0 && copyWeb.INCLUDE_DIRS.indexOf(name) < 0));
   const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'pb-www-'));
-  copy.copyWeb(dest);
+  copyWeb.copyWeb(dest);
   record('copied web dir has the game and omits repo-only folders',
     fs.existsSync(path.join(dest, 'index.html')) && fs.existsSync(path.join(dest, 'js/cloud.js')) && fs.existsSync(path.join(dest, 'js/home.js')) && fs.existsSync(path.join(dest, 'js/home-ui.js')) && fs.existsSync(path.join(dest, 'lib/supabase.min.js')) && banned.every(name => !fs.existsSync(path.join(dest, name))));
   fs.rmSync(dest, { recursive: true, force: true });

@@ -71,6 +71,17 @@
     });
   }
 
+  function refreshBadges(scene) {
+    if (!scene || !scene.children) return;
+    var walk = function (list) {
+      (list || []).forEach(function (o) {
+        if ((o.name === 'coinBadge' || o.name === 'gemBadge') && o.refresh) o.refresh();
+        if (o.list) walk(o.list);
+      });
+    };
+    walk(scene.children.list);
+  }
+
   function comingSoon(scene, title) {
     if (scene._soon) scene._soon.destroy();
     var layer = scene.add.container(0, 0).setDepth(40);
@@ -122,12 +133,11 @@
         scene.scene.launch('HomePop');
         scene.scene.bringToTop('HomePop');
       }],
-      ['Achievements', function () { comingSoon(scene, 'Achievements'); }],
-      ['Modes', function () { comingSoon(scene, 'Modes'); }],
+      ['Achievements', function () { open('achievements'); }],
       ['Settings', function () { PB.fadeTo(scene, 'Settings', { from: 'Menu' }); }]
     ];
     items.forEach(function (item, i) {
-      var b = PB.button(scene, 110 + i * 168, barY, 156, 78, item[0], item[1], { size: item[0].length > 8 ? 16 : 20, color: 0x9b6bff });
+      var b = PB.button(scene, 130 + i * 230, barY, 210, 78, item[0], item[1], { size: item[0].length > 8 ? 18 : 22, color: 0x9b6bff });
       b.name = 'bar-' + item[0];
     });
 
@@ -141,12 +151,101 @@
     }
   }
 
+  // ---- Prism Shop drawing helpers (original shapes, drawn with Graphics) ----
+  var BOOST_TINT = { life: 0xff4d8d, wide: 0x22e8ff, multi: 0x9b6bff, slow: 0x7dffa6 };
+  var BOOST_INFO = { life: '+1 life on the next level', wide: 'Wider paddle next level', multi: 'Start with three balls', slow: 'Slower ball next level' };
+
+  function drawPrismCoin(scene, x, y, r) {
+    var g = scene.add.graphics();
+    var pts = [];
+    for (var i = 0; i < 6; i++) {
+      var a = -Math.PI / 2 + i * Math.PI / 3;
+      pts.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r });
+    }
+    g.fillStyle(0xffb627, 1); g.fillPoints(pts, true);
+    g.fillStyle(0xffe7a3, 1);
+    g.fillTriangle(x, y - r, x + r * 0.87, y - r * 0.5, x, y);
+    g.fillStyle(0xfff6d8, 0.9);
+    g.fillTriangle(x, y - r, x - r * 0.87, y - r * 0.5, x, y);
+    g.lineStyle(2, 0x8a5a00, 1); g.strokePoints(pts, true);
+    return g;
+  }
+
+  function shopCard(scene, x, y, w, h, tint, lit) {
+    var g = scene.add.graphics();
+    g.fillStyle(tint, lit ? 0.22 : 0.1); g.fillRoundedRect(x - w / 2 - 4, y - h / 2 - 4, w + 8, h + 8, 26);
+    g.fillStyle(0x0c1034, 0.96); g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 22);
+    g.fillStyle(0xffffff, 0.05); g.fillRoundedRect(x - w / 2 + 6, y - h / 2 + 6, w - 12, h * 0.38, { tl: 18, tr: 18, bl: 6, br: 6 });
+    g.fillStyle(tint, 0.1); g.fillTriangle(x + w / 2 - 70, y - h / 2 + 2, x + w / 2 - 2, y - h / 2 + 2, x + w / 2 - 2, y - h / 2 + 70);
+    g.lineStyle(lit ? 3 : 2, tint, lit ? 1 : 0.65); g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 22);
+    return g;
+  }
+
+  function shopTag(scene, right, y, label, color) {
+    var c = scene.add.container(0, 0);
+    var t = PB.text(scene, 0, 0, label, 14, '#0a0620', { strokeThickness: 0 });
+    var w = Math.max(70, t.width + 20);
+    var g = scene.add.graphics();
+    g.fillStyle(color, 1); g.fillRoundedRect(-w / 2, -14, w, 28, 14);
+    c.add([g, t]);
+    c.label = t;
+    c.setPosition(right - w / 2, y);
+    return c;
+  }
+
+  function drawBoostIcon(scene, x, y, id, tint) {
+    var g = scene.add.graphics();
+    g.fillStyle(tint, 0.16); g.fillCircle(x, y, 46);
+    g.lineStyle(2, tint, 0.8); g.strokeCircle(x, y, 46);
+    if (id === 'life') {
+      g.fillStyle(tint, 1);
+      g.fillTriangle(x, y - 26, x + 22, y, x - 22, y);
+      g.fillTriangle(x - 22, y, x + 22, y, x, y + 26);
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(x - 3, y - 12, 6, 24); g.fillRect(x - 12, y - 3, 24, 6);
+    } else if (id === 'wide') {
+      g.fillStyle(tint, 1); g.fillRoundedRect(x - 34, y - 8, 68, 16, 8);
+      g.fillStyle(0xffffff, 0.9);
+      g.fillTriangle(x - 40, y - 22, x - 28, y - 30, x - 28, y - 14);
+      g.fillTriangle(x + 40, y - 22, x + 28, y - 30, x + 28, y - 14);
+    } else if (id === 'multi') {
+      [[-16, 8], [16, 8], [0, -16]].forEach(function (o) {
+        g.fillStyle(tint, 1); g.fillCircle(x + o[0], y + o[1], 11);
+        g.fillStyle(0xffffff, 0.8); g.fillCircle(x + o[0] - 3, y + o[1] - 3, 4);
+      });
+    } else {
+      g.fillStyle(tint, 1); g.fillCircle(x + 10, y, 12);
+      g.lineStyle(4, tint, 0.55); g.beginPath(); g.arc(x + 10, y, 24, Math.PI * 0.75, Math.PI * 1.25); g.strokePath();
+      g.lineStyle(4, tint, 0.3); g.beginPath(); g.arc(x + 10, y, 34, Math.PI * 0.8, Math.PI * 1.2); g.strokePath();
+    }
+    return g;
+  }
+
+  function drawLookIcon(scene, x, y, look) {
+    var g = scene.add.graphics();
+    if (look.kind === 'trail') {
+      for (var i = 0; i < 6; i++) {
+        g.fillStyle(look.color, 0.15 + i * 0.15);
+        g.fillCircle(x - 50 + i * 18, y + 6 - i * 2, 4 + i * 1.6);
+      }
+      g.fillStyle(0xffffff, 1); g.fillCircle(x + 50, y - 6, 9);
+      g.lineStyle(2, look.color, 1); g.strokeCircle(x + 50, y - 6, 12);
+    } else {
+      g.fillStyle(look.color, 0.25); g.fillRoundedRect(x - 66, y - 16, 132, 32, 16);
+      g.fillStyle(look.color, 1); g.fillRoundedRect(x - 58, y - 10, 116, 20, 10);
+      g.lineStyle(3, look.edge || 0xffffff, 1); g.strokeRoundedRect(x - 58, y - 10, 116, 20, 10);
+      g.fillStyle(0xffffff, 0.5); g.fillRoundedRect(x - 48, y - 7, 60, 5, 3);
+    }
+    return g;
+  }
+
   class HomePopScene extends Phaser.Scene {
     constructor() { super('HomePop'); }
     create() {
       PB.enter(this);
       this.add.rectangle(W / 2, H / 2, W, H, 0x05061a, 0.78).setInteractive();
       this.root = this.add.container(0, 0);
+      this.shopTab = 'boosts';
       this.render();
     }
     current() {
@@ -178,11 +277,37 @@
       if (id === 'shop') this.shop();
       else if (id === 'tasks') this.tasks();
       else if (id === 'wheel') this.wheel();
+      else if (id === 'achievements') this.achievements();
       else this.bonus();
       var noteY = id === 'bonus' ? 940 : (id === 'wheel' ? 1000 : (id === 'shop' ? 1148 : 1096));
       this.noteText = PB.text(this, W / 2, noteY, '', 24, '#ffe7a3', { strokeThickness: 0 });
       this.noteText.name = 'popupNote';
       this.root.add(this.noteText);
+    }
+    achievements() {
+      var self = this;
+      var Ach = PB.Achievements;
+      var title = PB.text(this, W / 2, 230, 'ACHIEVEMENTS', 42, '#f3e9ff', { glow: '#9b6bff' });
+      title.name = 'achievementsTitle';
+      this.root.add(title);
+      if (!Ach) return;
+      var rows = Ach.board(Save.data);
+      rows.forEach(function (row) {
+        var col = row.index % 2;
+        var line = Math.floor(row.index / 2);
+        var x = col ? W / 2 + 165 : W / 2 - 165;
+        var y = 300 + line * 78;
+        self.root.add(Ach.drawBadge(self, x - 108, y, row.index, row.unlocked));
+        var name = PB.text(self, x - 72, y - 14, row.name, 16, row.unlocked ? '#ffffff' : '#9aa3c7', { ox: 0, strokeThickness: 0 });
+        name.name = 'ach-name-' + row.id;
+        self.root.add(name);
+        var prog = PB.text(self, x - 72, y + 12, row.current + '/' + row.need, 16, '#ffe7a3', { ox: 0, strokeThickness: 0 });
+        prog.name = 'ach-prog-' + row.id;
+        self.root.add(prog);
+        var state = PB.text(self, x + 108, y, row.unlocked ? 'Unlocked' : 'Locked', 14, row.unlocked ? '#7dffa6' : '#8d97c9', { strokeThickness: 0 });
+        state.name = 'ach-state-' + row.id;
+        self.root.add(state);
+      });
     }
     bonus() {
       var self = this;
@@ -214,10 +339,29 @@
         }
         return { x: x, y: y, w: w };
       }
+      this.hotDay = streak;
+      function claimToday() {
+        var got = Home.claimBonus(Save.data, Date.now());
+        if (!got.ok) {
+          self.note('Day ' + streak + ' is already claimed');
+          return;
+        }
+        Save.persist();
+        Sfx.play('coin');
+        var menu = self.scene.get('Menu');
+        if (menu) {
+          refreshMarks(menu);
+          refreshBadges(menu);
+        }
+        self._burstDay = got.day;
+        self.render();
+        self.note('Day ' + got.streak + ' saved on this device.');
+      }
       for (var i = 0; i < 7; i++) {
         var spec = Home.BONUS[i];
         var box = cardBox(spec.day);
         var today = spec.day === streak;
+        var claimed = !avail && spec.day === streak;
         var finale = spec.day === 7;
         var g = this.add.graphics();
         g.fillStyle(today || finale ? 0xffd166 : 0x1c2250, today ? 0.45 : (finale ? 0.22 : 0.95));
@@ -225,10 +369,24 @@
         g.lineStyle(finale || today ? 4 : 3, today || finale ? 0xffd166 : 0x3a3f6a, 1);
         g.strokeRoundedRect(box.x - box.w / 2, box.y - cardH / 2, box.w, cardH, 16);
         this.root.add(g);
-        var zone = this.add.zone(box.x, box.y, box.w, cardH);
+        var zone = this.add.zone(box.x, box.y, box.w, cardH).setInteractive({ useHandCursor: true });
         zone.name = 'dayCard' + spec.day;
+        zone.on('pointerup', (function (day) {
+          return function () {
+            if (day !== streak) {
+              self.note('Come back on Day ' + day);
+              return;
+            }
+            claimToday();
+          };
+        })(spec.day));
         this.root.add(zone);
         this.root.add(PB.text(this, box.x, box.y - 28, 'Day ' + spec.day, finale ? 22 : 18, '#9fa8e0', { strokeThickness: 0 }));
+        if (today) {
+          var hot = PB.text(this, box.x, box.y + 36, claimed ? 'Claimed' : 'Today', 14, '#ffe7a3', { strokeThickness: 0 });
+          hot.name = claimed ? 'dayClaimed' : 'dayHot';
+          this.root.add(hot);
+        }
         var lines = [];
         if (spec.coins) lines.push(qty(spec.coins, 'coin', 'coins'));
         if (spec.gems) lines.push(qty(spec.gems, 'gem', 'gems'));
@@ -236,15 +394,28 @@
           self.root.add(PB.text(self, box.x, box.y + (lines.length === 1 ? 8 : n * 22), line, 18, '#ffe7a3', { strokeThickness: 0 }));
         });
       }
+      if (this._burstDay) {
+        var burstBox = cardBox(this._burstDay);
+        var origin = this.add.zone(burstBox.x, burstBox.y, 20, 20);
+        origin.name = 'bonusBurst';
+        this.root.add(origin);
+        for (var b = 0; b < 8; b++) {
+          var coin = this.add.image(burstBox.x, burstBox.y, 'coin').setScale(0.55);
+          coin.name = 'coinBurst';
+          this.root.add(coin);
+          this.tweens.add({
+            targets: coin,
+            x: burstBox.x + Math.cos(b) * 70,
+            y: burstBox.y - 40 - (b % 3) * 18,
+            alpha: 0,
+            duration: 700,
+            onComplete: function (tw, targets) { targets[0].destroy(); }
+          });
+        }
+        this._burstDay = 0;
+      }
       var claim = PB.button(this, W / 2 - 150, 820, 260, 84, avail ? 'Claim' : 'Claimed', function () {
-        var got = Home.claimBonus(Save.data, Date.now());
-        if (!got.ok) return;
-        Save.persist();
-        Sfx.play('coin');
-        var menu = self.scene.get('Menu');
-        if (menu) refreshMarks(menu);
-        self.render();
-        self.note('Day ' + got.streak + ' saved on this device.');
+        claimToday();
       }, { color: avail ? 0xffd166 : 0x4a4f78, size: 30, disabled: !avail });
       claim.name = 'claimBonus';
       this.root.add(claim);
@@ -305,15 +476,39 @@
       var self = this;
       var Shop = PB.Shop;
       Shop.ensure(Save.data);
-      var title = PB.text(this, W / 2, 210, 'PRISM SHOP', 44, '#ffe7a3', { glow: '#ffd166' });
+      if (this.shopTab !== 'looks') this.shopTab = 'boosts';
+      var tab = this.shopTab;
+      var title = PB.text(this, W / 2 - 30, 196, 'PRISM SHOP', 42, '#ffe7a3', { glow: '#ffd166' });
       title.name = 'shopTitle';
       this.root.add(title);
-      var coins = PB.text(this, W / 2, 258, 'Coins: ' + Save.data.coins, 24, '#ffe7a3', { strokeThickness: 0 });
+
+      // Balance pill: drawn prism coin and the current Prism coin count.
+      var pill = this.add.graphics();
+      pill.fillStyle(0x0a0d2a, 0.95); pill.fillRoundedRect(W / 2 - 150, 238, 300, 58, 29);
+      pill.lineStyle(2, 0xffd166, 0.9); pill.strokeRoundedRect(W / 2 - 150, 238, 300, 58, 29);
+      pill.fillStyle(0xffd166, 0.14); pill.fillRoundedRect(W / 2 - 146, 242, 292, 24, { tl: 25, tr: 25, bl: 4, br: 4 });
+      this.root.add(pill);
+      this.root.add(drawPrismCoin(this, W / 2 - 108, 267, 17));
+      var coins = PB.text(this, W / 2 + 14, 267, String(Save.data.coins | 0), 30, '#ffe7a3', { strokeThickness: 0 });
       coins.name = 'shopCoins';
       this.root.add(coins);
-      this.root.add(PB.text(this, W / 2, 300, 'Boosts apply to the next level only', 18, '#c9d4ff', { strokeThickness: 0 }));
+      this.root.add(PB.text(this, W / 2 + 14, 312, 'Prism coins', 15, '#c9a95c', { strokeThickness: 0 }));
+
+      // Tabs.
+      [['boosts', 'Boosts'], ['looks', 'Looks']].forEach(function (pair, i) {
+        var on = tab === pair[0];
+        var b = PB.button(self, W / 2 - 146 + i * 292, 372, 276, 64, pair[1], function () {
+          if (self.shopTab === pair[0]) return;
+          self.shopTab = pair[0];
+          self.render();
+        }, { size: 24, color: on ? 0x22e8ff : 0x4a4f78, fill: on ? 0x123a52 : 0x0e1234 });
+        b.name = 'shop-tab-' + pair[0];
+        self.root.add(b);
+      });
+      this.root.add(PB.text(this, W / 2, 428, tab === 'boosts' ? 'Boosts work on your next level only' : 'Buy once. Equip one trail and one paddle.', 18, '#c9d4ff', { strokeThickness: 0 }));
+
       function refreshCoins() {
-        coins.setText('Coins: ' + Save.data.coins);
+        coins.setText(String(Save.data.coins | 0));
         var menu = self.scene.get('Menu');
         if (!menu) return;
         var walk = function (list) {
@@ -333,35 +528,62 @@
           fn();
         };
       }
-      Shop.BOOSTS.forEach(function (boost, i) {
-        var x = (i % 2) ? W / 2 + 150 : W / 2 - 150;
-        var y = 370 + Math.floor(i / 2) * 82;
-        var queued = Save.data.shop.boosts[boost.id].length;
-        var label = boost.name + '  ' + boost.price + (queued ? '  x' + queued : '');
-        var b = PB.button(self, x, y, 280, 70, label, guarded('boost-' + boost.id, function () {
-          var before = Save.data.coins | 0;
-          var got = Shop.buyBoost(Save.data, boost.id);
-          if (!got.ok) {
-            self.note(got.reason === 'coins' ? 'Need ' + (boost.price - before) + ' more coins' : 'Cannot buy that');
-            return;
+      var cardW = 292;
+      function cardAt(i, h, top) {
+        return { x: (i % 2) ? W / 2 + 152 : W / 2 - 152, y: top + h / 2 + Math.floor(i / 2) * (h + 16), h: h };
+      }
+
+      if (tab === 'boosts') {
+        Shop.BOOSTS.forEach(function (boost, i) {
+          var box = cardAt(i, 300, 456);
+          var queued = Save.data.shop.boosts[boost.id].length;
+          var afford = (Save.data.coins | 0) >= boost.price;
+          var tint = BOOST_TINT[boost.id] || 0x22e8ff;
+          self.root.add(shopCard(self, box.x, box.y, cardW, box.h, tint, queued > 0));
+          self.root.add(drawBoostIcon(self, box.x, box.y - 88, boost.id, tint));
+          self.root.add(PB.text(self, box.x, box.y - 12, boost.name, 24, '#ffffff', { strokeThickness: 0 }));
+          self.root.add(PB.text(self, box.x, box.y + 22, BOOST_INFO[boost.id] || '', 16, '#aab3e6', { strokeThickness: 0, wrap: 250 }));
+          if (queued) {
+            var tag = shopTag(self, box.x + cardW / 2 - 18, box.y - box.h / 2 + 22, 'Ready x' + queued, 0x7dffa6);
+            tag.name = 'boost-tag-' + boost.id;
+            self.root.add(tag);
           }
-          Save.persist();
-          Sfx.play('coin');
-          refreshCoins();
-          self.render();
-          self.note(boost.name + ' ready for the next level');
-        }), { color: Save.data.coins >= boost.price ? 0x22e8ff : 0x4a4f78, size: 18 });
-        b.name = 'boost-' + boost.id;
-        self.root.add(b);
-      });
-      this.root.add(PB.text(this, W / 2, 548, 'Looks — buy once, equip one', 18, '#c9d4ff', { strokeThickness: 0 }));
+          var b = PB.button(self, box.x, box.y + 98, 240, 66, String(boost.price), guarded('boost-' + boost.id, function () {
+            var before = Save.data.coins | 0;
+            var got = Shop.buyBoost(Save.data, boost.id);
+            if (!got.ok) {
+              self.note(got.reason === 'coins' ? 'Need ' + (boost.price - before) + ' more coins' : 'Cannot buy that');
+              return;
+            }
+            Save.persist();
+            Sfx.play('coin');
+            refreshCoins();
+            self.render();
+            self.note(boost.name + ' ready for the next level');
+          }), { color: afford ? 0xffd166 : 0x4a4f78, size: 26, icon: null });
+          b.name = 'boost-' + boost.id;
+          b.add(drawPrismCoin(self, -62, 0, 13));
+          self.root.add(b);
+        });
+        return;
+      }
+
       Shop.LOOKS.forEach(function (look, i) {
-        var x = (i % 2) ? W / 2 + 150 : W / 2 - 150;
-        var y = 630 + Math.floor(i / 2) * 150;
+        var box = cardAt(i, 206, 456);
         var owned = Save.data.shop.owned.indexOf(look.id) >= 0;
         var eq = (look.kind === 'trail' ? Save.data.shop.trail : Save.data.shop.paddle) === look.id;
-        var label = eq ? 'Equipped' : owned ? 'Equip' : (look.price + ' coins');
-        var b = PB.button(self, x, y, 280, 72, label, guarded('look-' + look.id, function () {
+        var afford = (Save.data.coins | 0) >= look.price;
+        self.root.add(shopCard(self, box.x, box.y, cardW, box.h, look.color, eq));
+        self.root.add(drawLookIcon(self, box.x, box.y - 58, look));
+        self.root.add(PB.text(self, box.x, box.y - 14, look.name, 22, '#ffffff', { strokeThickness: 0 }));
+        self.root.add(PB.text(self, box.x, box.y + 14, look.kind === 'trail' ? 'Ball trail' : 'Paddle skin', 15, '#aab3e6', { strokeThickness: 0 }));
+        if (owned) {
+          var tag = shopTag(self, box.x + cardW / 2 - 18, box.y - box.h / 2 + 20, eq ? 'Equipped' : 'Owned', eq ? 0xffd166 : 0x22e8ff);
+          tag.name = 'look-tag-' + look.id;
+          self.root.add(tag);
+        }
+        var label = eq ? 'Equipped' : owned ? 'Equip' : String(look.price);
+        var b = PB.button(self, box.x, box.y + 66, 240, 60, label, guarded('look-' + look.id, function () {
           if (!owned) {
             var before = Save.data.coins | 0;
             var got = Shop.buyLook(Save.data, look.id);
@@ -381,10 +603,10 @@
           Save.persist();
           self.render();
           self.note(look.name + ' equipped');
-        }), { color: eq ? 0xffd166 : owned ? 0x22e8ff : (Save.data.coins >= look.price ? 0xff3df0 : 0x4a4f78), size: 20 });
+        }), { color: eq ? 0xffd166 : owned ? 0x22e8ff : (afford ? 0xff3df0 : 0x4a4f78), size: 22 });
         b.name = 'look-' + look.id;
+        if (!owned) b.add(drawPrismCoin(self, -56, 0, 12));
         self.root.add(b);
-        self.root.add(PB.text(self, x, y - 46, look.name, 16, '#ffffff', { strokeThickness: 0 }));
       });
     }
     wheel() {

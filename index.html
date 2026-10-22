@@ -18,61 +18,117 @@
   <div id="game"></div>
   <div id="pb-account" hidden>
     <div class="pb-sheet" role="dialog" aria-modal="true" aria-labelledby="pb-acct-title">
-      <button type="button" class="pb-back" data-action="close">‹ Back</button>
+      <div class="pb-top">
+        <button type="button" class="pb-back" data-action="close" aria-label="Close">‹ Back</button>
+        <svg class="pb-prism" viewBox="0 0 40 40" width="34" height="34" aria-hidden="true" focusable="false">
+          <polygon points="20,3 37,34 3,34" fill="none" stroke="#22e8ff" stroke-width="2.5"/>
+          <polygon points="20,3 28,34 12,34" fill="rgba(255,61,240,0.35)"/>
+          <line x1="20" y1="3" x2="20" y2="34" stroke="#ffd166" stroke-width="1.5"/>
+        </svg>
+      </div>
       <h1 id="pb-acct-title">ACCOUNT</h1>
       <p id="pb-acct-who">Guest on this device</p>
       <p id="pb-name-shown"></p>
       <p id="pb-acct-sync">Not signed in</p>
-      <p id="pb-acct-msg" role="status"></p>
+      <p id="pb-acct-msg" role="status" aria-live="polite"></p>
       <p id="pb-acct-loading" hidden>Working…</p>
 
-      <label>Display name
-        <input id="pb-name-input" type="text" maxlength="80" autocomplete="nickname" enterkeyhint="done">
-      </label>
-      <button type="button" class="pb-btn email" data-action="save-name">Save name</button>
-      <p id="pb-name-msg" class="pb-note" role="status"></p>
+      <!-- Login / sign up popup (signed out) -->
+      <section id="pb-view-auth" class="pb-view" data-view="auth" aria-label="Log in or sign up">
+        <div class="pb-tabs" role="tablist">
+          <button type="button" class="pb-tab" role="tab" data-tab="login" aria-selected="true">Log in</button>
+          <button type="button" class="pb-tab" role="tab" data-tab="signup" aria-selected="false">Sign up</button>
+        </div>
+        <p class="pb-lead" id="pb-auth-lead">Log in to keep your progress in the cloud. Or play as a guest.</p>
 
-      <button type="button" class="pb-btn guest" data-action="guest">Continue as Guest</button>
+        <button type="button" class="pb-btn guest" data-action="guest">
+          <span class="mark p" aria-hidden="true">◆</span>
+          Continue as Guest
+        </button>
 
-      <button type="button" class="pb-btn google" data-action="google">
+        <button type="button" class="pb-btn google" data-action="google">
         <svg class="mark g" viewBox="0 0 48 48" width="22" height="22" aria-hidden="true" focusable="false">
           <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.654 32.657 29.083 36 24 36c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
           <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
           <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
           <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
         </svg>
-        Continue with Google
-      </button>
-      <p class="pb-note" id="pb-note-google"></p>
+          Continue with Google
+        </button>
+        <p class="pb-note" id="pb-note-google"></p>
 
-      <button type="button" class="pb-btn facebook" data-action="facebook">
-        <span class="mark f" aria-hidden="true">f</span>
-        Continue with Facebook
-      </button>
-      <p class="pb-note" id="pb-note-facebook"></p>
+        <button type="button" class="pb-btn facebook" data-action="facebook">
+          <span class="mark f" aria-hidden="true">f</span>
+          Continue with Facebook
+          <span class="pb-soon" id="pb-soon-facebook" hidden>Coming soon</span>
+        </button>
+        <p class="pb-note" id="pb-note-facebook"></p>
 
-      <form id="pb-email-form" autocomplete="on">
+        <div class="pb-or"><span>or with email</span></div>
+
+        <form id="pb-email-form" autocomplete="on" novalidate>
+          <label>Email
+            <input id="pb-email-input" name="email" type="email" inputmode="email" autocomplete="username" maxlength="320" enterkeyhint="next">
+          </label>
+          <label>Password
+            <span class="pb-pass">
+              <input id="pb-password-input" name="password" type="password" autocomplete="current-password" maxlength="72">
+              <button type="button" class="pb-eye" data-action="toggle-password" aria-label="Show password">Show</button>
+            </span>
+          </label>
+          <label id="pb-password2-row" hidden>Confirm password
+            <input id="pb-password2-input" name="password2" type="password" autocomplete="new-password" maxlength="72">
+          </label>
+          <button type="submit" class="pb-btn email" data-action="login">Log in</button>
+          <button type="button" class="pb-btn email" data-action="signup" hidden>Create account</button>
+          <button type="button" class="pb-linkbtn" data-action="forgot">Forgot password?</button>
+          <p class="pb-note" id="pb-note-email"></p>
+        </form>
+
+        <button type="button" class="pb-btn link" data-action="link">Link this guest progress to an account</button>
+      </section>
+
+      <!-- Forgot password -->
+      <section id="pb-view-forgot" class="pb-view" data-view="forgot" aria-label="Reset password" hidden>
+        <p class="pb-lead">Enter the email you used to sign up. We will send a link to choose a new password.</p>
         <label>Email
-          <input id="pb-email-input" name="email" type="email" inputmode="email" autocomplete="username" maxlength="320">
+          <input id="pb-forgot-email" type="email" inputmode="email" autocomplete="username" maxlength="320" enterkeyhint="send">
         </label>
-        <label>Password
-          <input id="pb-password-input" name="password" type="password" autocomplete="current-password" maxlength="72">
-        </label>
-        <button type="submit" class="pb-btn email" data-action="login">Log in</button>
-        <button type="button" class="pb-btn email" data-action="signup">Sign up</button>
-        <button type="button" class="pb-btn quiet" data-action="forgot">Forgot password</button>
-        <p class="pb-note" id="pb-note-email"></p>
-      </form>
+        <button type="button" class="pb-btn email" data-action="send-reset">Send reset link</button>
+        <button type="button" class="pb-linkbtn" data-action="to-login">‹ Back to log in</button>
+        <p class="pb-fine">Open the link on this phone. Your progress stays on this device.</p>
+      </section>
 
-      <div id="pb-recovery" hidden>
-        <label>New password
-          <input id="pb-new-password" type="password" autocomplete="new-password" maxlength="72">
+      <!-- Set a new password after the reset link -->
+      <section id="pb-recovery" class="pb-view" data-view="recovery" aria-label="Choose a new password" hidden>
+        <p class="pb-lead" id="pb-recovery-state">Checking your reset link…</p>
+        <div id="pb-recovery-form" hidden>
+          <label>New password
+            <input id="pb-new-password" type="password" autocomplete="new-password" maxlength="72">
+          </label>
+          <label>Confirm new password
+            <input id="pb-new-password2" type="password" autocomplete="new-password" maxlength="72">
+          </label>
+          <button type="button" class="pb-btn email" data-action="set-password">Save new password</button>
+        </div>
+        <button type="button" class="pb-btn quiet" id="pb-recovery-retry" data-action="forgot" hidden>Ask for a new link</button>
+        <button type="button" class="pb-linkbtn" data-action="cancel-recovery">Not now</button>
+      </section>
+
+      <!-- Signed in -->
+      <section id="pb-view-account" class="pb-view" data-view="account" aria-label="Your account" hidden>
+        <p class="pb-lead">Signed in. Your progress syncs to your account.</p>
+      </section>
+
+      <div id="pb-name-box" class="pb-card">
+        <label>Display name
+          <input id="pb-name-input" type="text" maxlength="80" autocomplete="nickname" enterkeyhint="done">
         </label>
-        <button type="button" class="pb-btn email" data-action="set-password">Set new password</button>
+        <button type="button" class="pb-btn email" data-action="save-name">Save name</button>
+        <p id="pb-name-msg" class="pb-note" role="status"></p>
       </div>
+      <button type="button" class="pb-btn danger" data-action="logout" hidden>Log out</button>
 
-      <button type="button" class="pb-btn link" data-action="link">Link this guest progress to an account</button>
-      <button type="button" class="pb-btn danger" data-action="logout">Log out</button>
       <p class="pb-fine">Progress is always stored on this device. Cloud save runs only while you are signed in.</p>
       <p class="pb-fine"><a href="privacy.html">Privacy policy</a></p>
     </div>
@@ -108,8 +164,10 @@
   <script src="config.js"></script>
   <script src="levels.js"></script>
   <script src="js/save-plain.js"></script>
+  <script src="js/build-flags.js"></script>
   <script src="js/core.js"></script>
   <script src="js/home.js"></script>
+  <script src="js/achievements.js"></script>
   <script src="js/shop.js"></script>
   <script src="js/save-sync.js"></script>
   <script src="js/profile.js"></script>

@@ -67,6 +67,7 @@ for (let w = 0; w < L.worldCount(); w++) {
   }
 }
 if (L.worldCount() !== 5 || L.LEVELS_PER_WORLD !== 20) errors.push(`expected 5 worlds x 20 levels, got ${L.worldCount()} x ${L.LEVELS_PER_WORLD}`);
+
 console.log(`Checked ${total} levels in ${L.worldCount()} worlds.`);
 console.log(`Objectives: ${JSON.stringify(counts)}; layout patterns used: ${patterns.size}`);
 if (errors.length) { console.error(`FAILED (${errors.length} problems):\n  ` + errors.join('\n  ')); process.exit(1); }

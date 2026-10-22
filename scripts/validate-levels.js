@@ -68,14 +68,6 @@ for (let w = 0; w < L.worldCount(); w++) {
 }
 if (L.worldCount() !== 5 || L.LEVELS_PER_WORLD !== 20) errors.push(`expected 5 worlds x 20 levels, got ${L.worldCount()} x ${L.LEVELS_PER_WORLD}`);
 
-const Dense = require('../js/dense.js');
-const denseAudit = Dense.auditAll();
-console.log('Crystal Mass solvability:');
-denseAudit.rows.forEach(function (row) {
-  console.log('  L' + (row.index + 1) + ' ' + row.name + ' steel=' + row.steel + ' mouths=' + row.mouths + ' reached=' + row.reached + '/' + row.breakable + ' sim=' + (Math.round(row.pct * 1000) / 10) + '% ' + row.seconds + 's ' + row.ms + 'ms livesLost=' + row.livesLost);
-});
-denseAudit.errors.forEach(function (msg) { errors.push('Crystal Mass: ' + msg); });
-
 console.log(`Checked ${total} levels in ${L.worldCount()} worlds.`);
 console.log(`Objectives: ${JSON.stringify(counts)}; layout patterns used: ${patterns.size}`);
 if (errors.length) { console.error(`FAILED (${errors.length} problems):\n  ` + errors.join('\n  ')); process.exit(1); }

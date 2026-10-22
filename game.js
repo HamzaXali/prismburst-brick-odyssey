@@ -827,7 +827,7 @@
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     render: { antialias: true, powerPreference: 'high-performance' },
     input: { activePointers: 3 }, fps: { target: 60, min: 20 }, banner: false, disableContextMenu: true,
-    scene: [S[0], S[1], S[2], S[3], S[5], GameScene, S[6], S[4], S[7], S[8]].concat(PB.HomePopScene ? [PB.HomePopScene] : []).concat(PB.DENSE_SCENES || [])
+    scene: [S[0], S[1], S[2], S[3], S[5], GameScene, S[6], S[4], S[7], S[8]].concat(PB.HomePopScene ? [PB.HomePopScene] : [])
   };
   PB.game = new Phaser.Game(config);
   if (PB.Account && PB.Account.attachInputGuard) PB.Account.attachInputGuard();
@@ -860,43 +860,6 @@
       };
     },
     start: function (w, l) { var sm = PB.game.scene; ['Pause', 'Complete', 'GameOver', 'Settings'].forEach(function (k) { if (sm.isActive(k) || sm.isPaused(k)) sm.stop(k); }); sm.getScenes(true).forEach(function (s) { if (s.scene.key !== 'Game') sm.stop(s.scene.key); }); if (sm.isActive('Game') || sm.isPaused('Game')) sm.stop('Game'); sm.start('Game', { world: w, level: l }); },
-    startDense: function (i) {
-      var sm = PB.game.scene;
-      sm.getScenes(true).forEach(function (s) { if (s.scene.key !== 'Dense') sm.stop(s.scene.key); });
-      if (sm.isActive('Dense') || sm.isPaused('Dense')) sm.stop('Dense');
-      sm.start('Dense', { level: i | 0 });
-    },
-    dense: function () {
-      var g = PB.currentDense;
-      if (!g || !PB.Dense) return null;
-      return {
-        level: g.levelIdx, name: g.lv.name, lives: g.lives, score: g.score,
-        balls: g.balls ? PB.Dense.activeCount(g.balls) : 0, breakable: g.breakableLeft, ended: !!g.ended
-      };
-    },
-    denseSwarm: function (n) { return PB.currentDense ? PB.currentDense.swarm(n) : 0; },
-    denseCoin: function () { return PB.currentDense ? PB.currentDense.fallCoin() : null; },
-    densePerf: function () {
-      var g = PB.currentDense;
-      if (!g) return null;
-      var src = g.frameMs;
-      if (!src.length) return { samples: 0, avg: 0, p95: 0, fps: 0, workAvg: 0, balls: PB.Dense ? PB.Dense.activeCount(g.balls) : 0 };
-      var copy = [];
-      var sum = 0;
-      for (var i = 0; i < src.length; i++) { copy.push(src[i]); sum += src[i]; }
-      copy.sort(function (a, b) { return a - b; });
-      var avg = sum / copy.length;
-      var p95 = copy[Math.min(copy.length - 1, Math.floor(copy.length * 0.95))];
-      var work = g.workMs || [];
-      var workSum = 0;
-      for (var w = 0; w < work.length; w++) workSum += work[w];
-      return {
-        samples: copy.length, avg: avg, p95: p95, fps: avg > 0 ? 1000 / avg : 0,
-        min: copy[0], max: copy[copy.length - 1],
-        workAvg: work.length ? workSum / work.length : 0,
-        balls: PB.Dense.activeCount(g.balls)
-      };
-    },
     powerup: function (t) { PB.currentGame.applyPowerup(t); },
     drop: function (t, dy) { var g = PB.currentGame; return !!g.dropPowerup(g.paddle.x, PADDLE_Y - (dy || 200), t); },
     launch: function () { return PB.currentGame.launch(); },

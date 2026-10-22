@@ -195,7 +195,7 @@ try {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const shippedVersion = require('../package.json').version;
   record('service worker cache version matches the semver and precaches the game',
-    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && sw.includes('./js/dense.js') && sw.includes('./js/dense-scene.js') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
+    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.3.5') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
   record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '" + shippedVersion + "'") && sw.includes('prismburst-v' + shippedVersion));
   record('service worker keeps Supabase network-only and skips OAuth returns', sw.includes('supabase\\.co') && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
@@ -204,7 +204,7 @@ try {
   record('Pages workflow validates secrets and publishes config and privacy', yml.includes('check-secrets.js') && yml.includes('config.js') && yml.includes('privacy.html') && yml.includes('cloud-unit.js'));
 
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/build-flags.js', 'js/dense.js', 'js/core.js', 'js/home.js', 'js/achievements.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'js/dense-scene.js', 'game.js'];
+  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/build-flags.js', 'js/core.js', 'js/home.js', 'js/achievements.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'game.js'];
   let pos = -1;
   let orderOk = true;
   for (const file of order) {
@@ -429,7 +429,7 @@ try {
     emptyFailed);
   fs.rmSync(decodedPath, { force: true });
   record('release version, R8, and signing env come from package.json without printing secrets',
-    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 1 &&
+    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 2 &&
     appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&
     appGradle.includes('debuggable false') &&
     appGradle.includes('minifyEnabled true') &&

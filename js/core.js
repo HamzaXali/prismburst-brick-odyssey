@@ -67,7 +67,7 @@
       owned: { ball: ['classic'], paddle: ['classic'] }, equipped: { ball: 'classic', paddle: 'classic' },
       settings: { sound: true, vibration: true, shake: true },
       daily: { last: null, streak: 0 }, missions: { date: null, list: [] },
-      stats: { bricks: 0, played: 0, cleared: 0 }, last: null, home: null, shop: null, dense: null, achievements: null
+      stats: { bricks: 0, played: 0, cleared: 0 }, last: null, home: null, shop: null, achievements: null
     };
   }
   function merge(base, src) {

@@ -64,8 +64,15 @@ try {
   const mass = save();
   mass.dense = { v: 1, unlocked: 6, levels: { '0': { best: 10, stars: 2 }, '1': { best: 10, stars: 1 }, '2': { best: 10, stars: 1 }, '3': { best: 10, stars: 1 }, '4': { best: 10, stars: 3 } } };
   const massFresh = Ach.settle(mass, { now: 77 });
-  record('Crystal Mass clears unlock their own milestones',
-    massFresh.some(function (row) { return row.id === 'mass-1'; }) && massFresh.some(function (row) { return row.id === 'mass-5'; }) && !massFresh.some(function (row) { return row.id === 'mass-10'; }));
+  record('Crystal Mass is gone: no mass badges exist and an old dense record grants nothing',
+    massFresh.length === 0 && !Ach.DEFS.some(function (row) { return /^mass-/.test(row.id) || row.kind === 'dense'; }) && mass.coins === 0);
+  const oldCloud = sync.toCloudData(save({ coins: 9 }), '2026-10-01T00:00:00.000Z');
+  oldCloud.dense = { v: 1, unlocked: 3, levels: { '0': { best: 10, stars: 2 } } };
+  const oldOk = sync.validateCloudData(oldCloud, { worlds: 5, perWorld: 20 });
+  record('a 1.3.5 cloud save with a dense record still loads and keeps it as plain JSON',
+    oldOk.ok === true && oldOk.save.coins === 9 && oldOk.save.dense && oldOk.save.dense.unlocked === 3 && JSON.stringify(sync.toCloudData(oldOk.save, '2026-10-01T00:00:00.000Z')).indexOf('"dense"') >= 0);
+  const oldLocal = sync.toLocalSave(Object.assign(save({ coins: 4 }), { dense: { v: 1, unlocked: 2, levels: {} } }));
+  record('a 1.3.5 device save keeps its dense record on load', oldLocal.dense && oldLocal.dense.unlocked === 2 && oldLocal.coins === 4);
 
   const board = Ach.board(save());
   const five = board.filter(function (row) { return row.id === 'clear-10'; })[0];

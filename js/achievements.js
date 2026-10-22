@@ -1,7 +1,7 @@
 /*
  * PRISMBURST — achievements.js
  * Badges unlocked from progress already in the save: campaign clears,
- * finished worlds, 3-star counts, Crystal Mass clears, and a no-life-lost
+ * finished worlds, 3-star counts, and a no-life-lost
  * clear. Old saves gain the badges they already earned on first load.
  * That backfill does not toast and does not change the coin balance.
  * A toast and the one-time coin gift happen when a clear during this
@@ -50,10 +50,6 @@
     { id: 'stars-25', name: 'Star Lattice', kind: 'stars3', need: 25, coins: 40 },
     { id: 'clear-50', name: 'Fifty Levels', kind: 'clears', need: 50, coins: 40 },
     { id: 'clear-100', name: 'Hundred Levels', kind: 'clears', need: 100, coins: 80 },
-    { id: 'mass-1', name: 'First Mass', kind: 'dense', need: 1, coins: 15 },
-    { id: 'mass-5', name: 'Five Masses', kind: 'dense', need: 5, coins: 20 },
-    { id: 'mass-10', name: 'Ten Masses', kind: 'dense', need: 10, coins: 25 },
-    { id: 'mass-20', name: 'Crystal Crown', kind: 'dense', need: 20, coins: 40 },
     { id: 'flawless', name: 'No Life Lost', kind: 'flawless', need: 1, coins: 20 }
   ];
   var BY_ID = {};
@@ -231,32 +227,17 @@
     return rows;
   }
 
-  function denseStats(data) {
-    var out = { n: 0, stars3: 0 };
-    var dense = data && data.dense;
-    if (!dense || !dense.levels || typeof dense.levels !== 'object') return out;
-    Object.keys(dense.levels).forEach(function (key) {
-      if (!/^\d+$/.test(key)) return;
-      var rec = dense.levels[key];
-      if (!rec || (rec.stars | 0) < 1) return;
-      out.n++;
-      if ((rec.stars | 0) >= 3) out.stars3++;
-    });
-    return out;
-  }
-
   function tally(data) {
     var rows = campaignRows(data);
-    var dense = denseStats(data);
     var worlds = [0, 0, 0, 0, 0];
-    var stars3 = dense.stars3;
+    var stars3 = 0;
     for (var i = 0; i < rows.length; i++) {
       if (rows[i].world >= 0 && rows[i].world < worlds.length) worlds[rows[i].world]++;
       if (rows[i].stars >= 3) stars3++;
     }
     var ach = data && data.achievements;
     var flawless = !!(ach && ach.flawless) || stars3 > 0;
-    return { clears: rows.length, worlds: worlds, stars3: stars3, dense: dense.n, flawless: flawless ? 1 : 0 };
+    return { clears: rows.length, worlds: worlds, stars3: stars3, flawless: flawless ? 1 : 0 };
   }
 
   function currentOf(data, def) {
@@ -264,7 +245,6 @@
     if (def.kind === 'clears') return t.clears;
     if (def.kind === 'world') return t.worlds[def.world] || 0;
     if (def.kind === 'stars3') return t.stars3;
-    if (def.kind === 'dense') return t.dense;
     if (def.kind === 'flawless') return t.flawless;
     return 0;
   }

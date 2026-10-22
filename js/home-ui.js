@@ -134,12 +134,7 @@
         scene.scene.bringToTop('HomePop');
       }],
       ['Achievements', function () { open('achievements'); }],
-      ['Modes', function () {
-        Home.mode = { type: 'one', items: ['modes'], index: 0 };
-        if (scene.scene.isActive('HomePop')) scene.scene.stop('HomePop');
-        scene.scene.launch('HomePop');
-        scene.scene.bringToTop('HomePop');
-      }],
+      ['Account', function () { if (PB.Account) PB.Account.open('auth'); }],
       ['Settings', function () { PB.fadeTo(scene, 'Settings', { from: 'Menu' }); }]
     ];
     items.forEach(function (item, i) {
@@ -194,7 +189,6 @@
       if (id === 'shop') this.shop();
       else if (id === 'tasks') this.tasks();
       else if (id === 'wheel') this.wheel();
-      else if (id === 'modes') this.modes();
       else if (id === 'achievements') this.achievements();
       else this.bonus();
       var noteY = id === 'bonus' ? 940 : (id === 'wheel' ? 1000 : (id === 'shop' ? 1148 : 1096));
@@ -226,29 +220,6 @@
         state.name = 'ach-state-' + row.id;
         self.root.add(state);
       });
-    }
-    modes() {
-      var self = this;
-      var title = PB.text(this, W / 2, 250, 'MODES', 46, '#e8fdff', { glow: '#22e8ff' });
-      title.name = 'modesTitle';
-      this.root.add(title);
-      this.root.add(PB.text(this, W / 2, 320, 'Crystal Mass is a separate shard track.', 22, '#c9d4ff', { strokeThickness: 0 }));
-      var mass = PB.button(this, W / 2, 460, 460, 120, 'Crystal Mass', function () {
-        var menu = self.scene.get('Menu');
-        self.scene.stop();
-        if (menu) PB.fadeTo(menu, 'DenseSelect');
-      }, { size: 34, color: 0x22e8ff });
-      mass.name = 'mode-mass';
-      this.root.add(mass);
-      this.root.add(PB.text(this, W / 2, 540, 'Micro-shards, swarms, and coin drops', 20, '#9fb6e8', { strokeThickness: 0 }));
-      var odyssey = PB.button(this, W / 2, 680, 460, 110, 'Brick Odyssey', function () {
-        var menu = self.scene.get('Menu');
-        self.scene.stop();
-        if (menu) PB.fadeTo(menu, 'Worlds');
-      }, { size: 32, color: 0xff3df0 });
-      odyssey.name = 'mode-odyssey';
-      this.root.add(odyssey);
-      this.root.add(PB.text(this, W / 2, 760, 'The five worlds, unchanged', 20, '#9fb6e8', { strokeThickness: 0 }));
     }
     bonus() {
       var self = this;

@@ -67,6 +67,15 @@
     return isNativeApp() ? NATIVE_AUTH_URL : pageUrl();
   }
 
+  // Password reset links come back with ?type=recovery so the game opens the
+  // "set a new password" screen. Supabase appends &code=... to this URL.
+  // The URL must be in Supabase Auth > URL Configuration > Redirect URLs.
+  function recoveryRedirectUrl() {
+    return authRedirectUrl() + '?type=recovery';
+  }
+
+  var RESET_COOLDOWN_MS = 30000;
+
   function parseNativeAuthUrl(raw) {
     var url;
     try { url = new URL(String(raw)); } catch (e) { return null; }
@@ -137,6 +146,11 @@
     if (low.indexOf('redirect') !== -1 || low.indexOf('unauthorized') !== -1) {
       return 'Sign-in could not return to this page. Progress on this device is unchanged.';
     }
+    if (low.indexOf('different from the old') !== -1 || low.indexOf('same_password') !== -1) return 'Choose a password you have not used for this account.';
+    if (low.indexOf('rate limit') !== -1 || low.indexOf('security purposes') !== -1 || err.status === 429) return 'Too many tries. Wait a minute, then try again. Progress on this device is unchanged.';
+    if (low.indexOf('code verifier') !== -1 || low.indexOf('flow state') !== -1 || low.indexOf('otp_expired') !== -1 || low.indexOf('expired or is invalid') !== -1 || (low.indexOf('link') !== -1 && low.indexOf('expired') !== -1)) {
+      return 'This link has expired or was opened in a different browser. Ask for a new reset link and open it on this phone. Progress on this device is unchanged.';
+    }
     if (low.indexOf('weak') !== -1 || (low.indexOf('password') !== -1 && low.indexOf('at least') !== -1)) return 'Use at least 6 characters in the password.';
     if (err.status >= 500) return 'The account server had a problem. Your progress stays on this device.';
     return msg || 'Sign-in failed. Progress on this device is unchanged.';
@@ -200,6 +214,7 @@
     ['code', 'state', 'error', 'error_description', 'error_code'].forEach(function (key) {
       if (u.searchParams.has(key)) { u.searchParams.delete(key); dirty = true; }
     });
+    if (u.searchParams.get('type') === 'recovery') { u.searchParams.delete('type'); dirty = true; }
     if (hash.has('access_token') || hash.has('error') || hash.has('error_description') || hash.has('refresh_token')) {
       u.hash = '';
       dirty = true;
@@ -325,7 +340,10 @@
 
     handleAuthEvent: function (event, session) {
       var self = this;
-      if (event === 'PASSWORD_RECOVERY') this.recovery = true;
+      if (event === 'PASSWORD_RECOVERY') {
+        this.recovery = true;
+        if (PB.Account && PB.Account.open) PB.Account.open('recovery');
+      }
       if (event === 'TOKEN_REFRESHED' && session) {
         this.session = session;
         this._hadSession = true;
@@ -353,7 +371,9 @@
         this.emit();
         return;
       }
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+      // supabase-js reports a password-reset code exchange as PASSWORD_RECOVERY
+      // instead of SIGNED_IN, so it carries the new session too.
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || (event === 'PASSWORD_RECOVERY' && session && session.user)) {
         this.session = session && session.user ? session : null;
         if (this.session) {
           this._hadSession = true;
@@ -423,7 +443,9 @@
         backups: keys,
         save: raw,
         loading: this.loading,
-        recovery: this.recovery
+        recovery: this.recovery,
+        ready: this.readySettled,
+        resetWait: this.resetWaitMs()
       };
     },
 
@@ -854,28 +876,48 @@
       });
     },
 
+    resetWaitMs: function () {
+      if (!this._resetAt) return 0;
+      var left = RESET_COOLDOWN_MS - (Date.now() - this._resetAt);
+      return left > 0 ? left : 0;
+    },
+
     forgotEmail: function (email) {
       var self = this;
+      email = String(email || '').trim();
       if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
-      if (!email || email.indexOf('@') < 1) { this.setError('Enter the email for that account.'); return Promise.resolve(); }
+      if (!email || email.indexOf('@') < 1 || email.length > 320) { this.setError('Enter the email for that account.'); return Promise.resolve(); }
+      if (this.resetWaitMs() > 0) {
+        this.setError('A reset link was just sent. Wait ' + Math.ceil(this.resetWaitMs() / 1000) + ' seconds before asking again.');
+        return Promise.resolve();
+      }
       return this.busy(function () {
-        return withTimeout(self.client.auth.resetPasswordForEmail(email, { redirectTo: authRedirectUrl() }), 15000).then(function (res) {
+        return withTimeout(self.client.auth.resetPasswordForEmail(email, { redirectTo: recoveryRedirectUrl() }), 15000).then(function (res) {
           if (res.error) throw res.error;
-          self.errorText = 'Password reset email sent. Open the link on this phone. Your progress stays on this device.';
+          self._resetAt = Date.now();
+          // Same text whether or not the address has an account.
+          self.errorText = 'Password reset email sent. If that email has an account, open the link on this phone to choose a new password. Your progress stays on this device.';
           self.syncLabel = self.session ? self.syncLabel : 'Not signed in';
         });
       });
     },
 
-    updatePassword: function (password) {
+    cancelRecovery: function () {
+      this.recovery = false;
+      this.emit();
+    },
+
+    updatePassword: function (password, confirmPassword) {
       var self = this;
       if (!password || password.length < 6) { this.setError('Use at least 6 characters in the password.'); return Promise.resolve(); }
-      if (!this.client || !this.session) { this.setError('Your session expired. Sign in again. Progress on this device is unchanged.'); return Promise.resolve(); }
+      if (password.length > 72) { this.setError('Password is too long.'); return Promise.resolve(); }
+      if (confirmPassword !== undefined && confirmPassword !== password) { this.setError('The two passwords do not match.'); return Promise.resolve(); }
+      if (!this.client || !this.session) { this.setError('This reset link has expired. Ask for a new one. Progress on this device is unchanged.'); return Promise.resolve(); }
       return this.busy(function () {
         return withTimeout(self.client.auth.updateUser({ password: password }), 15000).then(function (res) {
           if (res.error) throw res.error;
           self.recovery = false;
-          self.errorText = 'Password updated. Progress on this device was kept.';
+          self.errorText = 'Password updated. You are signed in. Progress on this device was kept.';
         });
       });
     },
@@ -1040,7 +1082,10 @@
         this.setError(friendlyError({ message: parsed.error }));
         return;
       }
-      if (parsed.type === 'recovery') this.recovery = true;
+      if (parsed.type === 'recovery') {
+        this.recovery = true;
+        if (PB.Account && PB.Account.open) PB.Account.open('recovery');
+      }
       if (!this.client) {
         this.loading = false;
         this.setError('Sign-in could not return to this page. Progress on this device is unchanged.');
@@ -1060,6 +1105,10 @@
       this.emit();
       Promise.resolve(job).then(function (res) {
         if (res && res.error) throw res.error;
+        if (res && res.data && (res.data.redirectType === 'recovery' || res.data.redirectType === 'PASSWORD_RECOVERY') && !self.recovery) {
+          self.recovery = true;
+          if (PB.Account && PB.Account.open) PB.Account.open('recovery');
+        }
         self.loading = false;
         self.emit();
       }, function (err) {

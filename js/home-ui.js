@@ -134,11 +134,10 @@
         scene.scene.bringToTop('HomePop');
       }],
       ['Achievements', function () { open('achievements'); }],
-      ['Account', function () { if (PB.Account) PB.Account.open('auth'); }],
       ['Settings', function () { PB.fadeTo(scene, 'Settings', { from: 'Menu' }); }]
     ];
     items.forEach(function (item, i) {
-      var b = PB.button(scene, 110 + i * 168, barY, 156, 78, item[0], item[1], { size: item[0].length > 8 ? 16 : 20, color: 0x9b6bff });
+      var b = PB.button(scene, 130 + i * 230, barY, 210, 78, item[0], item[1], { size: item[0].length > 8 ? 18 : 22, color: 0x9b6bff });
       b.name = 'bar-' + item[0];
     });
 
@@ -152,12 +151,101 @@
     }
   }
 
+  // ---- Prism Shop drawing helpers (original shapes, drawn with Graphics) ----
+  var BOOST_TINT = { life: 0xff4d8d, wide: 0x22e8ff, multi: 0x9b6bff, slow: 0x7dffa6 };
+  var BOOST_INFO = { life: '+1 life on the next level', wide: 'Wider paddle next level', multi: 'Start with three balls', slow: 'Slower ball next level' };
+
+  function drawPrismCoin(scene, x, y, r) {
+    var g = scene.add.graphics();
+    var pts = [];
+    for (var i = 0; i < 6; i++) {
+      var a = -Math.PI / 2 + i * Math.PI / 3;
+      pts.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r });
+    }
+    g.fillStyle(0xffb627, 1); g.fillPoints(pts, true);
+    g.fillStyle(0xffe7a3, 1);
+    g.fillTriangle(x, y - r, x + r * 0.87, y - r * 0.5, x, y);
+    g.fillStyle(0xfff6d8, 0.9);
+    g.fillTriangle(x, y - r, x - r * 0.87, y - r * 0.5, x, y);
+    g.lineStyle(2, 0x8a5a00, 1); g.strokePoints(pts, true);
+    return g;
+  }
+
+  function shopCard(scene, x, y, w, h, tint, lit) {
+    var g = scene.add.graphics();
+    g.fillStyle(tint, lit ? 0.22 : 0.1); g.fillRoundedRect(x - w / 2 - 4, y - h / 2 - 4, w + 8, h + 8, 26);
+    g.fillStyle(0x0c1034, 0.96); g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 22);
+    g.fillStyle(0xffffff, 0.05); g.fillRoundedRect(x - w / 2 + 6, y - h / 2 + 6, w - 12, h * 0.38, { tl: 18, tr: 18, bl: 6, br: 6 });
+    g.fillStyle(tint, 0.1); g.fillTriangle(x + w / 2 - 70, y - h / 2 + 2, x + w / 2 - 2, y - h / 2 + 2, x + w / 2 - 2, y - h / 2 + 70);
+    g.lineStyle(lit ? 3 : 2, tint, lit ? 1 : 0.65); g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 22);
+    return g;
+  }
+
+  function shopTag(scene, right, y, label, color) {
+    var c = scene.add.container(0, 0);
+    var t = PB.text(scene, 0, 0, label, 14, '#0a0620', { strokeThickness: 0 });
+    var w = Math.max(70, t.width + 20);
+    var g = scene.add.graphics();
+    g.fillStyle(color, 1); g.fillRoundedRect(-w / 2, -14, w, 28, 14);
+    c.add([g, t]);
+    c.label = t;
+    c.setPosition(right - w / 2, y);
+    return c;
+  }
+
+  function drawBoostIcon(scene, x, y, id, tint) {
+    var g = scene.add.graphics();
+    g.fillStyle(tint, 0.16); g.fillCircle(x, y, 46);
+    g.lineStyle(2, tint, 0.8); g.strokeCircle(x, y, 46);
+    if (id === 'life') {
+      g.fillStyle(tint, 1);
+      g.fillTriangle(x, y - 26, x + 22, y, x - 22, y);
+      g.fillTriangle(x - 22, y, x + 22, y, x, y + 26);
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(x - 3, y - 12, 6, 24); g.fillRect(x - 12, y - 3, 24, 6);
+    } else if (id === 'wide') {
+      g.fillStyle(tint, 1); g.fillRoundedRect(x - 34, y - 8, 68, 16, 8);
+      g.fillStyle(0xffffff, 0.9);
+      g.fillTriangle(x - 40, y - 22, x - 28, y - 30, x - 28, y - 14);
+      g.fillTriangle(x + 40, y - 22, x + 28, y - 30, x + 28, y - 14);
+    } else if (id === 'multi') {
+      [[-16, 8], [16, 8], [0, -16]].forEach(function (o) {
+        g.fillStyle(tint, 1); g.fillCircle(x + o[0], y + o[1], 11);
+        g.fillStyle(0xffffff, 0.8); g.fillCircle(x + o[0] - 3, y + o[1] - 3, 4);
+      });
+    } else {
+      g.fillStyle(tint, 1); g.fillCircle(x + 10, y, 12);
+      g.lineStyle(4, tint, 0.55); g.beginPath(); g.arc(x + 10, y, 24, Math.PI * 0.75, Math.PI * 1.25); g.strokePath();
+      g.lineStyle(4, tint, 0.3); g.beginPath(); g.arc(x + 10, y, 34, Math.PI * 0.8, Math.PI * 1.2); g.strokePath();
+    }
+    return g;
+  }
+
+  function drawLookIcon(scene, x, y, look) {
+    var g = scene.add.graphics();
+    if (look.kind === 'trail') {
+      for (var i = 0; i < 6; i++) {
+        g.fillStyle(look.color, 0.15 + i * 0.15);
+        g.fillCircle(x - 50 + i * 18, y + 6 - i * 2, 4 + i * 1.6);
+      }
+      g.fillStyle(0xffffff, 1); g.fillCircle(x + 50, y - 6, 9);
+      g.lineStyle(2, look.color, 1); g.strokeCircle(x + 50, y - 6, 12);
+    } else {
+      g.fillStyle(look.color, 0.25); g.fillRoundedRect(x - 66, y - 16, 132, 32, 16);
+      g.fillStyle(look.color, 1); g.fillRoundedRect(x - 58, y - 10, 116, 20, 10);
+      g.lineStyle(3, look.edge || 0xffffff, 1); g.strokeRoundedRect(x - 58, y - 10, 116, 20, 10);
+      g.fillStyle(0xffffff, 0.5); g.fillRoundedRect(x - 48, y - 7, 60, 5, 3);
+    }
+    return g;
+  }
+
   class HomePopScene extends Phaser.Scene {
     constructor() { super('HomePop'); }
     create() {
       PB.enter(this);
       this.add.rectangle(W / 2, H / 2, W, H, 0x05061a, 0.78).setInteractive();
       this.root = this.add.container(0, 0);
+      this.shopTab = 'boosts';
       this.render();
     }
     current() {
@@ -388,15 +476,39 @@
       var self = this;
       var Shop = PB.Shop;
       Shop.ensure(Save.data);
-      var title = PB.text(this, W / 2, 210, 'PRISM SHOP', 44, '#ffe7a3', { glow: '#ffd166' });
+      if (this.shopTab !== 'looks') this.shopTab = 'boosts';
+      var tab = this.shopTab;
+      var title = PB.text(this, W / 2 - 30, 196, 'PRISM SHOP', 42, '#ffe7a3', { glow: '#ffd166' });
       title.name = 'shopTitle';
       this.root.add(title);
-      var coins = PB.text(this, W / 2, 258, 'Coins: ' + Save.data.coins, 24, '#ffe7a3', { strokeThickness: 0 });
+
+      // Balance pill: drawn prism coin and the current Prism coin count.
+      var pill = this.add.graphics();
+      pill.fillStyle(0x0a0d2a, 0.95); pill.fillRoundedRect(W / 2 - 150, 238, 300, 58, 29);
+      pill.lineStyle(2, 0xffd166, 0.9); pill.strokeRoundedRect(W / 2 - 150, 238, 300, 58, 29);
+      pill.fillStyle(0xffd166, 0.14); pill.fillRoundedRect(W / 2 - 146, 242, 292, 24, { tl: 25, tr: 25, bl: 4, br: 4 });
+      this.root.add(pill);
+      this.root.add(drawPrismCoin(this, W / 2 - 108, 267, 17));
+      var coins = PB.text(this, W / 2 + 14, 267, String(Save.data.coins | 0), 30, '#ffe7a3', { strokeThickness: 0 });
       coins.name = 'shopCoins';
       this.root.add(coins);
-      this.root.add(PB.text(this, W / 2, 300, 'Boosts apply to the next level only', 18, '#c9d4ff', { strokeThickness: 0 }));
+      this.root.add(PB.text(this, W / 2 + 14, 312, 'Prism coins', 15, '#c9a95c', { strokeThickness: 0 }));
+
+      // Tabs.
+      [['boosts', 'Boosts'], ['looks', 'Looks']].forEach(function (pair, i) {
+        var on = tab === pair[0];
+        var b = PB.button(self, W / 2 - 146 + i * 292, 372, 276, 64, pair[1], function () {
+          if (self.shopTab === pair[0]) return;
+          self.shopTab = pair[0];
+          self.render();
+        }, { size: 24, color: on ? 0x22e8ff : 0x4a4f78, fill: on ? 0x123a52 : 0x0e1234 });
+        b.name = 'shop-tab-' + pair[0];
+        self.root.add(b);
+      });
+      this.root.add(PB.text(this, W / 2, 428, tab === 'boosts' ? 'Boosts work on your next level only' : 'Buy once. Equip one trail and one paddle.', 18, '#c9d4ff', { strokeThickness: 0 }));
+
       function refreshCoins() {
-        coins.setText('Coins: ' + Save.data.coins);
+        coins.setText(String(Save.data.coins | 0));
         var menu = self.scene.get('Menu');
         if (!menu) return;
         var walk = function (list) {
@@ -416,35 +528,62 @@
           fn();
         };
       }
-      Shop.BOOSTS.forEach(function (boost, i) {
-        var x = (i % 2) ? W / 2 + 150 : W / 2 - 150;
-        var y = 370 + Math.floor(i / 2) * 82;
-        var queued = Save.data.shop.boosts[boost.id].length;
-        var label = boost.name + '  ' + boost.price + (queued ? '  x' + queued : '');
-        var b = PB.button(self, x, y, 280, 70, label, guarded('boost-' + boost.id, function () {
-          var before = Save.data.coins | 0;
-          var got = Shop.buyBoost(Save.data, boost.id);
-          if (!got.ok) {
-            self.note(got.reason === 'coins' ? 'Need ' + (boost.price - before) + ' more coins' : 'Cannot buy that');
-            return;
+      var cardW = 292;
+      function cardAt(i, h, top) {
+        return { x: (i % 2) ? W / 2 + 152 : W / 2 - 152, y: top + h / 2 + Math.floor(i / 2) * (h + 16), h: h };
+      }
+
+      if (tab === 'boosts') {
+        Shop.BOOSTS.forEach(function (boost, i) {
+          var box = cardAt(i, 300, 456);
+          var queued = Save.data.shop.boosts[boost.id].length;
+          var afford = (Save.data.coins | 0) >= boost.price;
+          var tint = BOOST_TINT[boost.id] || 0x22e8ff;
+          self.root.add(shopCard(self, box.x, box.y, cardW, box.h, tint, queued > 0));
+          self.root.add(drawBoostIcon(self, box.x, box.y - 88, boost.id, tint));
+          self.root.add(PB.text(self, box.x, box.y - 12, boost.name, 24, '#ffffff', { strokeThickness: 0 }));
+          self.root.add(PB.text(self, box.x, box.y + 22, BOOST_INFO[boost.id] || '', 16, '#aab3e6', { strokeThickness: 0, wrap: 250 }));
+          if (queued) {
+            var tag = shopTag(self, box.x + cardW / 2 - 18, box.y - box.h / 2 + 22, 'Ready x' + queued, 0x7dffa6);
+            tag.name = 'boost-tag-' + boost.id;
+            self.root.add(tag);
           }
-          Save.persist();
-          Sfx.play('coin');
-          refreshCoins();
-          self.render();
-          self.note(boost.name + ' ready for the next level');
-        }), { color: Save.data.coins >= boost.price ? 0x22e8ff : 0x4a4f78, size: 18 });
-        b.name = 'boost-' + boost.id;
-        self.root.add(b);
-      });
-      this.root.add(PB.text(this, W / 2, 548, 'Looks — buy once, equip one', 18, '#c9d4ff', { strokeThickness: 0 }));
+          var b = PB.button(self, box.x, box.y + 98, 240, 66, String(boost.price), guarded('boost-' + boost.id, function () {
+            var before = Save.data.coins | 0;
+            var got = Shop.buyBoost(Save.data, boost.id);
+            if (!got.ok) {
+              self.note(got.reason === 'coins' ? 'Need ' + (boost.price - before) + ' more coins' : 'Cannot buy that');
+              return;
+            }
+            Save.persist();
+            Sfx.play('coin');
+            refreshCoins();
+            self.render();
+            self.note(boost.name + ' ready for the next level');
+          }), { color: afford ? 0xffd166 : 0x4a4f78, size: 26, icon: null });
+          b.name = 'boost-' + boost.id;
+          b.add(drawPrismCoin(self, -62, 0, 13));
+          self.root.add(b);
+        });
+        return;
+      }
+
       Shop.LOOKS.forEach(function (look, i) {
-        var x = (i % 2) ? W / 2 + 150 : W / 2 - 150;
-        var y = 630 + Math.floor(i / 2) * 150;
+        var box = cardAt(i, 206, 456);
         var owned = Save.data.shop.owned.indexOf(look.id) >= 0;
         var eq = (look.kind === 'trail' ? Save.data.shop.trail : Save.data.shop.paddle) === look.id;
-        var label = eq ? 'Equipped' : owned ? 'Equip' : (look.price + ' coins');
-        var b = PB.button(self, x, y, 280, 72, label, guarded('look-' + look.id, function () {
+        var afford = (Save.data.coins | 0) >= look.price;
+        self.root.add(shopCard(self, box.x, box.y, cardW, box.h, look.color, eq));
+        self.root.add(drawLookIcon(self, box.x, box.y - 58, look));
+        self.root.add(PB.text(self, box.x, box.y - 14, look.name, 22, '#ffffff', { strokeThickness: 0 }));
+        self.root.add(PB.text(self, box.x, box.y + 14, look.kind === 'trail' ? 'Ball trail' : 'Paddle skin', 15, '#aab3e6', { strokeThickness: 0 }));
+        if (owned) {
+          var tag = shopTag(self, box.x + cardW / 2 - 18, box.y - box.h / 2 + 20, eq ? 'Equipped' : 'Owned', eq ? 0xffd166 : 0x22e8ff);
+          tag.name = 'look-tag-' + look.id;
+          self.root.add(tag);
+        }
+        var label = eq ? 'Equipped' : owned ? 'Equip' : String(look.price);
+        var b = PB.button(self, box.x, box.y + 66, 240, 60, label, guarded('look-' + look.id, function () {
           if (!owned) {
             var before = Save.data.coins | 0;
             var got = Shop.buyLook(Save.data, look.id);
@@ -464,10 +603,10 @@
           Save.persist();
           self.render();
           self.note(look.name + ' equipped');
-        }), { color: eq ? 0xffd166 : owned ? 0x22e8ff : (Save.data.coins >= look.price ? 0xff3df0 : 0x4a4f78), size: 20 });
+        }), { color: eq ? 0xffd166 : owned ? 0x22e8ff : (afford ? 0xff3df0 : 0x4a4f78), size: 22 });
         b.name = 'look-' + look.id;
+        if (!owned) b.add(drawPrismCoin(self, -56, 0, 12));
         self.root.add(b);
-        self.root.add(PB.text(self, x, y - 46, look.name, 16, '#ffffff', { strokeThickness: 0 }));
       });
     }
     wheel() {

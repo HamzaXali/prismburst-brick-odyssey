@@ -627,9 +627,14 @@ async function signIn(page, email, password) {
       await openAccount(page);
       await page.fill('#pb-email-input', 'ali@example.com');
       await page.click('[data-action="forgot"]');
+      await page.waitForSelector('#pb-view-forgot:not([hidden])');
+      const prefilled = await page.inputValue('#pb-forgot-email');
+      await page.click('[data-action="send-reset"]');
       await page.waitForFunction(() => /Password reset email sent/i.test(document.getElementById('pb-acct-msg').textContent || ''));
+      const recoverReq = state.requests.find(r => r.includes('/auth/v1/recover')) || '';
+      const recoverRedirect = decodeURIComponent((recoverReq.split('redirect_to=')[1] || '').split('&')[0]);
       record('forgot password calls recover with this page as redirect',
-        state.lastRecover && state.lastRecover.email === 'ali@example.com' && String(state.lastRecover.redirect_to || state.lastRecover.gotrue_meta_security || '').length >= 0 && state.requests.some(r => r.includes('/recover')));
+        prefilled === 'ali@example.com' && state.lastRecover && state.lastRecover.email === 'ali@example.com' && /\/index\.html\?type=recovery$/.test(recoverRedirect), { prefilled, recoverRedirect });
       record('oauth and service-worker flow has no page errors', errors.length === 0, errors);
       await ctx.close();
     }
@@ -909,10 +914,11 @@ async function signIn(page, email, password) {
       }));
       record('the native auth return exchanges the code and keeps the save', returned.suggestion === 'Ali Prism' && returned.save === legacy, returned.suggestion);
 
-      await page.fill('#pb-email-input', 'ali@example.com');
-      await page.click('[data-action="forgot"]');
+      await page.evaluate(() => PB.Account.open('forgot'));
+      await page.fill('#pb-forgot-email', 'ali@example.com');
+      await page.click('[data-action="send-reset"]');
       await page.waitForFunction(() => /Password reset email sent/i.test(document.getElementById('pb-acct-msg').textContent || ''));
-      record('native password reset uses the app redirect', state.requests.some(r => r.includes('/auth/v1/recover') && decodeURIComponent(r).includes('com.hamzaxali.prismburst://auth')));
+      record('native password reset uses the app redirect', state.requests.some(r => r.includes('/auth/v1/recover') && decodeURIComponent(r).includes('com.hamzaxali.prismburst://auth?type=recovery')));
       record('native auth flow has no page errors', errors.length === 0, errors);
       await ctx.close();
     }

@@ -77,6 +77,19 @@ Save. The game sends players back to the page they started on, including the `/p
 2. Leave "confirm email" on if you want players to open a link before the first sign-in. The game tells them to check their inbox and does not delete the phone save. The free email sender only allows a few messages per hour. If a reset email fails, the game shows the error and keeps the phone save.
 3. With the URL and publishable key in `config.js` and `providers.email` set to `true`, the email buttons enable themselves. No other switch is required for email.
 
+### Forgot password (1.4.0)
+
+**Forgot password?** in the login popup opens its own screen. It calls Supabase `resetPasswordForEmail` with a return address that ends in `?type=recovery`:
+
+- website: `https://hamzaxali.github.io/prismburst-brick-odyssey/index.html?type=recovery` (or the page the player is on)
+- Android app: `com.hamzaxali.prismburst://auth?type=recovery`
+
+Both are already covered by the wildcard lines above (`https://hamzaxali.github.io/prismburst-brick-odyssey/**`) and by `com.hamzaxali.prismburst://**` from [ANDROID.md](ANDROID.md). If a line is missing, Supabase sends the player to the Site URL and the app cannot finish the reset.
+
+When the link comes back, the game shows **Choose a new password** (type it twice) and saves it with `updateUser`. The phone save `prismburst.save.v1` is not cleared. The link only works in the same browser or app that asked for it (PKCE). Opened elsewhere, the game says so and offers **Ask for a new link**.
+
+Email template: **Authentication → Emails → Reset Password** can stay on the default. It must keep the `{{ .ConfirmationURL }}` link. Do not paste any key or secret into a template.
+
 ## 6. Google sign-in
 
 The Google button stays off and says **Not set up yet** until `providers.google` is `true`. Email keeps working while Google is off.

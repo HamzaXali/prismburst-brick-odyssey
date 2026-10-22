@@ -32,7 +32,7 @@ jobs:
       - name: Assemble _site (game files only; no tests/, scripts/, .github/)
         run: |
           mkdir -p _site
-          cp -r index.html style.css game.js levels.js sw.js manifest.webmanifest config.js privacy.html .nojekyll js lib icons _site/
+          cp -r index.html style.css game.js levels.js sw.js manifest.webmanifest config.js privacy.html privacy-policy.html delete-account.html .nojekyll js lib icons _site/
           ls -laR _site
 
       - uses: actions/configure-pages@v5

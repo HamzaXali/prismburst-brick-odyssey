@@ -12,7 +12,7 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const ROOT_FILES = [
   'index.html', 'style.css', 'game.js', 'levels.js', 'sw.js',
-  'manifest.webmanifest', 'config.js', 'privacy.html', '.nojekyll'
+  'manifest.webmanifest', 'config.js', 'privacy.html', 'privacy-policy.html', 'delete-account.html', '.nojekyll'
 ];
 const DIRS = ['js', 'lib', 'icons'];
 const SKIP_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico']);

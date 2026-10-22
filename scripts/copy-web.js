@@ -16,6 +16,8 @@ const INCLUDE_FILES = [
   'manifest.webmanifest',
   'config.js',
   'privacy.html',
+  'privacy-policy.html',
+  'delete-account.html',
   '.nojekyll'
 ];
 const INCLUDE_DIRS = ['js', 'lib', 'icons'];

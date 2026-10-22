@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delete your account — PRISMBURST</title>
+  <meta name="description" content="How to delete a PRISMBURST — Brick Odyssey account and its cloud save.">
+  <meta name="theme-color" content="#070a1f">
+  <style>
+    body { margin: 0; background: #070a1f; color: #e8fdff; font: 18px/1.45 "Trebuchet MS", "Segoe UI", Roboto, Arial, sans-serif; }
+    main { box-sizing: border-box; max-width: 40rem; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 1.6rem; letter-spacing: 1px; }
+    h2 { font-size: 1.15rem; margin-top: 1.6rem; }
+    a { color: #9fe9ff; }
+    code { color: #ffe7a3; }
+    .card { border: 2px solid #22e8ff; border-radius: 14px; padding: 16px; margin-top: 1rem; background: rgba(18, 22, 58, 0.9); }
+    .card[hidden], [hidden] { display: none !important; }
+    label { display: block; margin: 10px 0 4px; font-size: 0.95rem; }
+    input { box-sizing: border-box; width: 100%; padding: 12px; font-size: 18px; border-radius: 10px; border: 2px solid #4a5090; background: #0d1030; color: #e8fdff; }
+    button { display: block; box-sizing: border-box; width: 100%; margin-top: 12px; padding: 14px; font-size: 18px; font-weight: bold; border-radius: 12px; border: 2px solid #22e8ff; background: #12163a; color: #e8fdff; }
+    button:disabled { opacity: 0.45; }
+    button.google { background: #ffffff; color: #1f1f1f; border-color: #dadce0; }
+    button.danger { border-color: #ff2e63; background: #3a0d1e; }
+    button.quiet { border-color: #6a6f9a; background: transparent; }
+    #msg { min-height: 1.4em; color: #ffd166; }
+    .fine { color: #9aa3d6; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Delete your PRISMBURST account</h1>
+  <p>This page is for players of <strong>PRISMBURST — Brick Odyssey</strong> (Android app <code>com.hamzaxali.prismburst</code> and the web game). It explains how to delete your account and the data linked to it.</p>
+
+  <h2>Option 1: in the game</h2>
+  <ol>
+    <li>Open PRISMBURST and go to <strong>Settings</strong>.</li>
+    <li>Tap <strong>Delete account</strong>. Sign in if you are asked to.</li>
+    <li>Type <code>DELETE</code> and tap <strong>Delete my account forever</strong>.</li>
+  </ol>
+  <p>You can also open <strong>Account</strong> from the home screen while signed in and tap <strong>Delete account</strong>.</p>
+
+  <h2>Option 2: on this page</h2>
+  <p>Sign in with the same account you use in the game, then confirm below.</p>
+
+  <div class="card" id="del-off" hidden>
+    <p>Accounts are not set up on this copy of the site, so there is nothing stored online to delete.</p>
+  </div>
+
+  <div class="card" id="del-signin" hidden>
+    <button type="button" class="google" id="del-google">Continue with Google</button>
+    <form id="del-email-form" novalidate>
+      <label for="del-email">Email</label>
+      <input id="del-email" type="email" inputmode="email" autocomplete="username" maxlength="320">
+      <label for="del-pass">Password</label>
+      <input id="del-pass" type="password" autocomplete="current-password" maxlength="72">
+      <button type="submit" id="del-login">Log in with email</button>
+    </form>
+    <p class="fine">Forgot the password? Use <strong>Forgot password?</strong> in the game first. Facebook sign-in is not available.</p>
+  </div>
+
+  <div class="card" id="del-confirm" hidden>
+    <p id="del-who">Signed in.</p>
+    <p>Deleting removes your account, your display name and your cloud save. It cannot be undone.</p>
+    <label for="del-typed">Type DELETE to confirm</label>
+    <input id="del-typed" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12">
+    <button type="button" class="danger" id="del-go" disabled>Delete my account forever</button>
+    <button type="button" class="quiet" id="del-signout">Sign out without deleting</button>
+  </div>
+
+  <div class="card" id="del-done" hidden>
+    <p>Your account and its cloud save were deleted.</p>
+    <p>This browser may still have game progress saved for the web game. It is not removed unless you choose to.</p>
+    <button type="button" class="quiet" id="del-keep">Keep this browser's progress</button>
+    <button type="button" class="danger" id="del-clear">Also clear this device's progress</button>
+  </div>
+
+  <p id="msg" role="status" aria-live="polite"></p>
+
+  <h2>What is deleted</h2>
+  <ul>
+    <li>Your sign-in account: email address, sign-in provider and the provider's account id.</li>
+    <li>Your display name.</li>
+    <li>Your cloud save (levels, stars, coins, skins, settings and stats).</li>
+  </ul>
+  <p>Deletion happens straight away in the live database. Nothing is kept for advertising or analytics, because the game has neither. Routine backups held by the hosting provider (Supabase), if any, are overwritten on their normal schedule and are not used to restore deleted accounts.</p>
+
+  <h2>What is not deleted</h2>
+  <p>Progress saved on your phone stays on your phone. In the game, after deleting, you can choose <strong>Also clear this device's progress</strong>, or use <strong>Settings → Reset progress</strong> at any time. Uninstalling the Android app also removes it.</p>
+
+  <h2>Cannot sign in?</h2>
+  <p>Open an issue at <a href="https://github.com/HamzaXali/prismburst-brick-odyssey/issues" rel="noopener">github.com/HamzaXali/prismburst-brick-odyssey/issues</a> titled “Account deletion request”. Do not post your password or email address there; the developer will reply with a private way to confirm the account.</p>
+
+  <p><a href="privacy-policy.html">Privacy policy</a> · <a href="./">Back to the game</a></p>
+</main>
+<script src="lib/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="js/delete-core.js"></script>
+<script src="js/delete-page.js"></script>
+</body>
+</html>

@@ -109,7 +109,7 @@ Facebook ships off (`providers.facebook` is `false`). Turn it on only after this
 2. Add the **Facebook Login** product if it is not already there. Choose the **Web** setup.
 3. **Valid OAuth Redirect URI:** the same Supabase callback as Google, `https://<project-ref>.supabase.co/auth/v1/callback`.
 4. Permissions: `public_profile` and `email`.
-5. **Settings** → **Basic**: set the privacy policy URL to `https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html`. For data deletion, set the **Data deletion instructions URL** to `https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html#deletion`. This site cannot run Meta's automatic POST callback because GitHub Pages is a static host. The instructions on that page are how a player asks for deletion.
+5. **Settings** → **Basic**: set the privacy policy URL to `https://hamzaxali.github.io/prismburst-brick-odyssey/privacy-policy.html`. For data deletion, set the **Data deletion instructions URL** to `https://hamzaxali.github.io/prismburst-brick-odyssey/delete-account.html`. This site cannot run Meta's automatic POST callback because GitHub Pages is a static host. The instructions on that page are how a player asks for deletion.
 6. Add yourself as an admin or tester and try login before review. Facebook only lets other people sign in after the app is in **Live** mode. `email` may need **Advanced Access** and app review before it works for players who are not testers. `public_profile` is the standard profile permission.
 7. Copy the **App ID** and **App secret**. In Supabase → **Facebook** provider, paste them and turn the provider on. The app secret stays in Supabase, not in `config.js`.
 8. Edit `config.js` and set `providers.facebook` to `true`. Commit to `main`.
@@ -127,4 +127,4 @@ The debug APK and the extra Supabase redirect are in [ANDROID.md](ANDROID.md). O
 
 ## Privacy page
 
-Players, Google, and Facebook can open [privacy.html](https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html). It matches what the game stores: email and provider id if you sign in, the display name, and the game save. No ads and no analytics.
+Players, Google, and Facebook can open [privacy-policy.html](https://hamzaxali.github.io/prismburst-brick-odyssey/privacy-policy.html). It matches what the game stores: email and provider id if you sign in, the display name, and the game save. No ad SDK and no analytics; the only ads are demo promos for PRISMBURST itself. Account deletion: in the game (Settings → Delete account) or [delete-account.html](https://hamzaxali.github.io/prismburst-brick-odyssey/delete-account.html). It needs `supabase/migrations/004_delete_my_account.sql` applied.

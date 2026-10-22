@@ -29,7 +29,7 @@ The Google **client secret** is typed only into Google Cloud and into Supabase. 
 3. App name: `PRISMBURST`.
 4. User support email: your Gmail address.
 5. Application home page, if asked: `https://hamzaxali.github.io/prismburst-brick-odyssey/`.
-6. Privacy policy: `https://hamzaxali.github.io/prismburst-brick-odyssey/privacy.html`.
+6. Privacy policy: `https://hamzaxali.github.io/prismburst-brick-odyssey/privacy-policy.html`.
 7. Save, then continue until you can add scopes.
 8. Add only these scopes: `openid`, `.../auth/userinfo.email`, and `.../auth/userinfo.profile`. In the list they are the basic **email**, **profile**, and **openid** scopes. Do not add extra scopes.
 9. Save.

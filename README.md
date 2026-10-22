@@ -28,7 +28,10 @@ style.css              full-screen, no-scroll, no-zoom mobile styles
 levels.js              world data, hand-made level templates + deterministic generator
 game.js                gameplay scene (physics, power-ups, scoring), Phaser config, test hook
 config.js              public Supabase URL, publishable key, and provider switches (empty = offline)
-privacy.html           privacy policy (no ads, no analytics; account data only if you sign in)
+privacy-policy.html    privacy policy (no ad SDK, no analytics; account data only if you sign in)
+privacy.html           old address, forwards to privacy-policy.html
+delete-account.html    public account deletion page (Google Play requirement)
+store/                 Play Store icon, feature graphic, screenshots (not deployed)
 js/core.js             save system, WebAudio synth, haptics, procedural textures, UI helpers
 js/home.js             daily bonus, lucky wheel, and daily tasks (save.home)
 js/home-ui.js          home bar, shortcuts, and the startup popup queue
@@ -75,7 +78,7 @@ Put these files at the root of a public repository named `prismburst-brick-odyss
 **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 `.github/workflows/pages.yml` validates the levels, file paths, secret scan, and cloud merge tests, then deploys only the game files
 (no `tests/`, `scripts/`, `docs/`, `supabase/` or `.github/`) on every push to `main`. You can also run it by hand
-from the Actions tab. `config.js` and `privacy.html` are deployed. The database script is not.
+from the Actions tab. `config.js`, `privacy-policy.html`, `privacy.html` and `delete-account.html` are deployed. The database script is not.
 The game will be at `https://<your-username>.github.io/prismburst-brick-odyssey/`.
 All paths are relative, so any repository name works.
 
@@ -85,7 +88,7 @@ Phone test checklist: [docs/MOBILE-TESTING.md](docs/MOBILE-TESTING.md).
 With the empty `config.js` in this repo, the game does not sign anyone in and does not call Supabase.
 Progress (levels, coins, skins, settings) is saved in `localStorage` on the device under `prismburst.save.v1`.
 Login, logout, and auth errors do not clear that key. Setup steps for a free Supabase project, email, Google,
-and Facebook are in [docs/CLOUD-SETUP.md](docs/CLOUD-SETUP.md). The public policy is [privacy.html](privacy.html).
+and Facebook are in [docs/CLOUD-SETUP.md](docs/CLOUD-SETUP.md). The public policy is [privacy-policy.html](privacy-policy.html). Players delete their account in Settings or on [delete-account.html](delete-account.html). Play Store steps: [docs/PLAY-STORE.md](docs/PLAY-STORE.md).
 
 ## Credits
 Game code and art © the PrismBurst author. Phaser © Photon Storm Ltd (MIT license).

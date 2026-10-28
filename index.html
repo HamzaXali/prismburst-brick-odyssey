@@ -128,9 +128,29 @@
         <p id="pb-name-msg" class="pb-note" role="status"></p>
       </div>
       <button type="button" class="pb-btn danger" data-action="logout" hidden>Log out</button>
+      <button type="button" class="pb-btn quiet" data-action="delete-start" hidden>Delete account</button>
+
+      <!-- Delete account (signed in) -->
+      <section id="pb-view-delete" class="pb-view" data-view="delete" aria-label="Delete account" hidden>
+        <p class="pb-lead">This permanently deletes your PRISMBURST account, its display name and its cloud save. It cannot be undone.</p>
+        <p class="pb-fine">Progress on this device is not touched. After the account is deleted you choose whether to keep it or clear it.</p>
+        <label>Type DELETE to confirm
+          <input id="pb-delete-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" enterkeyhint="done">
+        </label>
+        <button type="button" class="pb-btn danger" data-action="delete-confirm" disabled>Delete my account forever</button>
+        <button type="button" class="pb-linkbtn" data-action="delete-cancel">‹ Keep my account</button>
+      </section>
+
+      <!-- After deletion: explicit choice about this device -->
+      <section id="pb-view-deleted" class="pb-view" data-view="deleted" aria-label="Account deleted" hidden>
+        <p class="pb-lead">Your account is gone. This phone still has its progress. What should happen to it?</p>
+        <button type="button" class="pb-btn email" data-action="keep-device">Keep this device's progress</button>
+        <button type="button" class="pb-btn danger" data-action="clear-device">Also clear this device's progress</button>
+        <p class="pb-fine" id="pb-clear-note">Clearing removes levels, stars, coins and skins saved on this phone. It cannot be undone.</p>
+      </section>
 
       <p class="pb-fine">Progress is always stored on this device. Cloud save runs only while you are signed in.</p>
-      <p class="pb-fine"><a href="privacy.html">Privacy policy</a></p>
+      <p class="pb-fine"><a href="privacy-policy.html" data-action="open-page" data-page="privacy-policy.html">Privacy policy</a> · <a href="delete-account.html" data-action="open-page" data-page="delete-account.html">Delete account page</a></p>
     </div>
 
     <div id="pb-confirm" hidden>
@@ -171,6 +191,7 @@
   <script src="js/shop.js"></script>
   <script src="js/save-sync.js"></script>
   <script src="js/profile.js"></script>
+  <script src="js/delete-core.js"></script>
   <script src="js/cloud.js"></script>
   <script src="js/account.js"></script>
   <script src="js/ads.js"></script>

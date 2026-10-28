@@ -75,6 +75,8 @@
   }
 
   var RESET_COOLDOWN_MS = 30000;
+  var PUBLIC_SITE = 'https://hamzaxali.github.io/prismburst-brick-odyssey/';
+  var DELETED_TEXT = 'Your account and its cloud save were deleted. Progress on this device was kept.';
 
   function parseNativeAuthUrl(raw) {
     var url;
@@ -360,6 +362,10 @@
         if (this._hadSession && !this._loggingOut) {
           this.errorText = 'Your session expired. Sign in again. Progress on this device is unchanged.';
           this.syncLabel = 'Error';
+        } else if (this._deleting) {
+          this.errorText = DELETED_TEXT;
+          this.syncLabel = 'Not signed in';
+          this._deleting = false;
         } else if (this._loggingOut) {
           this.errorText = 'Signed out. Progress on this device was kept.';
           this.syncLabel = 'Not signed in';
@@ -444,6 +450,7 @@
         save: raw,
         loading: this.loading,
         recovery: this.recovery,
+        accountDeleted: !!this.accountDeleted,
         ready: this.readySettled,
         resetWait: this.resetWaitMs()
       };
@@ -943,6 +950,98 @@
           }, 50);
         });
       });
+    },
+
+    // Permanently deletes the signed-in account and its cloud save on the
+    // server through delete_my_account(). The device save is kept; the player
+    // may clear it afterwards with clearDeviceProgress().
+    deleteAccount: function (typed) {
+      var self = this;
+      var core = PB.DeleteCore;
+      if (!core || !core.matches(typed)) {
+        this.errorText = 'Type ' + (core ? core.PHRASE : 'DELETE') + ' in capitals to confirm. Nothing was deleted.';
+        this.emit();
+        return Promise.resolve(false);
+      }
+      if (!this.client || !this.session || !this.session.user) {
+        this.setError('Sign in to the account you want to delete first. Nothing was deleted.');
+        return Promise.resolve(false);
+      }
+      var ok = false;
+      return this.busy(function () {
+        clearTimeout(self._timer);
+        self._deleting = true;
+        self._loggingOut = true;
+        return self._chain.then(function () {
+          return core.run(self.client, typed);
+        }).then(function () {
+          ok = true;
+          writeMeta(emptyMeta());
+          self.session = null;
+          self.pending = null;
+          self.accountName = null;
+          self.nameSuggestion = '';
+          self.namePrompt = false;
+          self.nameNote = '';
+          self.syncLabel = 'Not signed in';
+          self.accountDeleted = true;
+        }, function (err) {
+          self._deleting = false;
+          self._loggingOut = false;
+          var text = String(err && (err.message || err.details || err.code) || '').toLowerCase();
+          if ((err && err.code === 'PGRST202') || text.indexOf('could not find the function') !== -1) {
+            throw new Error('Account deletion is not switched on in the cloud yet. Nothing was deleted. Try again later.');
+          }
+          if (err && err.code === '42501') throw new Error('Sign in again, then delete. Nothing was deleted.');
+          throw err;
+        });
+      }).then(function () {
+        if (ok) {
+          self.errorText = DELETED_TEXT;
+          self.emit();
+        }
+        return ok;
+      });
+    },
+
+    // Explicit choice after deletion (or from the delete page). Never automatic.
+    clearDeviceProgress: function () {
+      if (PB.DeleteCore) PB.DeleteCore.clearDevice(window.localStorage);
+      PB.Save.reset();
+      this.accountDeleted = false;
+      this.errorText = 'Progress on this device was cleared.';
+      this.emit();
+      if (PB.game && PB.game.scene) {
+        try {
+          var scenes = PB.game.scene.getScenes(true);
+          for (var i = 0; i < scenes.length; i++) {
+            var key = scenes[i].scene.key;
+            if (key === 'Menu' || key === 'Settings') { scenes[i].scene.restart(); break; }
+          }
+        } catch (e) { /* the next scene change redraws */ }
+      }
+    },
+
+    keepDeviceProgress: function () {
+      this.accountDeleted = false;
+      this.errorText = 'Progress on this device was kept. You are playing as a guest.';
+      this.emit();
+    },
+
+    // Opens a public page (privacy policy, delete account). In the Android app
+    // it opens the published GitHub Pages copy in the system browser.
+    openPage: function (rel) {
+      var name = String(rel || '');
+      if (!/^[a-z-]+\.html(#[a-z-]+)?$/.test(name)) return false;
+      if (isNativeApp()) {
+        var browser = nativePlugin('Browser');
+        if (browser && typeof browser.open === 'function') {
+          Promise.resolve(browser.open({ url: PUBLIC_SITE + name })).catch(function () { /* nothing to do */ });
+          return true;
+        }
+      }
+      try { window.open(name, '_blank', 'noopener'); } catch (e) { return false; }
+      return true;
     },
 
     afterAuthCall: function () {

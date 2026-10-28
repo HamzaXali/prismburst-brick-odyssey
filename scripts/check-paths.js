@@ -37,7 +37,7 @@ if (man.scope !== './') errors.push(`manifest scope should be "./" (is "${man.sc
 man.icons.forEach(i => add(i.src, 'manifest icon'));
 // every script loaded by index.html must also be precached for offline use
 for (const m of html.matchAll(/<script src="([^"]+)"/g)) if (!list.includes(`'./${m[1]}'`)) errors.push(`sw.js precache is missing ${m[1]}`);
-for (const f of ['index.html', 'sw.js', 'game.js', 'levels.js', 'js/core.js', 'js/menus.js', 'js/save-sync.js', 'js/cloud.js', 'js/account.js', 'config.js', 'privacy.html', 'style.css', 'manifest.webmanifest'])
+for (const f of ['index.html', 'sw.js', 'game.js', 'levels.js', 'js/core.js', 'js/menus.js', 'js/save-sync.js', 'js/cloud.js', 'js/account.js', 'config.js', 'privacy.html', 'privacy-policy.html', 'delete-account.html', 'js/delete-page.js', 'js/delete-core.js', 'style.css', 'manifest.webmanifest'])
   if (/node_modules/.test(read(f))) errors.push(`${f} references node_modules`);
 console.log([...refs].sort().join('\n'));
 if (errors.length) { console.error('\nFAILED:\n  ' + errors.join('\n  ')); process.exit(1); }

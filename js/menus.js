@@ -7,7 +7,9 @@
   'use strict';
   var PB = window.PB, L = window.PB_LEVELS, Save = PB.Save, Sfx = PB.Sfx;
   var W = PB.W, H = PB.H;
-  PB.VERSION = '1.4.0';
+  PB.VERSION = '1.4.1';
+  // Honest summary shown at the bottom of Settings. Update it when a real ad SDK is added.
+  PB.SETTINGS_FOOTER = 'Demo ads only promote PRISMBURST itself. No third-party ad SDK and no tracking. Progress stays on this device; cloud save runs only when you sign in.';
 
   function backButton(scene, cb) {
     return PB.button(scene, 92, 70, 140, 76, '‹ Back', cb, { size: 30, color: 0x9b6bff });
@@ -221,11 +223,30 @@
       if (!this.overlay) {
         PB.text(this, W / 2, top + (debugUnlock ? 660 : 490), navigator.vibrate ? 'Vibration uses your phone\'s motor when supported.' : 'Vibration is not supported by this browser.', 20, '#8a90c0', { strokeThickness: 0, wrap: 540 });
         PB.button(this, W / 2, top + (debugUnlock ? 780 : 620), 540, 96, 'Reset progress', function () { self.confirmReset(); }, { color: 0xff2e63, size: 32 });
-        PB.text(this, W / 2, H - 170, 'PRISMBURST — BRICK ODYSSEY v' + PB.VERSION, 22, '#9fa8e0', { strokeThickness: 0 });
-        PB.text(this, W / 2, H - 130, 'No ads and no tracking. Progress stays on this device. Cloud save is optional.', 18, '#6a70a8', { strokeThickness: 0, wrap: 600 });
+        var rowY = top + (debugUnlock ? 900 : 750);
+        var del = PB.button(this, W / 2 - 140, rowY, 260, 80, 'Delete account', function () { self.openDelete(); }, { color: 0xff6b8a, size: 26 });
+        del.name = 'btn_delete_account';
+        var priv = PB.button(this, W / 2 + 140, rowY, 260, 80, 'Privacy policy', function () {
+          if (PB.Cloud && PB.Cloud.openPage) PB.Cloud.openPage('privacy-policy.html');
+        }, { color: 0x9b6bff, size: 26 });
+        priv.name = 'btn_privacy';
+        PB.text(this, W / 2, H - 120, 'PRISMBURST — BRICK ODYSSEY v' + PB.VERSION, 22, '#9fa8e0', { strokeThickness: 0 });
+        var footer = PB.text(this, W / 2, H - 70, PB.SETTINGS_FOOTER, 18, '#8a90c0', { strokeThickness: 0, wrap: 640 });
+        footer.name = 'settings_footer';
       } else {
         PB.button(this, W / 2, top + 640, 400, 96, 'Done', function () { self.close(); }, { color: 0x22e8ff, size: 34 });
       }
+    }
+    openDelete() {
+      if (!PB.Cloud || !PB.Account) return;
+      if (!PB.Cloud.hasCredentials()) {
+        PB.Cloud.errorText = 'Accounts are not set up in this copy of the game. Nothing is stored online. Use Reset progress to clear this device.';
+      } else if (!(PB.Cloud.session && PB.Cloud.session.user)) {
+        PB.Cloud.errorText = 'Sign in to the account you want to delete. A guest has no online account: use Reset progress to clear this device.';
+      } else {
+        PB.Cloud.errorText = '';
+      }
+      PB.Account.open('delete');
     }
     close() {
       if (this.overlay) { this.scene.stop(); this.scene.resume('Pause'); }

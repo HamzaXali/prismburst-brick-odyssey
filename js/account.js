@@ -25,7 +25,7 @@
     }
   }
 
-  var VIEWS = ['auth', 'forgot', 'recovery', 'account'];
+  var VIEWS = ['auth', 'forgot', 'recovery', 'account', 'delete', 'deleted'];
 
   function show(el, on) { if (el) el.hidden = !on; }
 
@@ -43,6 +43,7 @@
       var root = $('pb-account');
       if (!root) return;
       if (view === 'forgot') this.view = 'forgot';
+      else if (view === 'delete') { this.view = 'delete'; this.wantDelete = true; this.clearArmed = false; }
       else if (view === 'auth' || view === 'recovery' || root.hidden) this.view = 'auth';
       root.hidden = false;
       setGameInput(false);
@@ -54,6 +55,10 @@
       var confirm = $('pb-confirm');
       if (confirm) confirm.hidden = true;
       this.view = 'auth';
+      this.wantDelete = false;
+      this.clearArmed = false;
+      var del = $('pb-delete-input');
+      if (del) del.value = '';
       setGameInput(true);
     },
     setTab: function (tab) {
@@ -66,7 +71,9 @@
     },
     currentView: function (snap) {
       if (snap.recovery) return 'recovery';
+      if (snap.accountDeleted) return 'deleted';
       if (this.view === 'forgot') return 'forgot';
+      if (snap.signedIn && this.wantDelete) return 'delete';
       return snap.signedIn ? 'account' : 'auth';
     },
     attachInputGuard: function () {
@@ -99,7 +106,9 @@
       if (title) {
         title.textContent = view === 'auth' ? (this.tab === 'signup' ? 'SIGN UP' : 'LOG IN')
           : view === 'forgot' ? 'RESET PASSWORD'
-          : view === 'recovery' ? 'NEW PASSWORD' : 'ACCOUNT';
+          : view === 'recovery' ? 'NEW PASSWORD'
+          : view === 'delete' ? 'DELETE ACCOUNT'
+          : view === 'deleted' ? 'ACCOUNT DELETED' : 'ACCOUNT';
       }
       VIEWS.forEach(function (name) {
         var el = document.querySelector('[data-view="' + name + '"]');
@@ -145,6 +154,14 @@
       var logout = document.querySelector('[data-action="logout"]');
       if (guest) guest.hidden = snap.signedIn;
       if (logout) logout.hidden = !snap.signedIn || view !== 'account';
+      var delStart = document.querySelector('[data-action="delete-start"]');
+      if (delStart) { delStart.hidden = !snap.signedIn || view !== 'account'; setDisabled(delStart, snap.loading); }
+      var delInput = $('pb-delete-input');
+      var delBtn = document.querySelector('[data-action="delete-confirm"]');
+      if (delBtn) setDisabled(delBtn, snap.loading || !PB.DeleteCore || !PB.DeleteCore.matches(delInput ? delInput.value : ''));
+      if (delInput) setDisabled(delInput, snap.loading);
+      var clearBtn = document.querySelector('[data-action="clear-device"]');
+      if (clearBtn) clearBtn.textContent = this.clearArmed ? 'Tap again to clear this device' : 'Also clear this device\'s progress';
       var progress = PB.SaveSync.hasProgress(PB.Save.data);
       if (link) link.hidden = snap.signedIn || !progress;
       this.paintProvider('google', snap.loading);
@@ -334,6 +351,57 @@
       if (input && !input.disabled) input.focus();
       return;
     }
+    if (action === 'open-page') {
+      event.preventDefault();
+      PB.Cloud.openPage(actionEl.getAttribute('data-page'));
+      return;
+    }
+    if (action === 'delete-start') {
+      event.preventDefault();
+      PB.Cloud.errorText = '';
+      Account.open('delete');
+      var delBox = $('pb-delete-input');
+      if (delBox && !delBox.disabled) delBox.focus();
+      return;
+    }
+    if (action === 'delete-cancel') {
+      event.preventDefault();
+      Account.wantDelete = false;
+      Account.view = 'auth';
+      $('pb-delete-input').value = '';
+      PB.Cloud.errorText = 'Nothing was deleted.';
+      Account.render();
+      return;
+    }
+    if (action === 'delete-confirm') {
+      event.preventDefault();
+      PB.Cloud.deleteAccount($('pb-delete-input').value).then(function (ok) {
+        if (ok) {
+          Account.wantDelete = false;
+          Account.clearArmed = false;
+          $('pb-delete-input').value = '';
+        }
+        Account.render();
+      });
+      return;
+    }
+    if (action === 'keep-device') {
+      event.preventDefault();
+      Account.clearArmed = false;
+      PB.Cloud.keepDeviceProgress();
+      return;
+    }
+    if (action === 'clear-device') {
+      event.preventDefault();
+      if (!Account.clearArmed) {
+        Account.clearArmed = true;
+        Account.render();
+        return;
+      }
+      Account.clearArmed = false;
+      PB.Cloud.clearDeviceProgress();
+      return;
+    }
     if (action === 'logout') {
       event.preventDefault();
       $('pb-confirm').hidden = false;
@@ -371,6 +439,8 @@
     event.preventDefault();
     submitEmail();
   });
+
+  $('pb-delete-input').addEventListener('input', function () { Account.render(); });
 
   $('pb-forgot-email').addEventListener('keydown', function (event) {
     if (event.key !== 'Enter') return;

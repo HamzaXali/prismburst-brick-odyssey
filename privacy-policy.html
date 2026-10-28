@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy — PRISMBURST</title>
+  <meta name="description" content="Privacy policy for PRISMBURST — Brick Odyssey.">
+  <meta name="theme-color" content="#070a1f">
+  <style>
+    body { margin: 0; background: #070a1f; color: #e8fdff; font: 18px/1.45 "Trebuchet MS", "Segoe UI", Roboto, Arial, sans-serif; }
+    main { box-sizing: border-box; max-width: 40rem; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 1.6rem; letter-spacing: 1px; }
+    h2 { font-size: 1.15rem; margin-top: 1.6rem; }
+    a { color: #9fe9ff; }
+    code { color: #ffe7a3; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+    th, td { border: 1px solid #2c3270; padding: 6px 8px; text-align: left; vertical-align: top; }
+    .todo { color: #ffd166; font-weight: bold; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>PRISMBURST privacy policy</h1>
+  <p>This policy covers <strong>PRISMBURST — Brick Odyssey</strong>: the Android app (package <code>com.hamzaxali.prismburst</code>) and the web game at <a href="./">hamzaxali.github.io/prismburst-brick-odyssey</a>. It describes what the game actually collects.</p>
+  <p>Last updated: 22 October 2026.</p>
+
+  <h2>Short version</h2>
+  <ul>
+    <li>You can play as a guest. Guest play sends nothing to a server.</li>
+    <li>If you choose to sign in, your email address, display name and game save are stored so your progress syncs.</li>
+    <li>No advertising SDK, no analytics, no tracking, no selling of data.</li>
+    <li>The “ads” in the game are demo ads drawn by the game itself. They only promote PRISMBURST and never contact an ad network.</li>
+    <li>Coins and shop items are in-game only. There are no real-money purchases.</li>
+    <li>You can delete your account at any time: <a href="delete-account.html">delete-account.html</a>.</li>
+  </ul>
+
+  <h2>Who is responsible</h2>
+  <p>The game is made by the developer behind the GitHub account <code>HamzaXali</code> (repository <code>HamzaXali/prismburst-brick-odyssey</code>). Cloud accounts are stored in the developer's Supabase project.</p>
+  <p id="contact">Contact: <a href="mailto:hamzaxali44@gmail.com">hamzaxali44@gmail.com</a>, or open an issue at <a href="https://github.com/HamzaXali/prismburst-brick-odyssey/issues" rel="noopener">github.com/HamzaXali/prismburst-brick-odyssey/issues</a>. Do not post passwords or personal details in a public issue.</p>
+
+  <h2>Data collected</h2>
+  <table>
+    <tr><th>Data</th><th>When</th><th>Why</th><th>Where</th></tr>
+    <tr><td>Game progress (levels, stars, scores, coins, owned and equipped skins, settings, daily rewards, missions, achievements, stats)</td><td>Always</td><td>So the game remembers your progress</td><td>On your device only, under <code>prismburst.save.v1</code></td></tr>
+    <tr><td>Guest display name (for example PrismPlayer1234)</td><td>Always</td><td>Shown in the game</td><td>On your device only</td></tr>
+    <tr><td>Email address and sign-in provider (email or Google) with the provider's account id</td><td>Only if you sign in</td><td>To create and sign in to your account (Supabase Auth)</td><td>Developer's Supabase project</td></tr>
+    <tr><td>Password (email sign-in)</td><td>Only if you use email sign-in</td><td>Sign-in. Stored hashed by Supabase Auth; the developer cannot read it</td><td>Developer's Supabase project</td></tr>
+    <tr><td>Display name you choose</td><td>Only if you sign in and save a name</td><td>Shown in the game. Your email is never used as the name</td><td>Developer's Supabase project</td></tr>
+    <tr><td>Cloud copy of the game save and the time it last changed</td><td>Only while signed in</td><td>Cloud save and sync between devices</td><td>Developer's Supabase project</td></tr>
+  </table>
+  <p>The game does not ask for contacts, location, photos, camera, microphone or device identifiers for advertising. The Android app only uses the Internet permission. The game has no analytics or crash-reporting SDK and no third-party advertising SDK.</p>
+  <p>Supabase (the hosting provider) processes sign-in requests and may keep standard server logs such as IP addresses for security, under its own policy. GitHub Pages, which serves the web game, may also keep standard access logs. Google sign-in is handled by Google under Google's policy.</p>
+
+  <h2>How data is protected</h2>
+  <p>Data is sent over HTTPS. The game only contains Supabase's publishable key. Row level security lets each signed-in player read and change only their own row. Secret keys are never shipped in the app.</p>
+
+  <h2>Sharing</h2>
+  <p>Data is not sold or shared with third parties for advertising or any other purpose. It is processed only by the service providers named above to run the game.</p>
+
+  <h2>Retention</h2>
+  <p>Device data stays until you use Settings → Reset progress, clear the app or site data, or uninstall the app. Account data (email, provider id, display name, cloud save) stays until you delete the account. Deletion removes it from the live database straight away. Routine backups held by Supabase, if any, are overwritten on their normal schedule and are not used to restore deleted accounts.</p>
+
+  <h2 id="deletion">How to delete your data</h2>
+  <ul>
+    <li><strong>Account and cloud save:</strong> in the game open Settings → Delete account, sign in, type <code>DELETE</code> and confirm. Or use the web page <a href="delete-account.html">delete-account.html</a>.</li>
+    <li><strong>This device:</strong> after deleting the account the game asks whether to also clear this device's progress. You can also use Settings → Reset progress at any time, or uninstall the app.</li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>The game is intended for players aged 13 and over and is not directed at children. It does not knowingly collect personal information from children under 13. Guest play needs no personal information. If you believe a child has created an account, use the deletion page or contact the developer.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, the updated version is published at this same address with a new date.</p>
+
+  <p><a href="delete-account.html">Delete your account</a> · <a href="./">Back to the game</a></p>
+</main>
+</body>
+</html>

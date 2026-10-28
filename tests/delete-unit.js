@@ -126,7 +126,7 @@ function fakeClient(opts) {
     const da = read('delete-account.html');
     record('privacy policy lists email, display name, save, no ads SDK, no analytics', /Email address/.test(pp) && /display name/i.test(pp) && /game save/i.test(pp) && /no third-party advertising SDK/i.test(pp) && /no analytics/i.test(pp));
     record('privacy policy has retention and deletion link', /<h2>Retention<\/h2>/.test(pp) && pp.includes('href="delete-account.html"'));
-    record('privacy policy contact is a marked placeholder, no invented email', /\[CONTACT EMAIL/.test(pp) && !/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/i.test(pp));
+    record('privacy policy has the developer contact email and no placeholder', !/\[CONTACT EMAIL/.test(pp) && /mailto:hamzaxali44@gmail\.com/.test(pp));
     record('delete page explains in-app and web deletion', /Option 1: in the game/.test(da) && /Option 2: on this page/.test(da) && /What is deleted/.test(da));
     record('delete page has no email address in it', !/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/i.test(da));
     record('old privacy.html forwards to privacy-policy.html', /url=privacy-policy\.html/.test(read('privacy.html')));

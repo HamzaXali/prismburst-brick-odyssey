@@ -16,7 +16,7 @@ These pages go live only after this PR is merged and the Pages workflow finishes
 
 ## 0. Before anything: the three things only you can do
 
-1. **Contact email in the privacy policy.** Open `privacy-policy.html` and replace `[CONTACT EMAIL — the developer adds this before the Play Store release]` with the support email you want public (it can be the same email you give Play Console as the developer contact). Nobody else should invent it.
+1. **Contact email in the privacy policy.** Done: `privacy-policy.html` lists the developer's public contact email (added by Ali on 27 Oct 2026).
 2. **Apply migration 004.** Dost applies `supabase/migrations/004_delete_my_account.sql` in the Supabase SQL editor after review. Until then the Delete account button shows "Account deletion is not switched on in the cloud yet. Nothing was deleted."
 3. **Supabase redirect URLs.** Supabase → Authentication → URL Configuration → Redirect URLs must contain both:
    - `https://hamzaxali.github.io/prismburst-brick-odyssey/**` (also covers `delete-account.html` Google sign-in)

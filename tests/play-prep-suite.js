@@ -338,9 +338,9 @@ const sheetText = page => page.evaluate(() => document.getElementById('pb-accoun
       record('privacy-policy.html loads (200)', res && res.status() === 200);
       record('privacy policy covers email, display name, save, no ads SDK, no analytics, retention',
         /Email address/.test(txt) && /display name/i.test(txt) && /game save/i.test(txt) && /no third-party advertising SDK/i.test(txt) && /no analytics/i.test(txt) && /Retention/.test(txt));
-      record('privacy policy shows a contact placeholder, not an invented email', /\[CONTACT EMAIL/.test(txt) && !/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/i.test(txt));
+      record('privacy policy shows the developer contact email, no placeholder', !/\[CONTACT EMAIL/.test(txt) && /hamzaxali44@gmail\.com/.test(txt));
       const links = await page.evaluate(() => Array.from(document.querySelectorAll('a[href]')).map(a => a.getAttribute('href')));
-      const local = links.filter(h => !/^https?:/.test(h));
+      const local = links.filter(h => !/^(https?|mailto):/.test(h));
       let bad = [];
       for (const h of local) {
         const r = await ctx.request.get(new URL(h, BASE + 'privacy-policy.html').toString());

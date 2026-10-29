@@ -45,7 +45,7 @@
     return u.toString();
   }
 
-  var NATIVE_AUTH_URL = 'com.hamzaxali.prismburst://auth';
+  var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth';
   var nativePlugins = {};
 
   function isNativeApp() {
@@ -81,7 +81,7 @@
   function parseNativeAuthUrl(raw) {
     var url;
     try { url = new URL(String(raw)); } catch (e) { return null; }
-    if (String(url.protocol || '').toLowerCase() !== 'com.hamzaxali.prismburst:') return null;
+    if (String(url.protocol || '').toLowerCase() !== 'com.prismburst.brickodyssey:') return null;
     if (String(url.hostname || '').toLowerCase() !== 'auth') return null;
     var hash = new URLSearchParams(String(url.hash || '').replace(/^#/, ''));
     return {

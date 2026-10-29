@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Play Store prep (1.4.1): account deletion core, migration 004, honest
+/* Play Store prep (1.4.2): account deletion core, migration 004, honest
  * Settings footer, public pages, version bump, no innerHTML. No network. */
 'use strict';
 const fs = require('fs');
@@ -131,7 +131,7 @@ function fakeClient(opts) {
     record('delete page has no email address in it', !/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/i.test(da));
     record('old privacy.html forwards to privacy-policy.html', /url=privacy-policy\.html/.test(read('privacy.html')));
     const pkg = JSON.parse(read('package.json'));
-    record('version 1.4.1 / versionCode 3 everywhere', pkg.version === '1.4.1' && pkg.androidVersionCode === 3 && menus.includes("PB.VERSION = '1.4.1'") && read('sw.js').includes("prismburst-v1.4.1"));
+    record('version 1.4.2 / versionCode 4 everywhere', pkg.version === '1.4.2' && pkg.androidVersionCode === 4 && menus.includes("PB.VERSION = '1.4.2'") && read('sw.js').includes("prismburst-v1.4.2"));
     const sw = read('sw.js');
     record('service worker precaches new pages and scripts', ['./privacy-policy.html', './delete-account.html', './js/delete-core.js', './js/delete-page.js'].every(f => sw.includes("'" + f + "'")));
     const copyWeb = require('../scripts/copy-web.js');

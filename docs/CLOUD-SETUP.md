@@ -82,9 +82,9 @@ Save. The game sends players back to the page they started on, including the `/p
 **Forgot password?** in the login popup opens its own screen. It calls Supabase `resetPasswordForEmail` with a return address that ends in `?type=recovery`:
 
 - website: `https://hamzaxali.github.io/prismburst-brick-odyssey/index.html?type=recovery` (or the page the player is on)
-- Android app: `com.hamzaxali.prismburst://auth?type=recovery`
+- Android app: `com.prismburst.brickodyssey://auth?type=recovery`
 
-Both are already covered by the wildcard lines above (`https://hamzaxali.github.io/prismburst-brick-odyssey/**`) and by `com.hamzaxali.prismburst://**` from [ANDROID.md](ANDROID.md). If a line is missing, Supabase sends the player to the Site URL and the app cannot finish the reset.
+Both are already covered by the wildcard lines above (`https://hamzaxali.github.io/prismburst-brick-odyssey/**`) and by `com.prismburst.brickodyssey://**` from [ANDROID.md](ANDROID.md). If a line is missing, Supabase sends the player to the Site URL and the app cannot finish the reset.
 
 When the link comes back, the game shows **Choose a new password** (type it twice) and saves it with `updateUser`. The phone save `prismburst.save.v1` is not cleared. The link only works in the same browser or app that asked for it (PKCE). Opened elsewhere, the game says so and offers **Ask for a new link**.
 
@@ -123,7 +123,7 @@ Facebook ships off (`providers.facebook` is `false`). Turn it on only after this
 
 ## 9. Android app
 
-The debug APK and the extra Supabase redirect are in [ANDROID.md](ANDROID.md). On the website, Google still returns to the page you started on. Inside the Android app, Google opens the system browser and returns to `com.hamzaxali.prismburst://auth`. Add that address (or `com.hamzaxali.prismburst://**`) under Supabase **Redirect URLs**. The service worker is not registered inside the app.
+The debug APK and the extra Supabase redirect are in [ANDROID.md](ANDROID.md). On the website, Google still returns to the page you started on. Inside the Android app, Google opens the system browser and returns to `com.prismburst.brickodyssey://auth`. Add that address (or `com.prismburst.brickodyssey://**`) under Supabase **Redirect URLs**. The service worker is not registered inside the app.
 
 ## Privacy page
 

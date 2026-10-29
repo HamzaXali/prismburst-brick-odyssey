@@ -363,9 +363,9 @@ const OLD_SAVE = JSON.stringify({
       await page.fill('#pb-forgot-email', 'pilot@example.com');
       await page.click('[data-action="send-reset"]');
       await page.waitForFunction(() => /Password reset email sent/.test(document.getElementById('pb-acct-msg').textContent || ''), null, { timeout: 8000 });
-      record('the Android app asks for the reset link with the app deep link', (state.recovers[0] || {}).redirect === 'com.hamzaxali.prismburst://auth?type=recovery', state.recovers[0]);
+      record('the Android app asks for the reset link with the app deep link', (state.recovers[0] || {}).redirect === 'com.prismburst.brickodyssey://auth?type=recovery', state.recovers[0]);
       await page.evaluate(() => PB.Account.close());
-      await page.evaluate(() => __cap.listeners['App:appUrlOpen']({ url: 'com.hamzaxali.prismburst://auth?type=recovery&code=reset-code' }));
+      await page.evaluate(() => __cap.listeners['App:appUrlOpen']({ url: 'com.prismburst.brickodyssey://auth?type=recovery&code=reset-code' }));
       await page.waitForFunction(() => PB.Cloud.snapshot().signedIn && PB.Cloud.recovery && !document.getElementById('pb-account').hidden && !document.getElementById('pb-recovery-form').hidden, null, { timeout: 10000 });
       record('the deep link opens the app on Choose a new password', true);
       await page.fill('#pb-new-password', 'droid123');

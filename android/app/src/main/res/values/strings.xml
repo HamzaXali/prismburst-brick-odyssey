@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">PRISMBURST</string>
     <string name="title_activity_main">PRISMBURST</string>
-    <string name="package_name">com.hamzaxali.prismburst</string>
-    <string name="custom_url_scheme">com.hamzaxali.prismburst</string>
+    <string name="package_name">com.prismburst.brickodyssey</string>
+    <string name="custom_url_scheme">com.prismburst.brickodyssey</string>
 </resources>

@@ -47,12 +47,37 @@
 
   var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth';
   var nativePlugins = {};
+  var APP_VERSION = '1.4.4';
 
   function isNativeApp() {
     try {
       return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
     } catch (e) { return false; }
   }
+
+  // Drop any service worker that an older APK may have registered on
+  // https://localhost (androidScheme). A controlling SW can keep serving a
+  // cached cloud.js after an APK update.
+  function purgeNativeServiceWorker() {
+    if (!isNativeApp()) return;
+    try {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          (regs || []).forEach(function (reg) {
+            try { reg.unregister(); } catch (e1) { /* keep playing */ }
+          });
+        }, function () { /* ignore */ });
+      }
+      if (window.caches && caches.keys) {
+        caches.keys().then(function (keys) {
+          (keys || []).forEach(function (key) {
+            try { caches.delete(key); } catch (e2) { /* keep playing */ }
+          });
+        }, function () { /* ignore */ });
+      }
+    } catch (e) { /* keep playing */ }
+  }
+  purgeNativeServiceWorker();
 
   // Capacitor Android injects plugins on window.Capacitor.Plugins (see
   // JSExport.getPluginJS). registerPlugin() only exists when @capacitor/core
@@ -79,47 +104,78 @@
     return null;
   }
 
-  // Open a URL outside the WebView. Browser plugin first (Custom Tabs), then
-  // window.open / anchor fallbacks so OAuth is not blocked if the plugin
-  // handle is missing.
-  function openExternalUrl(url) {
-    var target = String(url || '');
-    if (!target) return Promise.reject(new Error('Sign-in could not start. Progress on this device is unchanged.'));
-    var browser = nativePlugin('Browser');
-    if (browser && typeof browser.open === 'function') {
-      return Promise.resolve(browser.open({ url: target })).catch(function (err) {
-        return openExternalUrlFallback(target, err);
-      });
-    }
-    return openExternalUrlFallback(target, null);
+  function browserDiag(step, detail) {
+    var safe = String(detail || '')
+      .replace(/https?:\/\/[^\s]+/gi, '[url]')
+      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]')
+      .slice(0, 80);
+    return 'Could not open the browser [v' + APP_VERSION + ' step=' + step +
+      (safe ? ':' + safe : '') +
+      ']. Progress on this device is unchanged.';
   }
 
-  function openExternalUrlFallback(url, priorErr) {
+  // Open a URL outside the WebView.
+  // 1) @capacitor/browser Custom Tabs
+  // 2) in-app OpenUrl plugin (Intent.ACTION_VIEW) — works when Custom Tabs fails
+  // 3) window.open / anchor (often a no-op inside the Capacitor WebView)
+  function openExternalUrl(url) {
+    var target = String(url || '');
+    if (!target) {
+      return Promise.reject(new Error(browserDiag('no-url')));
+    }
+    var browser = nativePlugin('Browser');
+    if (browser && typeof browser.open === 'function') {
+      return Promise.resolve(browser.open({ url: target })).then(function () {
+        return { via: 'browser' };
+      }, function (err) {
+        return openExternalUrlFallback(target, 'browser-reject', err);
+      });
+    }
+    return openExternalUrlFallback(target, browser ? 'no-browser-open' : 'no-plugin', null);
+  }
+
+  function openExternalUrlFallback(url, why, priorErr) {
+    var openUrl = nativePlugin('OpenUrl');
+    if (openUrl && typeof openUrl.open === 'function') {
+      return Promise.resolve(openUrl.open({ url: url })).then(function () {
+        return { via: 'openurl', after: why };
+      }, function (err) {
+        return openExternalUrlWebFallback(url, why, priorErr || err, 'openurl-reject');
+      });
+    }
+    return openExternalUrlWebFallback(url, why, priorErr, openUrl ? 'no-openurl-open' : 'no-openurl');
+  }
+
+  function openExternalUrlWebFallback(url, why, priorErr, mid) {
+    var prior = priorErr && (priorErr.message || priorErr.code || priorErr);
     try {
       var opened = window.open(url, '_system');
-      if (opened) return Promise.resolve();
+      if (opened) return Promise.resolve({ via: 'window-system', after: why });
     } catch (e1) { /* try next */ }
     try {
       var blank = window.open(url, '_blank', 'noopener');
-      if (blank) return Promise.resolve();
+      if (blank) return Promise.resolve({ via: 'window-blank', after: why });
     } catch (e2) { /* try next */ }
     try {
       var a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
+      a.setAttribute('href', url);
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
       a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
       setTimeout(function () { try { document.body.removeChild(a); } catch (e3) { /* gone */ } }, 0);
-      return Promise.resolve();
+      // Capacitor WebView often swallows this; surface a clear diagnostic so the
+      // next screenshot proves which build ran and that web fallbacks are dead.
+      return Promise.reject(new Error(browserDiag(
+        mid + '+anchor-noop+window-open-null',
+        prior || why
+      )));
     } catch (e4) {
-      var detail = priorErr && (priorErr.message || priorErr);
-      return Promise.reject(new Error(
-        detail
-          ? ('Could not open the system browser (' + detail + '). Progress on this device is unchanged.')
-          : 'The system browser is unavailable. Progress on this device is unchanged.'
-      ));
+      return Promise.reject(new Error(browserDiag(
+        mid + '+anchor-throw',
+        (e4 && e4.message) || prior || why
+      )));
     }
   }
 

@@ -1,4 +1,4 @@
-# Google Play Store prep (1.4.3)
+# Google Play Store prep (1.4.4)
 
 This is the checklist and copy for publishing PRISMBURST — Brick Odyssey on Google Play, written for someone who only has an Android phone. Anything marked **NOT VERIFIED** has not been checked against the live Play Console or on a real phone.
 
@@ -30,7 +30,7 @@ These pages go live only after this PR is merged and the Pages workflow finishes
 Paste the privacy policy URL above.
 
 ### Ads
-**Does your app contain ads? → Yes** (recommended, even for 1.4.3).
+**Does your app contain ads? → Yes** (recommended, even for 1.4.4).
 
 Reason: the "Watch ad" screens are demo ads drawn by the game itself (`js/ads.js`, `DemoAdProvider`). They only promote PRISMBURST, use no ad network and make no network request. But they *look and act like* rewarded video ads, and Google's ads help page says a banner, interstitial or ad wall that promotes your own products counts as an ad; only a quiet "More apps" menu entry may be declared "No". Misdeclaring ads can get an app suspended, while declaring "Yes" only adds the "Contains ads" label. Answering Yes now also means nothing changes when real ads arrive. Source: Play Console Help, "Prepare your app for review" → Ads (checked 22 Oct 2026).
 
@@ -56,7 +56,7 @@ Choose **All functionality is available without special access**. Guest play nee
 ### News app → No. COVID-19 app → No. Government app → No. Financial features → none. Health → none.
 
 ### Data safety form
-Answer based on what 1.4.3 actually does:
+Answer based on what 1.4.4 actually does:
 
 | Question | Answer |
 | --- | --- |
@@ -145,7 +145,7 @@ On the phone: download each file from the GitHub repository page (open the file 
 
 **Category:** Game → Arcade. **Tags:** Brick breaker, Arcade, Casual, Offline. **Contact details:** the email you chose (required, shown publicly). Website: the web game URL (optional).
 
-**Release notes for 1.4.3** (max 500):
+**Release notes for 1.4.4** (max 500):
 
 ```
 • Delete your account from Settings, or from our web page
@@ -177,12 +177,12 @@ Use **Chrome on the phone**. Play Console is a website; there is also a **Google
 
 ### C. Create the app
 11. Play Console → **Create app**. App name `PRISMBURST: Brick Odyssey`, default language English (United States), **Game**, **Free**. Tick the declarations.
-    - The Android **package name** comes from the AAB, not from this screen. From 1.4.3 it is `com.prismburst.brickodyssey`. **It is permanent** once the first AAB is uploaded — you cannot change it later without a brand-new Play listing. Do not upload an older AAB that still used `com.hamzaxali.prismburst`.
+    - The Android **package name** comes from the AAB, not from this screen. From 1.4.4 it is `com.prismburst.brickodyssey`. **It is permanent** once the first AAB is uploaded — you cannot change it later without a brand-new Play listing. Do not upload an older AAB that still used `com.hamzaxali.prismburst`.
 12. Go through **Dashboard → Set up your app** using section 1 and 2 above (privacy policy, app access, ads, content rating, target audience, data safety, government apps, financial features, health, store listing).
 
 ### D. Signing secrets and the AAB (needs GitHub, no PC)
 13. Make the upload keystore in Termux and add the four GitHub secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. Steps: [PLAY-RELEASE.md](PLAY-RELEASE.md). Never paste these into chat, an issue or a commit.
-14. On GitHub: **Actions → Android release → Run workflow** on `main`. Leave the version boxes empty (uses 1.4.3 / versionCode 5 from `package.json`).
+14. On GitHub: **Actions → Android release → Run workflow** on `main`. Leave the version boxes empty (uses 1.4.4 / versionCode 6 from `package.json`).
 15. When the run is green, download the **prismburst-release-aab** artifact (a zip). Open it in **Files** and extract `app-release.aab`.
 16. **Play App Signing:** on the first upload Play Console offers "Google-generated key" — accept it. Google then holds the app signing key, and your Termux key becomes the *upload key*. Keep the `.jks` file and passwords backed up offline.
 
@@ -194,7 +194,7 @@ Use **Chrome on the phone**. Play Console is a website; there is also a **Google
 21. After 14 days, **Dashboard → Apply for production** and answer the questions about your test (what testers did, what you fixed). Review usually takes up to about a week.
 
 ### F. Every later update
-- Raise `androidVersionCode` in `package.json` (5 → 6 → 7 …) and usually `version`. Play rejects an AAB whose versionCode is not higher than the last upload.
+- Raise `androidVersionCode` in `package.json` (6 → 7 → 8 …) and usually `version`. Play rejects an AAB whose versionCode is not higher than the last upload.
 - Run the release workflow again and upload the new AAB to the same track.
 
 ---

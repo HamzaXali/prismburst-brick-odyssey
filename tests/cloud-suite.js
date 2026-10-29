@@ -878,7 +878,8 @@ async function signIn(page, email, password) {
             isNativePlatform: function () { return true; },
             Plugins: {
               App: makePlugin('App'),
-              Browser: makePlugin('Browser')
+              Browser: makePlugin('Browser'),
+              OpenUrl: makePlugin('OpenUrl')
             }
           };
       }, legacy);
@@ -930,25 +931,31 @@ async function signIn(page, email, password) {
       await ctx.close();
     }
 
-    // -------------------------------------------------- Browser.Plugins missing → window.open fallback
+    // -------------------------------------------------- Browser.open missing → OpenUrl Intent fallback
     {
       const ctx = await phoneContext(browser, { serviceWorkers: 'block' });
       const page = await ctx.newPage();
       await ctx.addInitScript(() => {
-        window.__capFallback = { opened: [] };
-        const realOpen = window.open.bind(window);
-        window.open = function (url, target) {
-          window.__capFallback.opened.push({ url: String(url || ''), target: String(target || '') });
-          return { closed: false };
-        };
-        // Native app, but Plugins.Browser has no open — forces openExternalUrlFallback.
+        window.__cap = { opened: [], openUrl: [], listeners: {}, plugins: {} };
+        function make(name, bagKey) {
+          return {
+            open: function (opts) {
+              window.__cap[bagKey].push(opts && opts.url);
+              return Promise.resolve();
+            },
+            close: function () { return Promise.resolve(); },
+            addListener: function (eventName, cb) {
+              window.__cap.listeners[name + ':' + eventName] = cb;
+              return Promise.resolve({ remove: function () {} });
+            }
+          };
+        }
         window.Capacitor = {
           isNativePlatform: function () { return true; },
           Plugins: {
-            App: {
-              addListener: function () { return Promise.resolve({ remove: function () {} }); }
-            },
-            Browser: { /* open intentionally missing */ }
+            App: make('App', 'opened'),
+            Browser: { /* open intentionally missing */ },
+            OpenUrl: make('OpenUrl', 'openUrl')
           }
         };
       });
@@ -961,13 +968,49 @@ async function signIn(page, email, password) {
       const errors = await boot(page);
       await openAccount(page);
       await page.evaluate(() => { PB.Cloud.signInOAuth('google'); });
-      await page.waitForFunction(() => window.__capFallback && __capFallback.opened.length >= 1, null, { timeout: 10000 });
-      const hit = await page.evaluate(() => __capFallback.opened[0]);
-      record('native Google falls back to window.open when Browser.open is missing',
-        hit && /authorize|supabase|google/i.test(hit.url) && (hit.target === '_system' || hit.target === '_blank'), hit);
+      await page.waitForFunction(() => window.__cap && __cap.openUrl.length >= 1, null, { timeout: 10000 });
+      const hit = await page.evaluate(() => __cap.openUrl[0]);
+      record('native Google falls back to OpenUrl Intent when Browser.open is missing',
+        typeof hit === 'string' && /authorize|supabase|google/i.test(hit), hit && String(hit).slice(0, 80));
       const msg = await page.evaluate(() => document.getElementById('pb-acct-msg') && document.getElementById('pb-acct-msg').textContent);
-      record('fallback open does not show system-browser-unavailable', !/system browser is unavailable/i.test(String(msg || '')), msg);
-      record('fallback native auth has no page errors', errors.length === 0, errors);
+      record('OpenUrl fallback does not show a browser-error diagnostic', !/Could not open the browser/i.test(String(msg || '')), msg);
+      record('OpenUrl fallback native auth has no page errors', errors.length === 0, errors);
+      await ctx.close();
+    }
+
+    // -------------------------------------------------- no native openers → diagnostic includes version+step
+    {
+      const ctx = await phoneContext(browser, { serviceWorkers: 'block' });
+      const page = await ctx.newPage();
+      await ctx.addInitScript(() => {
+        window.__capFallback = { opened: [] };
+        window.open = function (url, target) {
+          window.__capFallback.opened.push({ url: String(url || ''), target: String(target || '') });
+          return null; // Capacitor WebView style: window.open returns null
+        };
+        window.Capacitor = {
+          isNativePlatform: function () { return true; },
+          Plugins: {
+            App: { addListener: function () { return Promise.resolve({ remove: function () {} }); } },
+            Browser: {},
+            OpenUrl: {}
+          }
+        };
+      });
+      await page.context().route('**/config.js', route => route.fulfill({
+        contentType: 'application/javascript',
+        body: configBody({ email: true, google: true, facebook: false })
+      }));
+      const state = createState();
+      await installMock(page, state);
+      const errors = await boot(page);
+      await openAccount(page);
+      await page.evaluate(() => { PB.Cloud.signInOAuth('google'); });
+      await page.waitForFunction(() => /Could not open the browser \[v1\.4\.4 step=/.test(document.getElementById('pb-acct-msg').textContent || ''), null, { timeout: 10000 });
+      const msg = await page.evaluate(() => document.getElementById('pb-acct-msg').textContent);
+      record('total open failure shows versioned diagnostic step code',
+        /\[v1\.4\.4 step=/.test(msg) && /Progress on this device is unchanged/.test(msg) && !/The system browser is unavailable/.test(msg), msg);
+      record('diagnostic failure has no page errors', errors.length === 0, errors);
       await ctx.close();
     }
     record('cloud suite never calls the real Supabase project', realHits.length === 0, realHits.slice(0, 5));

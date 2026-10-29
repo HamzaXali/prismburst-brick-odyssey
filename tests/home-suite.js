@@ -361,7 +361,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       dotBefore === true && claimed.text === 'Claimed' && Math.abs(claimed.localCenter) < 2
         && claimed.note.indexOf('saved on this device') >= 0
         && claimed.noteTop >= claimed.panelTop + 12 && claimed.noteBottom <= claimed.panelBottom - 12
-        && claimed.dot === false && claimed.footer.indexOf('v1.4.3') === 0,
+        && claimed.dot === false && claimed.footer.indexOf('v1.4.4') === 0,
       claimed);
     await tapUI('HomePop', 'popupClose');
     await sleep(200);

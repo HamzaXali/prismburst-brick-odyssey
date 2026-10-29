@@ -199,13 +199,33 @@
   <script src="js/home-ui.js"></script>
   <script src="game.js"></script>
   <script>
-    // Offline support on the web (GitHub Pages). Skipped inside native wrappers,
-    // where the files are already bundled on the device.
-    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !window.Capacitor) {
-      window.addEventListener('load', function () {
-        navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW registration failed', e); });
-      });
-    }
+    // Offline support on the web (GitHub Pages) only. Never register inside the
+    // Android WebView (androidScheme https://localhost): a leftover SW can keep
+    // serving a cached cloud.js after an APK update.
+    (function () {
+      var native = false;
+      try {
+        native = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+      } catch (e) { native = !!window.Capacitor; }
+      if (native) {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            (regs || []).forEach(function (r) { try { r.unregister(); } catch (e1) {} });
+          }, function () {});
+        }
+        if (window.caches && caches.keys) {
+          caches.keys().then(function (keys) {
+            (keys || []).forEach(function (k) { try { caches.delete(k); } catch (e2) {} });
+          }, function () {});
+        }
+        return;
+      }
+      if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW registration failed', e); });
+        });
+      }
+    })();
   </script>
 </body>
 </html>

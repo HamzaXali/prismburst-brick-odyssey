@@ -360,7 +360,8 @@ const OLD_SAVE = JSON.stringify({
             isNativePlatform: function () { return true; },
             Plugins: {
               App: makePlugin('App'),
-              Browser: makePlugin('Browser')
+              Browser: makePlugin('Browser'),
+              OpenUrl: makePlugin('OpenUrl')
             }
           };
         },

@@ -25,10 +25,10 @@ if (!releaseMissing.isEmpty() && releaseMissing.size() < releaseEnvNames.size())
 def releaseSigningReady = releaseMissing.isEmpty()
 
 android {
-    namespace = "com.hamzaxali.prismburst"
+    namespace = "com.prismburst.brickodyssey"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.hamzaxali.prismburst"
+        applicationId "com.prismburst.brickodyssey"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode resolvedVersionCode

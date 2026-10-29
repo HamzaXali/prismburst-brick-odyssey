@@ -12,3 +12,4 @@ android/.gradle/
 *.jks
 keystore.properties
 local.properties
+shots/

@@ -894,7 +894,7 @@ async function signIn(page, email, password) {
       const opened = await page.evaluate(() => ({ url: __cap.opened[0], href: location.href }));
       const authUrl = new URL(opened.url);
       record('native Google opens the system browser once with the app redirect',
-        opened.href.indexOf('authorize') === -1 && authUrl.searchParams.get('provider') === 'google' && authUrl.searchParams.get('scopes') === 'openid email profile' && authUrl.searchParams.get('redirect_to') === 'com.hamzaxali.prismburst://auth' && !!authUrl.searchParams.get('code_challenge'),
+        opened.href.indexOf('authorize') === -1 && authUrl.searchParams.get('provider') === 'google' && authUrl.searchParams.get('scopes') === 'openid email profile' && authUrl.searchParams.get('redirect_to') === 'com.prismburst.brickodyssey://auth' && !!authUrl.searchParams.get('code_challenge'),
         { href: opened.href, redirect: authUrl.searchParams.get('redirect_to'), scopes: authUrl.searchParams.get('scopes') });
       await page.evaluate(() => {
         const cb = __cap.listeners['Browser:browserFinished'];
@@ -906,7 +906,7 @@ async function signIn(page, email, password) {
 
       await page.evaluate(() => { PB.Cloud.loading = false; return PB.Cloud.signInOAuth('google'); });
       await page.waitForFunction(() => window.__cap && __cap.opened.length === 2, null, { timeout: 10000 });
-      await page.evaluate(() => __cap.listeners['App:appUrlOpen']({ url: 'com.hamzaxali.prismburst://auth?code=good-code' }));
+      await page.evaluate(() => __cap.listeners['App:appUrlOpen']({ url: 'com.prismburst.brickodyssey://auth?code=good-code' }));
       await page.waitForFunction(() => PB.Cloud.snapshot().signedIn && PB.Cloud.snapshot().provider === 'google' && PB.Cloud.nameSuggestion === 'Ali Prism', null, { timeout: 10000 });
       const returned = await page.evaluate(() => ({
         save: localStorage.getItem('prismburst.save.v1'),
@@ -918,7 +918,7 @@ async function signIn(page, email, password) {
       await page.fill('#pb-forgot-email', 'ali@example.com');
       await page.click('[data-action="send-reset"]');
       await page.waitForFunction(() => /Password reset email sent/i.test(document.getElementById('pb-acct-msg').textContent || ''));
-      record('native password reset uses the app redirect', state.requests.some(r => r.includes('/auth/v1/recover') && decodeURIComponent(r).includes('com.hamzaxali.prismburst://auth?type=recovery')));
+      record('native password reset uses the app redirect', state.requests.some(r => r.includes('/auth/v1/recover') && decodeURIComponent(r).includes('com.prismburst.brickodyssey://auth?type=recovery')));
       record('native auth flow has no page errors', errors.length === 0, errors);
       await ctx.close();
     }

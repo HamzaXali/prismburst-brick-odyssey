@@ -37,17 +37,17 @@ Google does not allow the normal sign-in page inside the app's web view. **Conti
 
 That return address is not the website. In Supabase open **Authentication → URL Configuration → Redirect URLs** and add:
 
-`com.hamzaxali.prismburst://auth`
+`com.prismburst.brickodyssey://auth`
 
 If the form wants a wildcard, this also works:
 
-`com.hamzaxali.prismburst://**`
+`com.prismburst.brickodyssey://**`
 
 Save. The Site URL stays the GitHub Pages address. Email confirmation and password-reset links use the same app address when they are sent from the app, so those links open the app too.
 
 If that redirect URL is missing, Supabase sends the player to the Site URL instead of back into the app. Closing the browser without finishing leaves the phone save as it was.
 
-The Google Cloud **Authorized redirect URI** is still the Supabase callback (`https://qogqnutpqzatxnbhcznc.supabase.co/auth/v1/callback`, or whatever the Supabase Google page shows). Do not put the `com.hamzaxali.prismburst` address into Google Cloud. That address belongs only in Supabase's redirect allow list.
+The Google Cloud **Authorized redirect URI** is still the Supabase callback (`https://qogqnutpqzatxnbhcznc.supabase.co/auth/v1/callback`, or whatever the Supabase Google page shows). Do not put the `com.prismburst.brickodyssey` address into Google Cloud. That address belongs only in Supabase's redirect allow list.
 
 ## 5. Play Store build
 

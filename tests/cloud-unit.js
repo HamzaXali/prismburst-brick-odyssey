@@ -195,7 +195,7 @@ try {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const shippedVersion = require('../package.json').version;
   record('service worker cache version matches the semver and precaches the game',
-    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.0') && !sw.includes('prismburst-v1.3.5') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
+    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0') && !sw.includes('prismburst-v1.3.5') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
   record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '" + shippedVersion + "'") && sw.includes('prismburst-v' + shippedVersion));
   record('service worker keeps Supabase network-only and skips OAuth returns', sw.includes('supabase\\.co') && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
@@ -429,7 +429,7 @@ try {
     emptyFailed);
   fs.rmSync(decodedPath, { force: true });
   record('release version, R8, and signing env come from package.json without printing secrets',
-    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 3 &&
+    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 4 &&
     appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&
     appGradle.includes('debuggable false') &&
     appGradle.includes('minifyEnabled true') &&
@@ -454,11 +454,11 @@ try {
     html.includes("!window.Capacitor") && html.includes("navigator.serviceWorker.register('sw.js')"));
   const cloudJs = fs.readFileSync(path.join(root, 'js/cloud.js'), 'utf8');
   record('native Google sign-in uses the app scheme and the web sign-in stays on the page',
-    cloudJs.includes("var NATIVE_AUTH_URL = 'com.hamzaxali.prismburst://auth'") && cloudJs.includes('skipBrowserRedirect: native') && cloudJs.includes('exchangeCodeForSession') && cloudJs.includes('isNativePlatform') && cloudJs.includes('native ? NATIVE_AUTH_URL : pageUrl()'));
+    cloudJs.includes("var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth'") && cloudJs.includes('skipBrowserRedirect: native') && cloudJs.includes('exchangeCodeForSession') && cloudJs.includes('isNativePlatform') && cloudJs.includes('native ? NATIVE_AUTH_URL : pageUrl()'));
   const cap = fs.readFileSync(path.join(root, 'capacitor.config.json'), 'utf8');
-  record('Capacitor app id and name match the debug app', cap.includes('"appId": "com.hamzaxali.prismburst"') && cap.includes('"appName": "PRISMBURST"') && cap.includes('"webDir": "www"'));
+  record('Capacitor app id and name match the debug app', cap.includes('"appId": "com.prismburst.brickodyssey"') && cap.includes('"appName": "PRISMBURST"') && cap.includes('"webDir": "www"'));
   const manifest = fs.readFileSync(path.join(root, 'android/app/src/main/AndroidManifest.xml'), 'utf8');
-  record('Android manifest accepts the auth return scheme', manifest.includes('android:scheme="com.hamzaxali.prismburst"') && manifest.includes('android:host="auth"'));
+  record('Android manifest accepts the auth return scheme', manifest.includes('android:scheme="com.prismburst.brickodyssey"') && manifest.includes('android:host="auth"'));
   record('release manifest blocks backup and cleartext, and WebView debugging is not forced on',
     manifest.includes('android:allowBackup="false"') &&
     manifest.includes('android:usesCleartextTraffic="false"') &&

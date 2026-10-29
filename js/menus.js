@@ -7,7 +7,7 @@
   'use strict';
   var PB = window.PB, L = window.PB_LEVELS, Save = PB.Save, Sfx = PB.Sfx;
   var W = PB.W, H = PB.H;
-  PB.VERSION = '1.4.1';
+  PB.VERSION = '1.4.2';
   // Honest summary shown at the bottom of Settings. Update it when a real ad SDK is added.
   PB.SETTINGS_FOOTER = 'Demo ads only promote PRISMBURST itself. No third-party ad SDK and no tracking. Progress stays on this device; cloud save runs only when you sign in.';
 

@@ -1,4 +1,4 @@
-package com.hamzaxali.prismburst;
+package com.prismburst.brickodyssey;
 
 import android.os.Build;
 import android.os.Bundle;

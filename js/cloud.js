@@ -47,7 +47,7 @@
 
   var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth';
   var nativePlugins = {};
-  var APP_VERSION = '1.4.4';
+  var APP_VERSION = '1.4.5';
 
   function isNativeApp() {
     try {
@@ -261,11 +261,17 @@
       return 'Your session expired. Sign in again. Progress on this device is unchanged.';
     }
     if (low.indexOf('denied') !== -1 || low.indexOf('cancel') !== -1) return 'Sign-in was cancelled.';
+    if (low.indexOf('email_address_not_authorized') !== -1 || low.indexOf('email address not authorized') !== -1) {
+      return 'Email sending is not available for that address right now. Try again later. Progress on this device is unchanged.';
+    }
+    if (low.indexOf('over_email_send_rate_limit') !== -1 || low.indexOf('email rate limit') !== -1 || low.indexOf('email send rate') !== -1) {
+      return 'Email sending is limited right now. Wait a minute, then try again. Progress on this device is unchanged.';
+    }
+    if (low.indexOf('rate limit') !== -1 || low.indexOf('security purposes') !== -1 || err.status === 429) return 'Too many tries. Wait a minute, then try again. Progress on this device is unchanged.';
     if (low.indexOf('redirect') !== -1 || low.indexOf('unauthorized') !== -1) {
       return 'Sign-in could not return to this page. Progress on this device is unchanged.';
     }
     if (low.indexOf('different from the old') !== -1 || low.indexOf('same_password') !== -1) return 'Choose a password you have not used for this account.';
-    if (low.indexOf('rate limit') !== -1 || low.indexOf('security purposes') !== -1 || err.status === 429) return 'Too many tries. Wait a minute, then try again. Progress on this device is unchanged.';
     if (low.indexOf('code verifier') !== -1 || low.indexOf('flow state') !== -1 || low.indexOf('otp_expired') !== -1 || low.indexOf('expired or is invalid') !== -1 || (low.indexOf('link') !== -1 && low.indexOf('expired') !== -1)) {
       return 'This link has expired or was opened in a different browser. Ask for a new reset link and open it on this phone. Progress on this device is unchanged.';
     }
@@ -361,6 +367,8 @@
     syncLabel: 'Not signed in',
     errorText: '',
     loading: false,
+    pendingConfirmEmail: '',
+    lastSignupOutcome: '',
     pending: null,
     recovery: false,
     accountName: null,
@@ -568,7 +576,10 @@
         recovery: this.recovery,
         accountDeleted: !!this.accountDeleted,
         ready: this.readySettled,
-        resetWait: this.resetWaitMs()
+        resetWait: this.resetWaitMs(),
+        confirmWait: this.confirmWaitMs(),
+        pendingConfirmEmail: this.pendingConfirmEmail || '',
+        lastSignupOutcome: this.lastSignupOutcome || ''
       };
     },
 
@@ -977,6 +988,8 @@
       var problem = this.checkEmailPassword(email, password);
       if (problem) { this.setError(problem); return Promise.resolve(); }
       if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
+      email = String(email || '').trim();
+      this.lastSignupOutcome = '';
       return this.busy(function () {
         return withTimeout(self.client.auth.signUp({
           email: email,
@@ -985,12 +998,61 @@
         }), 15000).then(function (res) {
           if (res.error) throw res.error;
           var session = res.data && res.data.session;
-          if (!session) {
-            self.errorText = 'Check your email to confirm the account. Your progress stays on this device until you sign in.';
+          var user = res.data && res.data.user;
+          if (session) {
+            self.pendingConfirmEmail = '';
+            self.lastSignupOutcome = 'session';
+            return self.afterAuthCall();
+          }
+          // Supabase returns 200 with an empty identities array when the email
+          // already belongs to a confirmed account (no mail is sent).
+          var ids = user && Object.prototype.hasOwnProperty.call(user, 'identities')
+            ? user.identities
+            : null;
+          if (Array.isArray(ids) && ids.length === 0) {
+            self.pendingConfirmEmail = '';
+            self.lastSignupOutcome = 'exists';
+            self.errorText = 'This email already has an account. Log in or use Forgot password.';
             self.syncLabel = 'Not signed in';
             return;
           }
-          return self.afterAuthCall();
+          self.pendingConfirmEmail = email;
+          self.lastSignupOutcome = 'confirm';
+          self.errorText = 'Check your inbox and spam/junk folder for the confirmation email. The link opens back into the game. Your progress stays on this device.';
+          self.syncLabel = 'Not signed in';
+        });
+      });
+    },
+
+    confirmWaitMs: function () {
+      if (!this._confirmAt) return 0;
+      var left = RESET_COOLDOWN_MS - (Date.now() - this._confirmAt);
+      return left > 0 ? left : 0;
+    },
+
+    resendConfirmEmail: function (email) {
+      var self = this;
+      email = String(email || this.pendingConfirmEmail || '').trim();
+      if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
+      if (!email || email.indexOf('@') < 1 || email.length > 320) {
+        this.setError('Enter the email for that account.');
+        return Promise.resolve();
+      }
+      if (this.confirmWaitMs() > 0) {
+        this.setError('A confirmation email was just sent. Wait ' + Math.ceil(this.confirmWaitMs() / 1000) + ' seconds before asking again.');
+        return Promise.resolve();
+      }
+      return this.busy(function () {
+        return withTimeout(self.client.auth.resend({
+          type: 'signup',
+          email: email,
+          options: { emailRedirectTo: authRedirectUrl() }
+        }), 15000).then(function (res) {
+          if (res.error) throw res.error;
+          self._confirmAt = Date.now();
+          self.pendingConfirmEmail = email;
+          self.errorText = 'Confirmation email sent again. Check your inbox and spam/junk folder. Your progress stays on this device.';
+          self.syncLabel = self.session ? self.syncLabel : 'Not signed in';
         });
       });
     },

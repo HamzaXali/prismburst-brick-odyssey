@@ -1006,10 +1006,10 @@ async function signIn(page, email, password) {
       const errors = await boot(page);
       await openAccount(page);
       await page.evaluate(() => { PB.Cloud.signInOAuth('google'); });
-      await page.waitForFunction(() => /Could not open the browser \[v1\.4\.4 step=/.test(document.getElementById('pb-acct-msg').textContent || ''), null, { timeout: 10000 });
+      await page.waitForFunction(() => /Could not open the browser \[v1\.4\.5 step=/.test(document.getElementById('pb-acct-msg').textContent || ''), null, { timeout: 10000 });
       const msg = await page.evaluate(() => document.getElementById('pb-acct-msg').textContent);
       record('total open failure shows versioned diagnostic step code',
-        /\[v1\.4\.4 step=/.test(msg) && /Progress on this device is unchanged/.test(msg) && !/The system browser is unavailable/.test(msg), msg);
+        /\[v1\.4\.5 step=/.test(msg) && /Progress on this device is unchanged/.test(msg) && !/The system browser is unavailable/.test(msg), msg);
       record('diagnostic failure has no page errors', errors.length === 0, errors);
       await ctx.close();
     }

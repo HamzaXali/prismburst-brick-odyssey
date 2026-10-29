@@ -45,7 +45,7 @@ function session(u) {
   return { access_token: jwt({ sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', exp, iat: exp - 3600 }), token_type: 'bearer', expires_in: 3600, expires_at: exp, refresh_token: 'r-' + u.id + '-' + Date.now(), user: userObj(u) };
 }
 function newState() {
-  return { users: { 'pilot@example.com': { id: USER, email: 'pilot@example.com', password: 'oldpass1' } }, requests: [], recovers: [], signups: [], pkce: [], passwordPuts: [], authorize: [] };
+  return { users: { 'pilot@example.com': { id: USER, email: 'pilot@example.com', password: 'oldpass1' } }, requests: [], recovers: [], signups: [], resends: [], pkce: [], passwordPuts: [], authorize: [] };
 }
 async function phone(browser, providers, init) {
   const ctx = await browser.newContext(Object.assign({}, devices['Pixel 5'], { serviceWorkers: 'block' }));
@@ -80,7 +80,17 @@ function mock(ctx, state) {
     }
     if (p.endsWith('/auth/v1/signup')) {
       state.signups.push({ email: posted.email, redirect: url.searchParams.get('redirect_to') });
+      const emailKey = String(posted.email || '').toLowerCase();
+      if (state.users[emailKey]) {
+        const existing = userObj(state.users[emailKey]);
+        existing.identities = [];
+        return send(200, { user: existing, session: null });
+      }
       return send(200, { user: userObj({ id: '44444444-4444-4444-8444-444444444444', email: posted.email }), session: null });
+    }
+    if (p.endsWith('/auth/v1/resend')) {
+      state.resends.push({ email: posted.email, type: posted.type, redirect: url.searchParams.get('redirect_to') || (posted.options && posted.options.emailRedirectTo) || null });
+      return send(200, {});
     }
     if (p.endsWith('/auth/v1/recover')) {
       state.recovers.push({ email: posted.email, redirect: url.searchParams.get('redirect_to'), pkce: !!posted.code_challenge });
@@ -185,10 +195,61 @@ const OLD_SAVE = JSON.stringify({
       await page.screenshot({ path: path.join(SHOTS, 'signup-popup.png') });
       await page.fill('#pb-password2-input', 'prism123');
       await page.click('[data-action="signup"]');
-      await page.waitForFunction(() => /confirm the account/i.test(document.getElementById('pb-acct-msg').textContent || ''), null, { timeout: 8000 });
-      const afterSignup = await page.evaluate(() => ({ tab: PB.Account.tab, title: document.getElementById('pb-acct-title').textContent }));
-      record('sign up calls Supabase once with the page redirect and returns to the Log in tab',
-        state.signups.length === 1 && state.signups[0].email === 'new.player@example.com' && /index\.html$/.test(state.signups[0].redirect || '') && afterSignup.tab === 'login', { signups: state.signups, afterSignup });
+      await page.waitForFunction(() => /spam\/junk folder/i.test(document.getElementById('pb-acct-msg').textContent || ''), null, { timeout: 8000 });
+      const afterSignup = await page.evaluate(() => ({
+        tab: PB.Account.tab,
+        title: document.getElementById('pb-acct-title').textContent,
+        msg: document.getElementById('pb-acct-msg').textContent,
+        resendShown: !document.querySelector('[data-action="resend-confirm"]').hidden,
+        version: document.getElementById('pb-acct-version').textContent,
+        outcome: PB.Cloud.lastSignupOutcome,
+        pending: PB.Cloud.pendingConfirmEmail,
+        save: localStorage.getItem('prismburst.save.v1')
+      }));
+      record('new sign up asks to check inbox/spam and keeps the Sign up tab with Resend visible',
+        state.signups.length === 1 && state.signups[0].email === 'new.player@example.com' && /index\.html$/.test(state.signups[0].redirect || '')
+          && afterSignup.tab === 'signup' && afterSignup.resendShown && afterSignup.outcome === 'confirm'
+          && afterSignup.pending === 'new.player@example.com' && /spam\/junk/i.test(afterSignup.msg), { signups: state.signups, afterSignup });
+      record('account popup footer shows the shipped app version', /^v\d+\.\d+\.\d+$/.test(afterSignup.version), afterSignup.version);
+
+      // Resend confirmation with cooldown.
+      await page.click('[data-action="resend-confirm"]');
+      await page.waitForFunction(() => /Confirmation email sent again/i.test(document.getElementById('pb-acct-msg').textContent || ''), null, { timeout: 8000 });
+      const afterResend = await page.evaluate(() => ({
+        label: document.querySelector('[data-action="resend-confirm"]').textContent,
+        disabled: document.querySelector('[data-action="resend-confirm"]').disabled,
+        save: localStorage.getItem('prismburst.save.v1')
+      }));
+      record('Resend confirmation email calls Supabase once with type signup',
+        state.resends.length === 1 && state.resends[0].email === 'new.player@example.com' && state.resends[0].type === 'signup', state.resends);
+      record('Resend confirmation waits before another email can be asked for',
+        afterResend.disabled && /wait \d+s/.test(afterResend.label), afterResend);
+      record('resend confirmation does not clear the local save', afterResend.save === afterSignup.save);
+
+      // Existing confirmed email (empty identities) → Log in tab, friendly copy.
+      await page.click('[data-tab="signup"]');
+      await sleep(100);
+      await page.fill('#pb-email-input', 'pilot@example.com');
+      await page.fill('#pb-password-input', 'prism123');
+      await page.fill('#pb-password2-input', 'prism123');
+      await page.click('[data-action="signup"]');
+      await page.waitForFunction(() => /already has an account/i.test(document.getElementById('pb-acct-msg').textContent || ''), null, { timeout: 8000 });
+      const existsUi = await page.evaluate(() => ({
+        tab: PB.Account.tab,
+        title: document.getElementById('pb-acct-title').textContent,
+        msg: document.getElementById('pb-acct-msg').textContent,
+        email: document.getElementById('pb-email-input').value,
+        password: document.getElementById('pb-password-input').value,
+        resendHidden: document.querySelector('[data-action="resend-confirm"]').hidden,
+        outcome: PB.Cloud.lastSignupOutcome,
+        save: localStorage.getItem('prismburst.save.v1')
+      }));
+      record('signing up with an existing email switches to Log in with the email prefilled',
+        existsUi.tab === 'login' && existsUi.title === 'LOG IN' && existsUi.email === 'pilot@example.com'
+          && existsUi.password === '' && existsUi.outcome === 'exists' && existsUi.resendHidden
+          && /already has an account/i.test(existsUi.msg) && /Forgot password/i.test(existsUi.msg)
+          && !/identities|confirmed|session/i.test(existsUi.msg), existsUi);
+      record('existing-email signup does not clear the local save', existsUi.save === afterSignup.save);
 
       // Wrong password then right password.
       await page.fill('#pb-email-input', 'pilot@example.com');

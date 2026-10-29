@@ -195,7 +195,7 @@ try {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const shippedVersion = require('../package.json').version;
   record('service worker cache version matches the semver and precaches the game',
-    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0') && !sw.includes('prismburst-v1.3.5') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
+    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0') && !sw.includes('prismburst-v1.3.5') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
   record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '" + shippedVersion + "'") && sw.includes('prismburst-v' + shippedVersion));
   record('service worker keeps Supabase network-only and skips OAuth returns', sw.includes('supabase\\.co') && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
@@ -429,7 +429,7 @@ try {
     emptyFailed);
   fs.rmSync(decodedPath, { force: true });
   record('release version, R8, and signing env come from package.json without printing secrets',
-    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 6 &&
+    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 7 &&
     appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&
     appGradle.includes('debuggable false') &&
     appGradle.includes('minifyEnabled true') &&
@@ -462,7 +462,7 @@ try {
     cloudJs.indexOf('bag[name]') < cloudJs.indexOf('registerPlugin(name)'));
   record('native open uses OpenUrl Intent fallback and diagnostic step codes',
     cloudJs.includes("nativePlugin('OpenUrl')") && cloudJs.includes('browserDiag') &&
-    cloudJs.includes("APP_VERSION = '1.4.4'") && cloudJs.includes('purgeNativeServiceWorker') &&
+    cloudJs.includes("APP_VERSION = '1.4.5'") && cloudJs.includes('purgeNativeServiceWorker') &&
     !cloudJs.includes('The system browser is unavailable'));
   record('MainActivity registers OpenUrlPlugin before the bridge starts',
     fs.readFileSync(path.join(root, 'android/app/src/main/java/com/prismburst/brickodyssey/MainActivity.java'), 'utf8').includes('registerPlugin(OpenUrlPlugin.class)') &&
@@ -490,7 +490,41 @@ try {
     + fs.readFileSync(path.join(root, 'js/profile.js'), 'utf8')
     + fs.readFileSync(path.join(root, 'js/cloud.js'), 'utf8');
   record('display names are assigned with textContent and never innerHTML', nameUi.includes('textContent') && !nameUi.includes('innerHTML'));
-  record('the Google button is an inline SVG and is not fetched',
+  record('account sheet shows app version and a resend confirmation control',
+    html.includes('id="pb-acct-version"') && html.includes('data-action="resend-confirm"') &&
+    html.includes('Resend confirmation email') &&
+    fs.readFileSync(path.join(root, 'js/account.js'), 'utf8').includes("ver.textContent = 'v' + (PB.VERSION || '')") &&
+    fs.readFileSync(path.join(root, 'js/account.js'), 'utf8').includes("outcome === 'exists'") &&
+    fs.readFileSync(path.join(root, 'js/account.js'), 'utf8').includes('resendConfirmEmail'));
+  record('signUp treats empty identities as an existing account and never uses innerHTML for the notice',
+    cloudJs.includes("lastSignupOutcome = 'exists'") &&
+    cloudJs.includes('This email already has an account. Log in or use Forgot password.') &&
+    cloudJs.includes('spam/junk folder') &&
+    cloudJs.includes("resend({") &&
+    cloudJs.includes("type: 'signup'") &&
+    cloudJs.includes('confirmWaitMs') &&
+    cloudJs.includes('email_address_not_authorized') &&
+    cloudJs.includes('over_email_send_rate_limit') &&
+    cloudJs.includes('Email sending is limited right now') &&
+    !/innerHTML\s*=/.test(cloudJs));
+  // Runtime check of the friendly auth/email error mapper without loading supabase.
+  const feStart = cloudJs.indexOf('function friendlyError(err)');
+  if (feStart < 0) throw new Error('friendlyError missing');
+  let feEnd = feStart, depth = 0, started = false;
+  for (; feEnd < cloudJs.length; feEnd++) {
+    const ch = cloudJs[feEnd];
+    if (ch === '{') { depth++; started = true; }
+    else if (ch === '}') { depth--; if (started && depth === 0) { feEnd++; break; } }
+  }
+  const friendlyError = vm.runInNewContext(cloudJs.slice(feStart, feEnd) + '; friendlyError');
+  record('friendlyError covers unauthorized email and send rate limits without leaking codes',
+    friendlyError({ message: 'email_address_not_authorized' }).indexOf('not available') >= 0 &&
+    friendlyError({ message: 'over_email_send_rate_limit' }).indexOf('limited right now') >= 0 &&
+    friendlyError({ message: 'Email rate limit exceeded' }).indexOf('limited right now') >= 0 &&
+    friendlyError({ message: 'email_address_not_authorized' }).indexOf('email_address_not_authorized') === -1 &&
+    friendlyError({ message: 'over_email_send_rate_limit' }).indexOf('over_email_send_rate_limit') === -1);
+
+    record('the Google button is an inline SVG and is not fetched',
     html.includes('data-action="google"') && html.includes('<svg') && html.includes('#4285') === false && html.includes('#FFC107') && html.includes('Continue with Google') && !/googleusercontent|gstatic\.com|logo\.svg/.test(html));
 } catch (err) {
   record('unit suite crashed', false, err.stack);

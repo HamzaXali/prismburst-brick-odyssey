@@ -54,13 +54,73 @@
     } catch (e) { return false; }
   }
 
+  // Capacitor Android injects plugins on window.Capacitor.Plugins (see
+  // JSExport.getPluginJS). registerPlugin() only exists when @capacitor/core
+  // is also bundled into the page, which this static game does not do. Prefer
+  // Plugins[name], then registerPlugin, so Google OAuth can open Custom Tabs.
   function nativePlugin(name) {
     if (nativePlugins[name]) return nativePlugins[name];
+    if (!isNativeApp()) return null;
     try {
-      if (!isNativeApp() || typeof window.Capacitor.registerPlugin !== 'function') return null;
-      nativePlugins[name] = window.Capacitor.registerPlugin(name);
-      return nativePlugins[name];
-    } catch (e) { return null; }
+      var bag = window.Capacitor && window.Capacitor.Plugins;
+      var fromBag = bag && bag[name];
+      if (fromBag && typeof fromBag === 'object') {
+        nativePlugins[name] = fromBag;
+        return fromBag;
+      }
+      if (typeof window.Capacitor.registerPlugin === 'function') {
+        var registered = window.Capacitor.registerPlugin(name);
+        if (registered) {
+          nativePlugins[name] = registered;
+          return registered;
+        }
+      }
+    } catch (e) { /* fall through */ }
+    return null;
+  }
+
+  // Open a URL outside the WebView. Browser plugin first (Custom Tabs), then
+  // window.open / anchor fallbacks so OAuth is not blocked if the plugin
+  // handle is missing.
+  function openExternalUrl(url) {
+    var target = String(url || '');
+    if (!target) return Promise.reject(new Error('Sign-in could not start. Progress on this device is unchanged.'));
+    var browser = nativePlugin('Browser');
+    if (browser && typeof browser.open === 'function') {
+      return Promise.resolve(browser.open({ url: target })).catch(function (err) {
+        return openExternalUrlFallback(target, err);
+      });
+    }
+    return openExternalUrlFallback(target, null);
+  }
+
+  function openExternalUrlFallback(url, priorErr) {
+    try {
+      var opened = window.open(url, '_system');
+      if (opened) return Promise.resolve();
+    } catch (e1) { /* try next */ }
+    try {
+      var blank = window.open(url, '_blank', 'noopener');
+      if (blank) return Promise.resolve();
+    } catch (e2) { /* try next */ }
+    try {
+      var a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { try { document.body.removeChild(a); } catch (e3) { /* gone */ } }, 0);
+      return Promise.resolve();
+    } catch (e4) {
+      var detail = priorErr && (priorErr.message || priorErr);
+      return Promise.reject(new Error(
+        detail
+          ? ('Could not open the system browser (' + detail + '). Progress on this device is unchanged.')
+          : 'The system browser is unavailable. Progress on this device is unchanged.'
+      ));
+    }
   }
 
   function authRedirectUrl() {
@@ -836,13 +896,9 @@
           if (!native) return;
           var url = res.data && res.data.url;
           if (!url) throw new Error('Sign-in could not start. Progress on this device is unchanged.');
-          var browser = nativePlugin('Browser');
-          if (!browser || typeof browser.open !== 'function') {
-            throw new Error('The system browser is unavailable. Progress on this device is unchanged.');
-          }
           self._nativeAuthPending = true;
           self._nativeAuthHandled = false;
-          return browser.open({ url: url });
+          return openExternalUrl(url);
         });
       });
     },
@@ -1034,11 +1090,8 @@
       var name = String(rel || '');
       if (!/^[a-z-]+\.html(#[a-z-]+)?$/.test(name)) return false;
       if (isNativeApp()) {
-        var browser = nativePlugin('Browser');
-        if (browser && typeof browser.open === 'function') {
-          Promise.resolve(browser.open({ url: PUBLIC_SITE + name })).catch(function () { /* nothing to do */ });
-          return true;
-        }
+        openExternalUrl(PUBLIC_SITE + name).catch(function () { /* nothing to do */ });
+        return true;
       }
       try { window.open(name, '_blank', 'noopener'); } catch (e) { return false; }
       return true;

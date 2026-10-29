@@ -857,10 +857,9 @@ async function signIn(page, email, password) {
       const legacy = JSON.stringify(legacyObject());
       await ctx.addInitScript(raw => {
         localStorage.setItem('prismburst.save.v1', raw);
-        window.Capacitor = {
-          isNativePlatform: function () { return true; },
-          registerPlugin: function (name) {
-            var bag = window.__cap || (window.__cap = { opened: [], listeners: {}, plugins: {} });
+
+          var bag = window.__cap || (window.__cap = { opened: [], listeners: {}, plugins: {} });
+          function makePlugin(name) {
             if (!bag.plugins[name]) {
               bag.plugins[name] = {
                 open: function (opts) { bag.opened.push(opts && opts.url); return Promise.resolve(); },
@@ -873,7 +872,15 @@ async function signIn(page, email, password) {
             }
             return bag.plugins[name];
           }
-        };
+          // Mirrors Capacitor Android JSExport.getPluginJS: Plugins.X only.
+          // No registerPlugin — that API is not injected into the WebView.
+          window.Capacitor = {
+            isNativePlatform: function () { return true; },
+            Plugins: {
+              App: makePlugin('App'),
+              Browser: makePlugin('Browser')
+            }
+          };
       }, legacy);
       await page.context().route('**/config.js', route => route.fulfill({
         contentType: 'application/javascript',
@@ -920,6 +927,47 @@ async function signIn(page, email, password) {
       await page.waitForFunction(() => /Password reset email sent/i.test(document.getElementById('pb-acct-msg').textContent || ''));
       record('native password reset uses the app redirect', state.requests.some(r => r.includes('/auth/v1/recover') && decodeURIComponent(r).includes('com.prismburst.brickodyssey://auth?type=recovery')));
       record('native auth flow has no page errors', errors.length === 0, errors);
+      await ctx.close();
+    }
+
+    // -------------------------------------------------- Browser.Plugins missing → window.open fallback
+    {
+      const ctx = await phoneContext(browser, { serviceWorkers: 'block' });
+      const page = await ctx.newPage();
+      await ctx.addInitScript(() => {
+        window.__capFallback = { opened: [] };
+        const realOpen = window.open.bind(window);
+        window.open = function (url, target) {
+          window.__capFallback.opened.push({ url: String(url || ''), target: String(target || '') });
+          return { closed: false };
+        };
+        // Native app, but Plugins.Browser has no open — forces openExternalUrlFallback.
+        window.Capacitor = {
+          isNativePlatform: function () { return true; },
+          Plugins: {
+            App: {
+              addListener: function () { return Promise.resolve({ remove: function () {} }); }
+            },
+            Browser: { /* open intentionally missing */ }
+          }
+        };
+      });
+      await page.context().route('**/config.js', route => route.fulfill({
+        contentType: 'application/javascript',
+        body: configBody({ email: true, google: true, facebook: false })
+      }));
+      const state = createState();
+      await installMock(page, state);
+      const errors = await boot(page);
+      await openAccount(page);
+      await page.evaluate(() => { PB.Cloud.signInOAuth('google'); });
+      await page.waitForFunction(() => window.__capFallback && __capFallback.opened.length >= 1, null, { timeout: 10000 });
+      const hit = await page.evaluate(() => __capFallback.opened[0]);
+      record('native Google falls back to window.open when Browser.open is missing',
+        hit && /authorize|supabase|google/i.test(hit.url) && (hit.target === '_system' || hit.target === '_blank'), hit);
+      const msg = await page.evaluate(() => document.getElementById('pb-acct-msg') && document.getElementById('pb-acct-msg').textContent);
+      record('fallback open does not show system-browser-unavailable', !/system browser is unavailable/i.test(String(msg || '')), msg);
+      record('fallback native auth has no page errors', errors.length === 0, errors);
       await ctx.close();
     }
     record('cloud suite never calls the real Supabase project', realHits.length === 0, realHits.slice(0, 5));

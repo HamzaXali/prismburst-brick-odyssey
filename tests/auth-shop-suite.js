@@ -339,18 +339,28 @@ const OLD_SAVE = JSON.stringify({
       const ctx = await phone(browser, { email: true, google: true, facebook: false }, {
         fn: raw => {
           if (!localStorage.getItem('prismburst.save.v1')) localStorage.setItem('prismburst.save.v1', raw);
+
+          var bag = window.__cap || (window.__cap = { opened: [], listeners: {}, plugins: {} });
+          function makePlugin(name) {
+            if (!bag.plugins[name]) {
+              bag.plugins[name] = {
+                open: function (opts) { bag.opened.push(opts && opts.url); return Promise.resolve(); },
+                close: function () { bag.closed = true; return Promise.resolve(); },
+                addListener: function (eventName, cb) {
+                  bag.listeners[name + ':' + eventName] = cb;
+                  return Promise.resolve({ remove: function () {} });
+                }
+              };
+            }
+            return bag.plugins[name];
+          }
+          // Mirrors Capacitor Android JSExport.getPluginJS: Plugins.X only.
+          // No registerPlugin — that API is not injected into the WebView.
           window.Capacitor = {
             isNativePlatform: function () { return true; },
-            registerPlugin: function (name) {
-              var bag = window.__cap || (window.__cap = { opened: [], listeners: {}, plugins: {} });
-              if (!bag.plugins[name]) {
-                bag.plugins[name] = {
-                  open: function (o) { bag.opened.push(o && o.url); return Promise.resolve(); },
-                  close: function () { return Promise.resolve(); },
-                  addListener: function (ev, cb) { bag.listeners[name + ':' + ev] = cb; return Promise.resolve({ remove: function () {} }); }
-                };
-              }
-              return bag.plugins[name];
+            Plugins: {
+              App: makePlugin('App'),
+              Browser: makePlugin('Browser')
             }
           };
         },

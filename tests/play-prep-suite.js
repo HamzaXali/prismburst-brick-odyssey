@@ -1,6 +1,6 @@
 /*
  * TEST-ONLY. Not loaded by the game and not deployed.
- * Play Store prep (1.4.2): Settings footer and buttons, in-app account
+ * Play Store prep (1.4.3): Settings footer and buttons, in-app account
  * deletion, the public delete-account and privacy pages. Supabase is mocked
  * by intercepting HTTP with Playwright: no account is created or deleted on
  * the real project. The real delete_my_account() is NOT VERIFIED here.

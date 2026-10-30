@@ -16,7 +16,7 @@
 <body>
   <div class="card">
     <h1>Continue with Google</h1>
-    <p class="fine">This page finishes Google sign-in for the Android app, then returns to PRISMBURST. Progress on your phone stays until you choose.</p>
+    <p class="fine">Android Google sign-in bridge for PRISMBURST. After Google, you return to the app. Email login never uses this page. Progress on your phone stays until you choose.</p>
     <p id="err" role="status" aria-live="polite"></p>
     <button type="button" id="go">Continue with Google</button>
   </div>
@@ -50,7 +50,7 @@
     }
     var cfg = window.PB_FIREBASE || {};
     if (!usable(cfg) || !window.firebase) {
-      say('Cloud save not set up yet.');
+      say('Google sign-in is not ready on this page. Close the tab and use email login in the app, or try Google again later.');
       document.getElementById('go').disabled = true;
       return;
     }
@@ -62,7 +62,7 @@
     try {
       if (!firebase.apps.length) firebase.initializeApp(cfg);
     } catch (e) {
-      say('Cloud library failed to load.');
+      say('Google sign-in libraries failed to load. Close the tab and try again from the game, or use email login.');
       return;
     }
     document.getElementById('go').addEventListener('click', function () {

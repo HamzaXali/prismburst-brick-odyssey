@@ -229,7 +229,86 @@ async function boot(browser, server, state, providers) {
         return { err: PB.Cloud.errorText, save: localStorage.getItem('prismburst.save.v1'), before: before };
       });
       record('native deep-link: missing id_token rejected', /could not return|could not be verified/i.test(badNonce.err || ''), badNonce);
+
       record('native deep-link: missing token keeps save', badNonce.save === badNonce.before, badNonce);
+      await ctx.close();
+    }
+
+    // --- Bridge probe: 404 must not open Chrome; email never opens browser ---
+    {
+      const state = mock.createState();
+      const { ctx, page } = await boot(browser, server, state);
+      await page.evaluate((save) => {
+        localStorage.setItem('prismburst.save.v1', JSON.stringify(save));
+        PB.Save.load();
+        window.__PB_OPEN_URLS = [];
+        window.Capacitor = {
+          isNativePlatform: function () { return true; },
+          Plugins: {
+            App: { addListener: function () { return { remove: function () {} }; } },
+            Browser: {
+              open: function (opts) { window.__PB_OPEN_URLS.push(opts && opts.url); return Promise.resolve(); },
+              close: function () { return Promise.resolve(); },
+              addListener: function () { return { remove: function () {} }; }
+            },
+            OpenUrl: { open: function (opts) { window.__PB_OPEN_URLS.push(opts && opts.url); return Promise.resolve(); } }
+          }
+        };
+        const realFetch = window.fetch.bind(window);
+        window.fetch = function (url, opts) {
+          if (String(url).indexOf('auth-bridge.html') >= 0) {
+            return Promise.resolve(new Response('<!doctype html><title>404</title><h1>404</h1><p>File not found</p>', { status: 404, headers: { 'content-type': 'text/html' } }));
+          }
+          return realFetch(url, opts);
+        };
+      }, seedSave(7));
+      const blocked = await page.evaluate(() => {
+        return PB.Cloud.signInOAuth('google').then(function () {
+          return {
+            urls: window.__PB_OPEN_URLS.slice(),
+            err: PB.Cloud.errorText,
+            pending: !!PB.Cloud._nativeAuthPending,
+            save: localStorage.getItem('prismburst.save.v1')
+          };
+        });
+      });
+      record('bridge probe 404: does not open browser', blocked.urls.length === 0, blocked);
+      record('bridge probe 404: friendly message', /not available yet/i.test(blocked.err || '') && /Email login still works/i.test(blocked.err || ''), blocked);
+      record('bridge probe 404: keeps local save', /"coins":7/.test(blocked.save || ''), blocked);
+      record('bridge probe 404: clears native pending', blocked.pending === false, blocked);
+
+      // Email login must not open browser even on native
+      await page.evaluate(() => { window.__PB_OPEN_URLS = []; });
+      await page.evaluate(() => { PB.Account.open(); PB.Account.setTab('login'); });
+      await page.fill('#pb-email-input', 'ali@example.com');
+      await page.fill('#pb-password-input', 'secret12');
+      await page.click('[data-action="login"]');
+      await sleep(600);
+      const emailNative = await page.evaluate(() => ({
+        urls: window.__PB_OPEN_URLS.slice(),
+        signed: PB.Cloud.snapshot().signedIn,
+        save: localStorage.getItem('prismburst.save.v1')
+      }));
+      record('email login on native: never opens browser', emailNative.urls.length === 0, emailNative);
+      record('email login on native: can still sign in', emailNative.signed === true, emailNative);
+
+      // Probe success opens bridge URL
+      await page.evaluate(() => {
+        window.__PB_OPEN_URLS = [];
+        window.fetch = function (url) {
+          if (String(url).indexOf('auth-bridge.html') >= 0) {
+            return Promise.resolve(new Response('<!doctype html><title>PRISMBURST — Google sign-in</title><h1>Continue with Google</h1>', { status: 200, headers: { 'content-type': 'text/html' } }));
+          }
+          return Promise.reject(new Error('unexpected fetch'));
+        };
+      });
+      const opened = await page.evaluate(() => {
+        return PB.Cloud.signInOAuth('google').then(function () {
+          return { urls: window.__PB_OPEN_URLS.slice(), pending: !!PB.Cloud._nativeAuthPending, err: PB.Cloud.errorText };
+        });
+      });
+      record('bridge probe ok: opens auth-bridge in browser', opened.urls.length === 1 && /auth-bridge\.html/.test(opened.urls[0] || ''), opened);
+      record('bridge probe ok: marks native pending', opened.pending === true, opened);
       await ctx.close();
     }
 

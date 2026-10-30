@@ -384,6 +384,14 @@ try {
     cloudJs.includes('auth-bridge.html') && cloudJs.includes('signInWithCredential') &&
     cloudJs.includes('GoogleAuthProvider.credential') && cloudJs.includes('isNativePlatform') &&
     cloudJs.includes('signInWithPopup'));
+  record('native Google probes auth-bridge before opening Chrome and shows a friendly miss',
+    cloudJs.includes('function probeAuthBridge') && cloudJs.includes('BRIDGE_UNAVAILABLE_MSG') &&
+    cloudJs.includes('probeAuthBridge()') && cloudJs.includes('Google sign-in page is not available yet') &&
+    cloudJs.includes('Email login still works'));
+  record('email sign-in and sign-up never call openExternalUrl',
+    !/signInEmail:\s*function[\s\S]{0,1600}?openExternalUrl/.test(cloudJs) &&
+    !/signUpEmail:\s*function[\s\S]{0,2400}?openExternalUrl/.test(cloudJs));
+
   record('native plugins prefer Capacitor.Plugins then registerPlugin, with openExternalUrl fallback',
     cloudJs.includes('window.Capacitor.Plugins') && cloudJs.includes('function openExternalUrl') &&
     cloudJs.includes("window.open(url, '_system')") && cloudJs.includes('openExternalUrl(bridge)') &&

@@ -114,6 +114,38 @@
       ']. Progress on this device is unchanged.';
   }
 
+  var BRIDGE_UNAVAILABLE_MSG =
+    'Google sign-in page is not available yet. Email login still works in the app. Progress on this device is unchanged.';
+
+  function authBridgeUrl() {
+    return PUBLIC_SITE + 'auth-bridge.html';
+  }
+
+  /** HEAD/GET the live Pages bridge before opening Chrome. Avoids a raw GitHub 404 tab. */
+  function probeAuthBridge() {
+    var url = authBridgeUrl() + '?probe=1';
+    if (typeof fetch !== 'function') {
+      return Promise.resolve({ ok: true, skipped: true });
+    }
+    return fetch(url, { method: 'GET', cache: 'no-store', redirect: 'follow' }).then(function (res) {
+      if (!res || !res.ok) {
+        return { ok: false, status: res && res.status };
+      }
+      var ctype = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+      return res.text().then(function (body) {
+        var text = String(body || '');
+        var looks404 = /File not found/i.test(text) || />\s*404\s*</.test(text) && /github/i.test(text);
+        var looksBridge = /Continue with Google/i.test(text) || /auth-bridge|PRISMBURST/i.test(text);
+        if (looks404 || !looksBridge) {
+          return { ok: false, status: res.status, looks404: !!looks404 };
+        }
+        return { ok: true, status: res.status, ctype: ctype };
+      });
+    }, function () {
+      return { ok: false, network: true };
+    });
+  }
+
   function openExternalUrl(url) {
     var target = String(url || '');
     if (!target) return Promise.reject(new Error(browserDiag('no-url')));
@@ -1025,18 +1057,32 @@
 
     signInGoogleNative: function () {
       var self = this;
-      var state = randomToken();
-      var nonce = randomToken();
-      try {
-        sessionStorage.setItem(AUTH_STATE_KEY, JSON.stringify({ state: state, nonce: nonce, at: Date.now() }));
-      } catch (e) {
-        try { localStorage.setItem(AUTH_STATE_KEY, JSON.stringify({ state: state, nonce: nonce, at: Date.now() })); } catch (e2) { /* continue */ }
-      }
-      var bridge = PUBLIC_SITE + 'auth-bridge.html?state=' + encodeURIComponent(state) + '&nonce=' + encodeURIComponent(nonce);
-      self._nativeAuthPending = true;
-      self._nativeAuthHandled = false;
-      self._nativeAuthState = state;
-      return openExternalUrl(bridge);
+      return probeAuthBridge().then(function (probe) {
+        if (!probe || !probe.ok) {
+          self._nativeAuthPending = false;
+          self._nativeAuthHandled = false;
+          self.loading = false;
+          self.setError(BRIDGE_UNAVAILABLE_MSG);
+          return { via: 'probe-blocked', probe: probe };
+        }
+        var state = randomToken();
+        var nonce = randomToken();
+        try {
+          sessionStorage.setItem(AUTH_STATE_KEY, JSON.stringify({ state: state, nonce: nonce, at: Date.now() }));
+        } catch (e) {
+          try { localStorage.setItem(AUTH_STATE_KEY, JSON.stringify({ state: state, nonce: nonce, at: Date.now() })); } catch (e2) { /* continue */ }
+        }
+        var bridge = authBridgeUrl() + '?state=' + encodeURIComponent(state) + '&nonce=' + encodeURIComponent(nonce);
+        self._nativeAuthPending = true;
+        self._nativeAuthHandled = false;
+        self._nativeAuthState = state;
+        return openExternalUrl(bridge);
+      }, function () {
+        self._nativeAuthPending = false;
+        self.loading = false;
+        self.setError(BRIDGE_UNAVAILABLE_MSG);
+        return { via: 'probe-error' };
+      });
     },
 
     signInEmail: function (email, password) {
@@ -1581,7 +1627,10 @@
     backoffDelay: backoffDelay,
     parseNativeAuthUrl: parseNativeAuthUrl,
     firebaseConfig: firebaseConfig,
-    MAX_BACKOFF_MS: MAX_BACKOFF_MS
+    MAX_BACKOFF_MS: MAX_BACKOFF_MS,
+    probeAuthBridge: probeAuthBridge,
+    authBridgeUrl: authBridgeUrl,
+    BRIDGE_UNAVAILABLE_MSG: BRIDGE_UNAVAILABLE_MSG
   };
 
   Cloud.init();

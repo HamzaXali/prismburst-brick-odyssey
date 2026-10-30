@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
   <title>PRISMBURST — Google sign-in</title>
   <style>
     body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -16,16 +18,18 @@
 <body>
   <div class="card">
     <h1>Continue with Google</h1>
-    <p class="fine">Android Google sign-in bridge for PRISMBURST. After Google, you return to the app. Email login never uses this page. Progress on your phone stays until you choose.</p>
+    <p class="fine">Android Google sign-in bridge for PRISMBURST (bridge v2). After Google, you return to the app. Email login never uses this page. Progress on your phone stays until you choose.</p>
     <p id="err" role="status" aria-live="polite"></p>
     <button type="button" id="go">Continue with Google</button>
   </div>
-  <script src="js/firebase-config.js"></script>
-  <script src="lib/firebase-app-compat.js"></script>
-  <script src="lib/firebase-auth-compat.js"></script>
+  <!-- cache-bust query on scripts so SW/HTTP cache cannot keep old Firebase libs beside a new HTML -->
+  <script src="js/firebase-config.js?bv=2"></script>
+  <script src="lib/firebase-app-compat.js?bv=2"></script>
+  <script src="lib/firebase-auth-compat.js?bv=2"></script>
   <script>
   (function () {
     'use strict';
+    var BRIDGE_VERSION = '2';
     var params = new URLSearchParams(location.search);
     var state = params.get('state') || '';
     var nonce = params.get('nonce') || '';
@@ -41,12 +45,36 @@
       return 'com.prismburst.brickodyssey://auth#' + hash;
     }
     function goBack(parts) {
+      parts = parts || {};
+      parts.bv = BRIDGE_VERSION;
       var q = new URLSearchParams();
+      // Prefer access_token first in the hash (shorter path for parsing / truncation diagnostics).
+      ['access_token', 'id_token', 'state', 'nonce', 'bv', 'error'].forEach(function (k) {
+        if (parts[k] != null && parts[k] !== '') q.set(k, parts[k]);
+      });
       Object.keys(parts).forEach(function (k) {
+        if (q.has(k)) return;
         if (parts[k] != null && parts[k] !== '') q.set(k, parts[k]);
       });
       // Never put tokens in the visible page text or console.
       location.replace(deepLink(q.toString()));
+    }
+    function sendGoogleTokens(result) {
+      var oauth = null;
+      try { oauth = firebase.auth.GoogleAuthProvider.credentialFromResult(result); } catch (e) { oauth = null; }
+      var googleId = oauth && oauth.idToken;
+      var googleAccess = oauth && oauth.accessToken;
+      // Prefer access_token (avoids id_token nonce/audience issues). Keep id_token as fallback.
+      if (!googleAccess && !googleId) {
+        goBack({ error: 'Google sign-in could not finish. Close this tab and try again from the game.', state: state });
+        return;
+      }
+      goBack({
+        access_token: googleAccess || '',
+        id_token: googleId || '',
+        state: state,
+        nonce: nonce
+      });
     }
     var cfg = window.PB_FIREBASE || {};
     if (!usable(cfg) || !window.firebase) {
@@ -72,19 +100,7 @@
       provider.addScope('email');
       provider.addScope('profile');
       provider.setCustomParameters({ prompt: 'select_account' });
-      firebase.auth().signInWithPopup(provider).then(function (result) {
-        // Pass Google OAuth tokens from credentialFromResult. A Firebase JWT from the user
-        // object is the wrong kind of token for GoogleAuthProvider.credential on the app.
-        var oauth = null;
-        try { oauth = firebase.auth.GoogleAuthProvider.credentialFromResult(result); } catch (e) { oauth = null; }
-        var googleId = oauth && oauth.idToken;
-        var googleAccess = oauth && oauth.accessToken;
-        if (!googleId) {
-          goBack({ error: 'Google sign-in could not finish. Close this tab and try again from the game.', state: state });
-          return;
-        }
-        goBack({ id_token: googleId, access_token: googleAccess || '', state: state, nonce: nonce });
-      }, function (err) {
+      firebase.auth().signInWithPopup(provider).then(sendGoogleTokens, function (err) {
         var code = err && err.code || '';
         var msg = (err && err.message) || 'Sign-in was cancelled.';
         if (code === 'auth/popup-blocked') {
@@ -95,15 +111,7 @@
     });
     firebase.auth().getRedirectResult().then(function (result) {
       if (!result || !result.user) return;
-      var oauth = null;
-      try { oauth = firebase.auth.GoogleAuthProvider.credentialFromResult(result); } catch (e) { oauth = null; }
-      var googleId = oauth && oauth.idToken;
-      var googleAccess = oauth && oauth.accessToken;
-      if (!googleId) {
-        goBack({ error: 'Google sign-in could not finish. Close this tab and try again from the game.', state: state });
-        return;
-      }
-      goBack({ id_token: googleId, access_token: googleAccess || '', state: state, nonce: nonce });
+      sendGoogleTokens(result);
     }, function (err) {
       if (!err) return;
       goBack({ error: (err && err.message) || 'Sign-in failed.', state: state });

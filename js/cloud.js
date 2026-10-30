@@ -219,6 +219,7 @@
     var hash = new URLSearchParams(String(url.hash || '').replace(/^#/, ''));
     return {
       idToken: url.searchParams.get('id_token') || hash.get('id_token') || '',
+      accessToken: url.searchParams.get('access_token') || hash.get('access_token') || '',
       state: url.searchParams.get('state') || hash.get('state') || '',
       error: url.searchParams.get('error_description') || url.searchParams.get('error') || hash.get('error_description') || hash.get('error') || '',
       type: url.searchParams.get('type') || hash.get('type') || '',
@@ -291,12 +292,24 @@
     return true;
   }
 
-  function friendlyError(err) {
+  function friendlyError(err, kind) {
     var code = String(err && (err.code || err.errorCode) || '');
     var msg = err && (err.message || err.error_description || err.msg) || '';
+    // Never surface JWTs or emails in UI copy.
+    msg = String(msg)
+      .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[token]')
+      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]');
     var low = String(msg).toLowerCase();
     var name = err && err.name || '';
     if (!err) return 'Something went wrong. Progress on this device is unchanged.';
+    if (kind === 'google') {
+      var safeCode = /^auth\/[a-z0-9_-]+$/i.test(code) ? code : 'auth/unknown';
+      if (code === 'auth/popup-closed-by-user' || /cancel/i.test(low)) {
+        return 'Google sign-in was cancelled.';
+      }
+      // Never map Google failures to the email/password message.
+      return 'Google sign-in could not finish (' + safeCode + '). Try again, or use email login. Progress on this device is unchanged.';
+    }
     if (code === 'auth/email-already-in-use' || low.indexOf('email-already-in-use') !== -1 || low.indexOf('already in use') !== -1) {
       return 'This email already has an account. Log in or use Forgot password.';
     }
@@ -1540,7 +1553,7 @@
       if (parsed.error) {
         this.loading = false;
         this.clearBridgeState();
-        this.setError(friendlyError({ message: parsed.error }));
+        this.setError(friendlyError({ message: parsed.error, code: 'auth/bridge-error' }, 'google'));
         return;
       }
       if (parsed.mode === 'resetPassword' && parsed.oobCode) {
@@ -1572,14 +1585,18 @@
       this.clearBridgeState();
       this.loading = true;
       this.emit();
-      var credential = window.firebase.auth.GoogleAuthProvider.credential(parsed.idToken);
+      // Google OAuth idToken (+ optional accessToken) from the bridge — not a Firebase JWT.
+      var credential = window.firebase.auth.GoogleAuthProvider.credential(
+        parsed.idToken,
+        parsed.accessToken || undefined
+      );
       // Never log or display tokens.
       Promise.resolve(this.auth.signInWithCredential(credential)).then(function () {
         self.loading = false;
         self.emit();
       }, function (err) {
         self.loading = false;
-        self.setError(friendlyError(err));
+        self.setError(friendlyError(err, 'google'));
       });
     },
 

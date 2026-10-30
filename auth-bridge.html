@@ -73,9 +73,17 @@
       provider.addScope('profile');
       provider.setCustomParameters({ prompt: 'select_account' });
       firebase.auth().signInWithPopup(provider).then(function (result) {
-        return result.user.getIdToken(true).then(function (idToken) {
-          goBack({ id_token: idToken, state: state, nonce: nonce });
-        });
+        // Pass Google OAuth tokens from credentialFromResult. A Firebase JWT from the user
+        // object is the wrong kind of token for GoogleAuthProvider.credential on the app.
+        var oauth = null;
+        try { oauth = firebase.auth.GoogleAuthProvider.credentialFromResult(result); } catch (e) { oauth = null; }
+        var googleId = oauth && oauth.idToken;
+        var googleAccess = oauth && oauth.accessToken;
+        if (!googleId) {
+          goBack({ error: 'Google sign-in could not finish. Close this tab and try again from the game.', state: state });
+          return;
+        }
+        goBack({ id_token: googleId, access_token: googleAccess || '', state: state, nonce: nonce });
       }, function (err) {
         var code = err && err.code || '';
         var msg = (err && err.message) || 'Sign-in was cancelled.';
@@ -87,9 +95,15 @@
     });
     firebase.auth().getRedirectResult().then(function (result) {
       if (!result || !result.user) return;
-      return result.user.getIdToken(true).then(function (idToken) {
-        goBack({ id_token: idToken, state: state, nonce: nonce });
-      });
+      var oauth = null;
+      try { oauth = firebase.auth.GoogleAuthProvider.credentialFromResult(result); } catch (e) { oauth = null; }
+      var googleId = oauth && oauth.idToken;
+      var googleAccess = oauth && oauth.accessToken;
+      if (!googleId) {
+        goBack({ error: 'Google sign-in could not finish. Close this tab and try again from the game.', state: state });
+        return;
+      }
+      goBack({ id_token: googleId, access_token: googleAccess || '', state: state, nonce: nonce });
     }, function (err) {
       if (!err) return;
       goBack({ error: (err && err.message) || 'Sign-in failed.', state: state });

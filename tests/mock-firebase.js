@@ -186,7 +186,7 @@ function installMockSource() {
         return Promise.resolve({ user: user });
       },
       signInWithCredential: function (cred) {
-        state.credentialLog.push({ hasIdToken: !!(cred && cred.idToken) });
+        state.credentialLog.push({ hasIdToken: !!(cred && cred.idToken), hasAccessToken: !!(cred && cred.accessToken) });
         var rec = state.users['ali@example.com'] || {
           uid: USER_A, email: 'ali@example.com', emailVerified: true,
           displayName: 'Ali Prism', providerData: [{ providerId: 'google.com' }], password: 'x'
@@ -239,8 +239,12 @@ function installMockSource() {
       this.addScope = function () {};
       this.setCustomParameters = function () {};
     };
-    window.firebase.auth.GoogleAuthProvider.credential = function (idToken) {
-      return { idToken: idToken, providerId: 'google.com' };
+    window.firebase.auth.GoogleAuthProvider.credential = function (idToken, accessToken) {
+      return { idToken: idToken, accessToken: accessToken || null, providerId: 'google.com' };
+    };
+    window.firebase.auth.GoogleAuthProvider.credentialFromResult = function (result) {
+      var c = result && result.credential;
+      return c || { idToken: 'mock-google-id-token', accessToken: 'mock-google-access', providerId: 'google.com' };
     };
     window.__PB_MOCK_STATE = state;
   });

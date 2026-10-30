@@ -255,9 +255,11 @@ try {
     fbCfg.includes("projectId: 'prismburst-brick-odyssey'") && fbCfg.includes('prismburst-brick-odyssey.firebaseapp.com') && fbCfg.includes('1094215889946') && fbCfg.includes('measurementId') && !/BEGIN [A-Z ]*PRIVATE KEY/.test(fbCfg)
     && !/BEGIN [A-Z ]*PRIVATE KEY/.test(fbCfg) && !/service_account/.test(fbCfg));
   const authBridge = fs.readFileSync(path.join(root, 'auth-bridge.html'), 'utf8');
-  record('auth-bridge hosts Google popup/redirect and deep-links id_token with state',
+  record('auth-bridge hosts Google popup/redirect and deep-links Google OAuth tokens with state',
     authBridge.includes('signInWithPopup') && authBridge.includes('com.prismburst.brickodyssey://auth')
-    && authBridge.includes('id_token') && authBridge.includes('state') && authBridge.indexOf('console.log') === -1);
+    && authBridge.includes('credentialFromResult') && authBridge.includes('access_token')
+    && authBridge.includes('id_token') && authBridge.includes('state')
+    && !authBridge.includes('result.user.getIdToken') && authBridge.indexOf('console.log') === -1);
 
     const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.')).sort();
   record('Pages, the debug APK, and the release workflow are the only workflows', workflows.join(',') === 'android-debug.yml,android-release.yml,pages.yml');
@@ -382,8 +384,8 @@ try {
   record('native Google sign-in uses auth-bridge + deep link credential (no WebView OAuth)',
     cloudJs.includes("var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth'") &&
     cloudJs.includes('auth-bridge.html') && cloudJs.includes('signInWithCredential') &&
-    cloudJs.includes('GoogleAuthProvider.credential') && cloudJs.includes('isNativePlatform') &&
-    cloudJs.includes('signInWithPopup'));
+    cloudJs.includes('GoogleAuthProvider.credential') && cloudJs.includes('parsed.accessToken') &&
+    cloudJs.includes('isNativePlatform') && cloudJs.includes('signInWithPopup'));
   record('native Google probes auth-bridge before opening Chrome and shows a friendly miss',
     cloudJs.includes('function probeAuthBridge') && cloudJs.includes('BRIDGE_UNAVAILABLE_MSG') &&
     cloudJs.includes('probeAuthBridge()') && cloudJs.includes('Google sign-in page is not available yet') &&
@@ -451,7 +453,7 @@ try {
     cloudJs.includes('Cloud save not set up yet') &&
     !/innerHTML\s*=/.test(cloudJs));
   // Runtime check of the friendly auth error mapper without loading Firebase.
-  const feStart = cloudJs.indexOf('function friendlyError(err)');
+  const feStart = Math.max(cloudJs.indexOf('function friendlyError(err, kind)'), cloudJs.indexOf('function friendlyError(err)'));
   if (feStart < 0) throw new Error('friendlyError missing');
   let feEnd = feStart, depth = 0, started = false;
   for (; feEnd < cloudJs.length; feEnd++) {
@@ -463,9 +465,19 @@ try {
   record('friendlyError covers Firebase auth codes without leaking raw codes',
     friendlyError({ code: 'auth/email-already-in-use' }).indexOf('already has an account') >= 0 &&
     friendlyError({ code: 'auth/wrong-password' }).indexOf('incorrect') >= 0 &&
+    friendlyError({ code: 'auth/invalid-credential' }).indexOf('incorrect') >= 0 &&
     friendlyError({ code: 'auth/too-many-requests' }).indexOf('Too many tries') >= 0 &&
     friendlyError({ code: 'auth/network-request-failed' }).indexOf('offline') >= 0 &&
     friendlyError({ code: 'auth/email-already-in-use' }).indexOf('auth/email-already-in-use') === -1);
+  const gFail = friendlyError({ code: 'auth/invalid-credential', message: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.aaa.bbb for user@example.com' }, 'google');
+  record('Google friendlyError never looks like a password mistake and includes the auth code',
+    gFail.indexOf('incorrect') === -1 && gFail.indexOf('password') === -1
+    && gFail.indexOf('(auth/invalid-credential)') >= 0 && gFail.indexOf('Google sign-in') >= 0
+    && gFail.indexOf('eyJ') === -1 && gFail.indexOf('@') === -1);
+  record('native Google credential uses idToken and optional accessToken',
+    cloudJs.includes('GoogleAuthProvider.credential')
+    && cloudJs.includes('parsed.accessToken')
+    && cloudJs.includes("friendlyError(err, 'google')"));
 
   function extractFn(src, name) {
     const start = src.indexOf('function ' + name);
@@ -516,9 +528,10 @@ try {
     else if (ch === '}') { d3--; if (st3 && d3 === 0) { parseEnd++; break; } }
   }
   const parseNativeAuthUrl = vm.runInNewContext(cloudJs.slice(parseStart, parseEnd) + '; parseNativeAuthUrl', { URL: URL, URLSearchParams: URLSearchParams });
-  const deep = parseNativeAuthUrl('com.prismburst.brickodyssey://auth#id_token=abc&state=xyz');
-  record('deep-link parser extracts id_token and state without other schemes',
-    deep && deep.idToken === 'abc' && deep.state === 'xyz' && parseNativeAuthUrl('https://evil.example/#id_token=x') === null);
+  const deep = parseNativeAuthUrl('com.prismburst.brickodyssey://auth#id_token=abc&access_token=tok&state=xyz');
+  record('deep-link parser extracts id_token, access_token, and state without other schemes',
+    deep && deep.idToken === 'abc' && deep.accessToken === 'tok' && deep.state === 'xyz'
+    && parseNativeAuthUrl('https://evil.example/#id_token=x') === null);
 
     record('the Google button is an inline SVG and is not fetched',
     html.includes('data-action="google"') && html.includes('<svg') && html.includes('#4285') === false && html.includes('#FFC107') && html.includes('Continue with Google') && !/googleusercontent|gstatic\.com|logo\.svg/.test(html));

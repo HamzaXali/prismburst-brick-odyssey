@@ -201,7 +201,7 @@ async function boot(browser, server, state, providers) {
       const good = await page.evaluate(() => {
         sessionStorage.setItem('prismburst.auth.bridge.v1', JSON.stringify({ state: 'state-ok', nonce: 'nonce-ok', at: Date.now() }));
         const before = localStorage.getItem('prismburst.save.v1');
-        PB.Cloud.handleNativeAuthUrl('com.prismburst.brickodyssey://auth#id_token=tok&state=state-ok&nonce=nonce-ok');
+        PB.Cloud.handleNativeAuthUrl('com.prismburst.brickodyssey://auth#id_token=google-id-tok&access_token=google-access-tok&state=state-ok&nonce=nonce-ok');
         return new Promise(function (r) {
           setTimeout(function () {
             r({ signed: PB.Cloud.snapshot().signedIn, provider: PB.Cloud.providerName(), before: before, save: localStorage.getItem('prismburst.save.v1'), creds: window.__PB_MOCK_STATE.credentialLog });
@@ -210,6 +210,7 @@ async function boot(browser, server, state, providers) {
       });
       record('native deep-link: credential sign-in', good.signed && good.provider === 'google', good);
       record('native deep-link: credential used idToken', good.creds.some(c => c.hasIdToken), good);
+      record('native deep-link: credential used accessToken', good.creds.some(c => c.hasAccessToken), good);
       record('native deep-link: save unchanged on success', good.save === good.before, good);
 
       const badState = await page.evaluate(() => {
@@ -230,7 +231,27 @@ async function boot(browser, server, state, providers) {
       });
       record('native deep-link: missing id_token rejected', /could not return|could not be verified/i.test(badNonce.err || ''), badNonce);
 
+
       record('native deep-link: missing token keeps save', badNonce.save === badNonce.before, badNonce);
+
+      // Reproduce bridge URL shape; force signInWithCredential to fail like invalid Google JWT did
+      const gErr = await page.evaluate(() => {
+        sessionStorage.setItem('prismburst.auth.bridge.v1', JSON.stringify({ state: 'st-g', nonce: 'n-g', at: Date.now() }));
+        const before = localStorage.getItem('prismburst.save.v1');
+        const orig = window.firebase.auth().signInWithCredential;
+        window.firebase.auth().signInWithCredential = function () {
+          return Promise.reject({ code: 'auth/invalid-credential', message: 'eyJhbGciOiJSUzI1NiJ9.aaa.bbb for ali@example.com' });
+        };
+        PB.Cloud.handleNativeAuthUrl('com.prismburst.brickodyssey://auth#id_token=bad-firebase-jwt&access_token=x&state=st-g&nonce=n-g');
+        return new Promise(function (r) {
+          setTimeout(function () {
+            window.firebase.auth().signInWithCredential = orig;
+            r({ err: PB.Cloud.errorText, save: localStorage.getItem('prismburst.save.v1'), before: before });
+          }, 300);
+        });
+      });
+      record('Google invalid-credential never says password', /Google sign-in could not finish/i.test(gErr.err || '') && /\(auth\/invalid-credential\)/.test(gErr.err || '') && !/password/i.test(gErr.err || '') && !/incorrect/i.test(gErr.err || ''), gErr);
+      record('Google invalid-credential keeps save and hides tokens/email', gErr.save === gErr.before && !/eyJ/.test(gErr.err || '') && !/@/.test(gErr.err || ''), gErr);
       await ctx.close();
     }
 

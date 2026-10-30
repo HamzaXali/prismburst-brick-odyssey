@@ -337,6 +337,13 @@ try {
   const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.')).sort();
   record('Pages, the debug APK, and the release workflow are the only workflows', workflows.join(',') === 'android-debug.yml,android-release.yml,pages.yml');
   record('Pages deploy still publishes only the game files', yml.includes('no tests/, scripts/') && yml.includes('cp -r index.html') && !/\btests\//.test(yml.split('cp -r')[1] || '') && !yml.includes('android-debug'));
+  record('Pages deploy includes the Android Google auth bridge',
+    yml.includes('auth-bridge.html')
+    && fs.existsSync(path.join(root, 'auth-bridge.html'))
+    && fs.existsSync(path.join(root, 'js/firebase-config.js'))
+    && fs.existsSync(path.join(root, 'lib/firebase-app-compat.js'))
+    && fs.existsSync(path.join(root, 'lib/firebase-auth-compat.js')));
+
   const apk = fs.readFileSync(path.join(root, '.github/workflows/android-debug.yml'), 'utf8');
   const releaseYml = fs.readFileSync(path.join(root, '.github/workflows/android-release.yml'), 'utf8');
   record('debug APK workflow validates, syncs, and uploads the debug artifact',

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>PRISMBURST — Google sign-in</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      font-family: system-ui, sans-serif; background: #0b0618; color: #e8e0ff; text-align: center; padding: 24px; }
+    .card { max-width: 28rem; }
+    button { margin-top: 1rem; padding: .75rem 1.25rem; border: 0; border-radius: 999px; background: #7c5cff; color: #fff; font-weight: 700; }
+    .fine { opacity: .75; font-size: .9rem; }
+    #err { color: #ffb4b4; min-height: 1.25rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Continue with Google</h1>
+    <p class="fine">Android Google sign-in bridge for PRISMBURST. After Google, you return to the app. Email login never uses this page. Progress on your phone stays until you choose.</p>
+    <p id="err" role="status" aria-live="polite"></p>
+    <button type="button" id="go">Continue with Google</button>
+  </div>
+  <script src="js/firebase-config.js"></script>
+  <script src="lib/firebase-app-compat.js"></script>
+  <script src="lib/firebase-auth-compat.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var params = new URLSearchParams(location.search);
+    var state = params.get('state') || '';
+    var nonce = params.get('nonce') || '';
+    var errEl = document.getElementById('err');
+    function say(t) { errEl.textContent = t || ''; }
+    function isPlaceholder(v) { return !v || /^PLACEHOLDER_/i.test(String(v)); }
+    function usable(cfg) {
+      if (!cfg) return false;
+      return !['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId']
+        .some(function (k) { return isPlaceholder(cfg[k]); });
+    }
+    function deepLink(hash) {
+      return 'com.prismburst.brickodyssey://auth#' + hash;
+    }
+    function goBack(parts) {
+      var q = new URLSearchParams();
+      Object.keys(parts).forEach(function (k) {
+        if (parts[k] != null && parts[k] !== '') q.set(k, parts[k]);
+      });
+      // Never put tokens in the visible page text or console.
+      location.replace(deepLink(q.toString()));
+    }
+    var cfg = window.PB_FIREBASE || {};
+    if (!usable(cfg) || !window.firebase) {
+      say('Cloud save not set up yet.');
+      document.getElementById('go').disabled = true;
+      return;
+    }
+    if (!state) {
+      say('Sign-in could not start. Close this tab and try again from the game.');
+      document.getElementById('go').disabled = true;
+      return;
+    }
+    try {
+      if (!firebase.apps.length) firebase.initializeApp(cfg);
+    } catch (e) {
+      say('Cloud library failed to load.');
+      return;
+    }
+    document.getElementById('go').addEventListener('click', function () {
+      say('Opening Google…');
+      var provider = new firebase.auth.GoogleAuthProvider();
+      provider.addScope('openid');
+      provider.addScope('email');
+      provider.addScope('profile');
+      provider.setCustomParameters({ prompt: 'select_account' });
+      firebase.auth().signInWithPopup(provider).then(function (result) {
+        return result.user.getIdToken(true).then(function (idToken) {
+          goBack({ id_token: idToken, state: state, nonce: nonce });
+        });
+      }, function (err) {
+        var code = err && err.code || '';
+        var msg = (err && err.message) || 'Sign-in was cancelled.';
+        if (code === 'auth/popup-blocked') {
+          return firebase.auth().signInWithRedirect(provider);
+        }
+        goBack({ error: msg, state: state });
+      });
+    });
+    firebase.auth().getRedirectResult().then(function (result) {
+      if (!result || !result.user) return;
+      return result.user.getIdToken(true).then(function (idToken) {
+        goBack({ id_token: idToken, state: state, nonce: nonce });
+      });
+    }, function (err) {
+      if (!err) return;
+      goBack({ error: (err && err.message) || 'Sign-in failed.', state: state });
+    });
+  })();
+  </script>
+</body>
+</html>

@@ -343,6 +343,13 @@ try {
     && fs.existsSync(path.join(root, 'js/firebase-config.js'))
     && fs.existsSync(path.join(root, 'lib/firebase-app-compat.js'))
     && fs.existsSync(path.join(root, 'lib/firebase-auth-compat.js')));
+  record('auth-bridge returns Google OAuth tokens via credentialFromResult (not Firebase user JWT)',
+    (function () {
+      var abHtml = fs.readFileSync(path.join(root, 'auth-bridge.html'), 'utf8');
+      return abHtml.includes('credentialFromResult') && abHtml.includes('access_token')
+        && !abHtml.includes('result.user.getIdToken');
+    })());
+
 
   const apk = fs.readFileSync(path.join(root, '.github/workflows/android-debug.yml'), 'utf8');
   const releaseYml = fs.readFileSync(path.join(root, '.github/workflows/android-release.yml'), 'utf8');

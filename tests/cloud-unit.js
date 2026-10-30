@@ -347,7 +347,14 @@ try {
     (function () {
       var abHtml = fs.readFileSync(path.join(root, 'auth-bridge.html'), 'utf8');
       return abHtml.includes('credentialFromResult') && abHtml.includes('access_token')
+        && abHtml.includes("BRIDGE_VERSION = '2'") && abHtml.includes('bv')
         && !abHtml.includes('result.user.getIdToken');
+    })());
+  record('Pages service worker never caches auth-bridge (network-only) and bumps VERSION',
+    (function () {
+      var sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+      return sw.includes('isAuthBridge') && sw.includes('auth-bridge') && sw.includes("cache: 'no-store'")
+        && sw.includes('prismburst-v1.4.2-bridge2') && !/ASSETS[\s\S]*auth-bridge\.html/.test(sw);
     })());
 
 

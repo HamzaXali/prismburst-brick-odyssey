@@ -1,15 +1,17 @@
 # Tests (optional, desktop/CI only, not needed to play)
+
 Headless Chrome tests driven by playwright-core with Pixel 5 touch emulation.
+
 ```
-npm i playwright-core            # in this folder
-python3 -m http.server 8090      # in the project root
-mkdir -p shots && node suite.js  # end-to-end checks -> results.json + screenshots
-node bot.js 0 0,9,19 10          # bot plays world 1 levels 1,10,20 at 10x speed
-node cloud-unit.js               # merge rule, validation, secret scan, schema checks
-node cloud-suite.js              # mocked Supabase in the browser (not a real provider)
-node auth-shop-suite.js          # login popup, forgot/reset password, Facebook off, shop cards (mocked)
-node play-prep-suite.js         # Settings footer, Delete account (in-app + delete-account.html), privacy pages (mocked)
-node delete-unit.js             # delete core, migration 004, footer, pages, store text and graphic sizes (no browser)
+npm i playwright-core
+python3 -m http.server 8090   # optional; suites start their own server
+node cloud-unit.js            # merge rule, Firebase rules, secret scan, Android checks
+node cloud-suite.js           # mocked Firebase Auth + Firestore in the browser
+node auth-shop-suite.js       # login popup, forgot/reset, Facebook off (mocked)
+node play-prep-suite.js       # version footer, delete account, privacy (mocked)
+node delete-unit.js           # delete core + Firebase wording (no browser)
 ```
-`cloud-suite.js` is a test-only mock. It intercepts HTTP with Playwright. The game has no fake auth path.
+
+`cloud-suite.js` injects a test-only mock Firebase SDK. The game has no fake auth path.
+Live Firebase tests are **0 / NOT VERIFIED** until `js/firebase-config.js` has a full web app config.
 Set CHROME_PATH if Chrome is not at /usr/bin/google-chrome.

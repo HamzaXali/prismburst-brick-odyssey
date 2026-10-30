@@ -148,27 +148,17 @@ try {
   record('unknown save fields are not written as HTML', htmlHits.length === 0, htmlHits.join(','));
 
   const cfg = fs.readFileSync(path.join(root, 'config.js'), 'utf8');
+  const fbCfgText = fs.readFileSync(path.join(root, 'js/firebase-config.js'), 'utf8');
   const sandbox = { window: {} };
-  vm.runInNewContext(cfg, sandbox);
+  vm.runInNewContext(fbCfgText + '\n' + cfg, sandbox);
   const shipped = sandbox.window.PB_CONFIG || {};
-  const shippedUrl = String(shipped.supabaseUrl || '');
-  const shippedKey = String(shipped.supabaseAnonKey || '');
-  const urlOk = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(shippedUrl);
-  let anonJwt = false;
-  const keyParts = shippedKey.split('.');
-  if (keyParts.length === 3 && keyParts[0].indexOf('eyJ') === 0) {
-    try {
-      const payload = JSON.parse(Buffer.from(keyParts[1], 'base64url').toString('utf8'));
-      anonJwt = !!(payload && payload.role === 'anon');
-    } catch (e) { anonJwt = false; }
-  }
-  const publishable = shippedKey.indexOf('sb_publishable_') === 0 || anonJwt;
-  const secret = shippedKey.indexOf('sb_secret_') === 0 || shippedKey.indexOf(secrets.FORBIDDEN_WORD) !== -1;
+  const fb = sandbox.window.PB_FIREBASE || {};
   const shippedProviders = shipped.providers || {};
-  record('shipped config is a public Supabase URL and a publishable key',
-    urlOk && publishable && !secret && shippedProviders.google === true && shippedProviders.facebook === false);
+  const stillGuest = ['apiKey','messagingSenderId','appId'].every(k => String(fb[k] || '').indexOf('PLACEHOLDER_') === 0);
+  record('shipped Firebase config has known project fields and remaining placeholders (guest mode) with Google on and Facebook off',
+    stillGuest && fb.projectId === 'prismburst-brick-odyssey' && /firebaseapp\.com$/.test(fb.authDomain) && shippedProviders.google === true && shippedProviders.facebook === false && shippedProviders.email === true);
   record('email and google are enabled and facebook ships off', /email:\s*true/.test(cfg) && /google:\s*true/.test(cfg) && /facebook:\s*false/.test(cfg));
-  record('config.js has no JWT', !/eyJ/.test(cfg));
+  record('config and firebase-config have no JWT or private key', !/eyJ/.test(cfg) && !/eyJ/.test(fbCfgText) && !/private_key/.test(fbCfgText));
 
   const problems = secrets.scanShipped();
   record('shipped files have no secret-role JWT or secret API key', problems.length === 0, problems.join('; '));
@@ -181,30 +171,29 @@ try {
   record('docs are not part of the shipped set', secrets.isShipped('docs/CLOUD-SETUP.md') === false && secrets.isShipped('config.js') === true);
   record('schema.sql is not shipped', secrets.isShipped('supabase/schema.sql') === false);
 
+  const rules = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8');
+  record('firestore rules require auth uid match for saves and profiles',
+    rules.includes('request.auth.uid == uid') && rules.includes('match /saves/{uid}') && rules.includes('match /profiles/{uid}'));
+  record('firestore rules deny public catch-all', /match \/\{document=\*\*\}/.test(rules) && /allow read, write: if false/.test(rules));
+  record('firestore rules validate display_name and save fields',
+    rules.includes('validDisplayName') && rules.includes('validSave') && rules.includes('revision'));
+  record('supabase folder is marked legacy', fs.existsSync(path.join(root, 'supabase/README.md')) && /legacy/i.test(fs.readFileSync(path.join(root, 'supabase/README.md'), 'utf8')));
   const sql = fs.readFileSync(path.join(root, 'supabase/schema.sql'), 'utf8');
-  record('schema enables RLS', /enable row level security/i.test(sql));
-  record('schema restricts rows with (select auth.uid()) = user_id', /\(select auth\.uid\(\)\)\s*=\s*user_id/.test(sql));
-  record('policies are for authenticated only', /to authenticated/.test(sql) && !/for (select|insert|update|delete|all)[\s\S]{0,120}to anon/i.test(sql));
-  record('anon and public are revoked on the table', /revoke all on table public\.player_saves from public, anon/i.test(sql));
-  record('no permissive using (true) policy', !/using\s*\(\s*true\s*\)/i.test(sql));
-  record('functions are security invoker with a locked search_path', /security invoker/i.test(sql) && /set search_path = pg_catalog, public/i.test(sql) && !/security definer/i.test(sql));
-  record('revision conflicts are explicit', /revision_conflict/.test(sql) && /p_expected_revision/.test(sql));
-  record('save size is capped under 64 KB', /65536/.test(sql));
-  record('the database save function does not reject unknown keys', !/unknown field/i.test(sql) && !/jsonb_object_keys/.test(sql));
+  record('legacy schema.sql still mentions RLS for history', /enable row level security/i.test(sql));
 
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const shippedVersion = require('../package.json').version;
   record('service worker cache version matches the semver and precaches the game',
-    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/supabase.min.js') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0') && !sw.includes('prismburst-v1.3.5') && !sw.includes('prismburst-v1.3.2') && !sw.includes('prismburst-v1.3.1') && !sw.includes('prismburst-v1.3.0') && !sw.includes('prismburst-v1.2.0'));
+    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/firebase-app-compat.js') && sw.includes('./lib/firebase-auth-compat.js') && sw.includes('./lib/firebase-firestore-compat.js') && sw.includes('./js/firebase-config.js') && sw.includes('./auth-bridge.html') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.5') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
   record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '" + shippedVersion + "'") && sw.includes('prismburst-v' + shippedVersion));
-  record('service worker keeps Supabase network-only and skips OAuth returns', sw.includes('supabase\\.co') && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
+  record('service worker keeps Firebase/Google APIs network-only and skips OAuth returns', (sw.includes('googleapis') || sw.includes('firebaseio') || sw.includes('identitytoolkit')) && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
 
   const yml = fs.readFileSync(path.join(root, '.github/workflows/pages.yml'), 'utf8');
   record('Pages workflow validates secrets and publishes config and privacy', yml.includes('check-secrets.js') && yml.includes('config.js') && yml.includes('privacy.html') && yml.includes('cloud-unit.js'));
 
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const order = ['lib/phaser.min.js', 'lib/supabase.min.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/build-flags.js', 'js/core.js', 'js/home.js', 'js/achievements.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'game.js'];
+  const order = ['lib/phaser.min.js', 'lib/firebase-app-compat.js', 'lib/firebase-auth-compat.js', 'lib/firebase-firestore-compat.js', 'js/firebase-config.js', 'config.js', 'levels.js', 'js/save-plain.js', 'js/build-flags.js', 'js/core.js', 'js/home.js', 'js/achievements.js', 'js/shop.js', 'js/save-sync.js', 'js/profile.js', 'js/cloud.js', 'js/account.js', 'js/ads.js', 'js/menus.js', 'js/home-ui.js', 'game.js'];
   let pos = -1;
   let orderOk = true;
   for (const file of order) {
@@ -212,14 +201,15 @@ try {
     if (at <= pos) orderOk = false;
     pos = at;
   }
-  record('page loads phaser, supabase, config, then the game scripts', orderOk);
+  record('page loads phaser, firebase, config, then the game scripts', orderOk);
 
-  const lib = fs.readFileSync(path.join(root, 'lib/supabase.min.js'), 'utf8');
-  record('vendored supabase-js is 2.118.0 and exposes createClient', lib.includes('2.118.0') && lib.includes('createClient'));
+  const libApp = fs.readFileSync(path.join(root, 'lib/firebase-app-compat.js'), 'utf8');
+  const libAuth = fs.readFileSync(path.join(root, 'lib/firebase-auth-compat.js'), 'utf8');
+  record('vendored Firebase compat SDK is present', libApp.includes('initializeApp') && libAuth.includes('FirebaseError') && fs.existsSync(path.join(root, 'lib/firebase-firestore-compat.js')));
 
   const cloudSrc = fs.readFileSync(path.join(root, 'js/cloud.js'), 'utf8') + fs.readFileSync(path.join(root, 'js/account.js'), 'utf8');
   record('cloud code does not delete the local save or clear storage', !cloudSrc.includes("removeItem('prismburst.save.v1')") && !cloudSrc.includes('localStorage.clear'));
-  record('cloud code does not ship a mock auth switch', !/PB_MOCK|fakeSupabase|skipBrowserRedirect:\s*true/.test(cloudSrc));
+  record('cloud code does not ship a mock auth switch', !/PB_MOCK|fakeSupabase|fakeFirebase/.test(cloudSrc));
 
   const core = fs.readFileSync(path.join(root, 'js/core.js'), 'utf8');
   const syncSrc = fs.readFileSync(path.join(root, 'js/save-sync.js'), 'utf8');
@@ -253,90 +243,23 @@ try {
   record('a markup name is not stored', profile.writeGuest('<img src=x>').ok === false && profile.guestName() === '星の光');
   delete global.localStorage;
 
-  const migration = fs.readFileSync(path.join(root, 'supabase/migrations/002_profiles.sql'), 'utf8');
-  const profileSql = sql.slice(sql.indexOf('create table if not exists public.profiles'));
-  record('schema.sql contains the profiles migration', profileSql.length > 100 && migration.includes('create table if not exists public.profiles') && profileSql.includes('profiles_guard'));
-  function profilesLocked(text) {
-    return /alter table public\.profiles enable row level security/i.test(text)
-      && /revoke all on table public\.profiles from public, anon/i.test(text)
-      && /grant select, insert on table public\.profiles to authenticated/i.test(text)
-      && /grant update \(display_name\) on table public\.profiles to authenticated/i.test(text)
-      && /(?:\(select\s+auth\.uid\(\)\)|auth\.uid\(\))\s*=\s*id/.test(text)
-      && /for update[\s\S]{0,220}using \((?:\(select auth\.uid\(\)\)|auth\.uid\(\)) = id\)[\s\S]{0,140}with check \((?:\(select auth\.uid\(\)\)|auth\.uid\(\)) = id\)/i.test(text)
-      && /char_length\(display_name\) between 3 and 20/.test(text)
-      && /security invoker/i.test(text)
-      && /set search_path = pg_catalog, public/i.test(text)
-      && !/security definer/i.test(text)
-      && !/using\s*\(\s*true\s*\)/i.test(text)
-      && !/to anon/i.test(text)
-      && !/for delete/i.test(text)
-      && !/grant\s+(select|insert|update|delete|all)[^;]*\bto\s+anon\b/i.test(text)
-      && !/\bto anon\b/i.test(text);
-  }
-  record('profiles RLS allows only the signed-in owner and no anon access', profilesLocked(profileSql) && profilesLocked(migration));
-  function timestampsOwned(text) {
-    return /before insert or update on public\.profiles/i.test(text)
-      && /drop trigger if exists profiles_guard on public\.profiles/i.test(text)
-      && /if tg_op = 'INSERT' then[\s\S]*new\.created_at = pg_catalog\.now\(\);[\s\S]*new\.updated_at = pg_catalog\.now\(\);/.test(text)
-      && /new\.created_at = old\.created_at/.test(text)
-      && /tg_op = 'UPDATE'/.test(text);
-  }
-  record('profiles trigger sets insert and update timestamps', timestampsOwned(profileSql) && timestampsOwned(migration));
-  const guardStart = migration.indexOf('create or replace function public.profiles_guard()');
-  record('schema.sql profiles trigger matches the migration', guardStart > 0 && profileSql.includes(migration.slice(guardStart)));
-  record('the profiles migration does not change player_saves', !/\b(insert into|update|delete from|drop table|alter table)\s+public\.player_saves\b/i.test(migration));
+  const fbSetup = fs.readFileSync(path.join(root, 'docs/FIREBASE-SETUP.md'), 'utf8');
+  record('FIREBASE-SETUP documents Spark, Email/Password, Google, authorized domains, and rules paste',
+    /Spark/i.test(fbSetup) && /Email\/Password/i.test(fbSetup) && /Authorized domains/i.test(fbSetup)
+    && fbSetup.includes('hamzaxali.github.io') && fbSetup.includes('firestore.rules')
+    && fbSetup.includes('apiKey') && fbSetup.includes('PLACEHOLDER_'));
+  const fbCfg = fs.readFileSync(path.join(root, 'js/firebase-config.js'), 'utf8');
+  record('firebase-config.js ships PLACEHOLDER_ public fields only',
+    fbCfg.includes("apiKey: 'PLACEHOLDER_API_KEY'") && fbCfg.includes("projectId: 'prismburst-brick-odyssey'") && fbCfg.includes('prismburst-brick-odyssey.firebaseapp.com') && fbCfg.includes('PLACEHOLDER_APP_ID')
+    && !/BEGIN [A-Z ]*PRIVATE KEY/.test(fbCfg) && !/service_account/.test(fbCfg));
+  const authBridge = fs.readFileSync(path.join(root, 'auth-bridge.html'), 'utf8');
+  record('auth-bridge hosts Google popup/redirect and deep-links id_token with state',
+    authBridge.includes('signInWithPopup') && authBridge.includes('com.prismburst.brickodyssey://auth')
+    && authBridge.includes('id_token') && authBridge.includes('state') && authBridge.indexOf('console.log') === -1);
 
-  const initplan = fs.readFileSync(path.join(root, 'supabase/migrations/003_rls_initplan.sql'), 'utf8');
-  function parsePolicies(text) {
-    const out = [];
-    const re = /create policy\s+([a-z0-9_]+)\s+on\s+(public\.[a-z0-9_]+)\s+for\s+(select|insert|update|delete)\s+to\s+([a-z0-9_]+)\s+([\s\S]*?);/gi;
-    let match;
-    while ((match = re.exec(text))) {
-      out.push([
-        match[1],
-        match[2],
-        match[3].toLowerCase(),
-        match[4].toLowerCase(),
-        match[5].replace(/\s+/g, ' ').trim().toLowerCase()
-      ]);
-    }
-    return out;
-  }
-  const initplanPolicies = parsePolicies(initplan);
-  const schemaPolicies = parsePolicies(sql);
-  const expectedPolicies = [
-    ['player_saves_select_own', 'public.player_saves', 'select', 'authenticated', 'using ((select auth.uid()) = user_id)'],
-    ['player_saves_insert_own', 'public.player_saves', 'insert', 'authenticated', 'with check ((select auth.uid()) = user_id)'],
-    ['player_saves_update_own', 'public.player_saves', 'update', 'authenticated', 'using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id)'],
-    ['player_saves_delete_own', 'public.player_saves', 'delete', 'authenticated', 'using ((select auth.uid()) = user_id)'],
-    ['profiles_select_own', 'public.profiles', 'select', 'authenticated', 'using ((select auth.uid()) = id)'],
-    ['profiles_insert_own', 'public.profiles', 'insert', 'authenticated', 'with check ((select auth.uid()) = id)'],
-    ['profiles_update_own', 'public.profiles', 'update', 'authenticated', 'using ((select auth.uid()) = id) with check ((select auth.uid()) = id)']
-  ];
-  const initplanBare = initplan.replace(/\(select\s+auth\.(?:uid|jwt|role)\(\)\)/gi, '');
-  record('initplan policies are the seven owner checks', eq(initplanPolicies, expectedPolicies));
-  record('schema.sql policies match the initplan migration', eq(schemaPolicies, initplanPolicies));
-  record('every initplan policy uses (select auth.uid())',
-    initplanPolicies.length === 7
-    && initplanPolicies.every(function (policy) { return policy[4].indexOf('(select auth.uid())') !== -1; })
-    && initplanPolicies.reduce(function (count, policy) {
-      return count + (policy[4].match(/\(select auth\.uid\(\)\)/g) || []).length;
-    }, 0) === 9);
-  record('initplan migration has no bare auth.uid()',
-    !/auth\.uid\(\)/i.test(initplanBare) && !/auth\.jwt\(\)/i.test(initplanBare) && !/auth\.role\(\)/i.test(initplanBare));
-  record('initplan migration does not disable row level security',
-    !/disable row level security/i.test(initplan)
-    && !/disable row level security/i.test(sql)
-    && !/using\s*\(\s*true\s*\)/i.test(initplan)
-    && (sql.match(/enable row level security/gi) || []).length === 2
-    && /\bbegin\s*;/i.test(initplan)
-    && /\bcommit\s*;/i.test(initplan)
-    && initplan.toLowerCase().indexOf('begin;') < initplan.toLowerCase().indexOf('create policy')
-    && initplan.toLowerCase().lastIndexOf('create policy') < initplan.toLowerCase().lastIndexOf('commit;'));
-
-  const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.')).sort();
+    const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.')).sort();
   record('Pages, the debug APK, and the release workflow are the only workflows', workflows.join(',') === 'android-debug.yml,android-release.yml,pages.yml');
-  record('Pages deploy still publishes only the game files', yml.includes('no tests/, scripts/') && yml.includes('cp -r index.html') && !/\btests\//.test(yml.split('cp -r')[1] || '') && !yml.includes('android-debug'));
+  record('Pages deploy still publishes only the game files', yml.includes('no tests/, scripts/') && yml.includes('cp -r index.html') && yml.includes('auth-bridge.html') && !/\btests\//.test(yml.split('cp -r')[1] || '') && !yml.includes('android-debug'));
   const apk = fs.readFileSync(path.join(root, '.github/workflows/android-debug.yml'), 'utf8');
   const releaseYml = fs.readFileSync(path.join(root, '.github/workflows/android-release.yml'), 'utf8');
   record('debug APK workflow validates, syncs, and uploads the debug artifact',
@@ -429,7 +352,7 @@ try {
     emptyFailed);
   fs.rmSync(decodedPath, { force: true });
   record('release version, R8, and signing env come from package.json without printing secrets',
-    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 7 &&
+    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 8 &&
     appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&
     appGradle.includes('debuggable false') &&
     appGradle.includes('minifyEnabled true') &&
@@ -444,26 +367,35 @@ try {
     /compileSdkVersion = 36/.test(variables) && /targetSdkVersion = 36/.test(variables) && /minSdkVersion = 24/.test(variables));
   const banned = ['tests', 'scripts', 'supabase', 'docs', 'node_modules', '.github'];
   record('Capacitor web copy is the shipped game only',
-    copyWeb.INCLUDE_FILES.indexOf('index.html') >= 0 && copyWeb.INCLUDE_FILES.indexOf('config.js') >= 0 && copyWeb.INCLUDE_FILES.indexOf('privacy.html') >= 0 && copyWeb.INCLUDE_DIRS.indexOf('js') >= 0 && copyWeb.INCLUDE_DIRS.indexOf('lib') >= 0 && copyWeb.INCLUDE_DIRS.indexOf('icons') >= 0 && banned.every(name => copyWeb.INCLUDE_FILES.indexOf(name) < 0 && copyWeb.INCLUDE_DIRS.indexOf(name) < 0));
+    copyWeb.INCLUDE_FILES.indexOf('index.html') >= 0 && copyWeb.INCLUDE_FILES.indexOf('config.js') >= 0 && copyWeb.INCLUDE_FILES.indexOf('auth-bridge.html') >= 0 && copyWeb.INCLUDE_FILES.indexOf('privacy.html') >= 0 && copyWeb.INCLUDE_DIRS.indexOf('js') >= 0 && copyWeb.INCLUDE_DIRS.indexOf('lib') >= 0 && copyWeb.INCLUDE_DIRS.indexOf('icons') >= 0 && banned.every(name => copyWeb.INCLUDE_FILES.indexOf(name) < 0 && copyWeb.INCLUDE_DIRS.indexOf(name) < 0));
   const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'pb-www-'));
   copyWeb.copyWeb(dest);
   record('copied web dir has the game and omits repo-only folders',
-    fs.existsSync(path.join(dest, 'index.html')) && fs.existsSync(path.join(dest, 'js/cloud.js')) && fs.existsSync(path.join(dest, 'js/home.js')) && fs.existsSync(path.join(dest, 'js/home-ui.js')) && fs.existsSync(path.join(dest, 'lib/supabase.min.js')) && banned.every(name => !fs.existsSync(path.join(dest, name))));
+    fs.existsSync(path.join(dest, 'index.html')) && fs.existsSync(path.join(dest, 'js/cloud.js')) && fs.existsSync(path.join(dest, 'js/home.js')) && fs.existsSync(path.join(dest, 'js/home-ui.js')) && fs.existsSync(path.join(dest, 'lib/firebase-app-compat.js')) && fs.existsSync(path.join(dest, 'js/firebase-config.js')) && fs.existsSync(path.join(dest, 'auth-bridge.html')) && banned.every(name => !fs.existsSync(path.join(dest, name))));
   fs.rmSync(dest, { recursive: true, force: true });
   record('service worker registration is skipped when Capacitor is present',
     html.includes('isNativePlatform') && html.includes("navigator.serviceWorker.register('sw.js')") &&
     html.includes('unregister') && html.includes('caches.delete'));
   const cloudJs = fs.readFileSync(path.join(root, 'js/cloud.js'), 'utf8');
-  record('native Google sign-in uses the app scheme and the web sign-in stays on the page',
-    cloudJs.includes("var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth'") && cloudJs.includes('skipBrowserRedirect: native') && cloudJs.includes('exchangeCodeForSession') && cloudJs.includes('isNativePlatform') && cloudJs.includes('native ? NATIVE_AUTH_URL : pageUrl()'));
+  record('native Google sign-in uses auth-bridge + deep link credential (no WebView OAuth)',
+    cloudJs.includes("var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth'") &&
+    cloudJs.includes('auth-bridge.html') && cloudJs.includes('signInWithCredential') &&
+    cloudJs.includes('GoogleAuthProvider.credential') && cloudJs.includes('isNativePlatform') &&
+    cloudJs.includes('signInWithPopup'));
   record('native plugins prefer Capacitor.Plugins then registerPlugin, with openExternalUrl fallback',
     cloudJs.includes('window.Capacitor.Plugins') && cloudJs.includes('function openExternalUrl') &&
-    cloudJs.includes("window.open(url, '_system')") && cloudJs.includes("return openExternalUrl(url)") &&
+    cloudJs.includes("window.open(url, '_system')") && cloudJs.includes('openExternalUrl(bridge)') &&
     cloudJs.indexOf('bag[name]') < cloudJs.indexOf('registerPlugin(name)'));
   record('native open uses OpenUrl Intent fallback and diagnostic step codes',
     cloudJs.includes("nativePlugin('OpenUrl')") && cloudJs.includes('browserDiag') &&
-    cloudJs.includes("APP_VERSION = '1.4.5'") && cloudJs.includes('purgeNativeServiceWorker') &&
+    cloudJs.includes("APP_VERSION = '1.5.0'") && cloudJs.includes('purgeNativeServiceWorker') &&
     !cloudJs.includes('The system browser is unavailable'));
+  record('nonce/state is checked on deep-link return and tokens are never logged',
+    cloudJs.includes('readBridgeState') && cloudJs.includes('parsed.state !== expected.state') &&
+    cloudJs.includes('Never log or display tokens') && !/console\.(log|debug|info)\([^)]*idToken/.test(cloudJs));
+  record('network retries use capped exponential backoff',
+    cloudJs.includes('function backoffDelay') && cloudJs.includes('withBackoff') &&
+    cloudJs.includes('MAX_BACKOFF_MS') && cloudJs.includes('Cloud._test'));
   record('MainActivity registers OpenUrlPlugin before the bridge starts',
     fs.readFileSync(path.join(root, 'android/app/src/main/java/com/prismburst/brickodyssey/MainActivity.java'), 'utf8').includes('registerPlugin(OpenUrlPlugin.class)') &&
     fs.existsSync(path.join(root, 'android/app/src/main/java/com/prismburst/brickodyssey/OpenUrlPlugin.java')));
@@ -496,18 +428,19 @@ try {
     fs.readFileSync(path.join(root, 'js/account.js'), 'utf8').includes("ver.textContent = 'v' + (PB.VERSION || '')") &&
     fs.readFileSync(path.join(root, 'js/account.js'), 'utf8').includes("outcome === 'exists'") &&
     fs.readFileSync(path.join(root, 'js/account.js'), 'utf8').includes('resendConfirmEmail'));
-  record('signUp treats empty identities as an existing account and never uses innerHTML for the notice',
+  record('signUp maps email-already-in-use to exists and never uses innerHTML for the notice',
     cloudJs.includes("lastSignupOutcome = 'exists'") &&
     cloudJs.includes('This email already has an account. Log in or use Forgot password.') &&
     cloudJs.includes('spam/junk folder') &&
-    cloudJs.includes("resend({") &&
-    cloudJs.includes("type: 'signup'") &&
+    cloudJs.includes('sendEmailVerification') &&
+    cloudJs.includes('resendConfirmEmail') &&
     cloudJs.includes('confirmWaitMs') &&
-    cloudJs.includes('email_address_not_authorized') &&
-    cloudJs.includes('over_email_send_rate_limit') &&
-    cloudJs.includes('Email sending is limited right now') &&
+    cloudJs.includes('auth/email-already-in-use') &&
+    cloudJs.includes('auth/too-many-requests') &&
+    cloudJs.includes('auth/wrong-password') &&
+    cloudJs.includes('Cloud save not set up yet') &&
     !/innerHTML\s*=/.test(cloudJs));
-  // Runtime check of the friendly auth/email error mapper without loading supabase.
+  // Runtime check of the friendly auth error mapper without loading Firebase.
   const feStart = cloudJs.indexOf('function friendlyError(err)');
   if (feStart < 0) throw new Error('friendlyError missing');
   let feEnd = feStart, depth = 0, started = false;
@@ -517,12 +450,65 @@ try {
     else if (ch === '}') { depth--; if (started && depth === 0) { feEnd++; break; } }
   }
   const friendlyError = vm.runInNewContext(cloudJs.slice(feStart, feEnd) + '; friendlyError');
-  record('friendlyError covers unauthorized email and send rate limits without leaking codes',
-    friendlyError({ message: 'email_address_not_authorized' }).indexOf('not available') >= 0 &&
-    friendlyError({ message: 'over_email_send_rate_limit' }).indexOf('limited right now') >= 0 &&
-    friendlyError({ message: 'Email rate limit exceeded' }).indexOf('limited right now') >= 0 &&
-    friendlyError({ message: 'email_address_not_authorized' }).indexOf('email_address_not_authorized') === -1 &&
-    friendlyError({ message: 'over_email_send_rate_limit' }).indexOf('over_email_send_rate_limit') === -1);
+  record('friendlyError covers Firebase auth codes without leaking raw codes',
+    friendlyError({ code: 'auth/email-already-in-use' }).indexOf('already has an account') >= 0 &&
+    friendlyError({ code: 'auth/wrong-password' }).indexOf('incorrect') >= 0 &&
+    friendlyError({ code: 'auth/too-many-requests' }).indexOf('Too many tries') >= 0 &&
+    friendlyError({ code: 'auth/network-request-failed' }).indexOf('offline') >= 0 &&
+    friendlyError({ code: 'auth/email-already-in-use' }).indexOf('auth/email-already-in-use') === -1);
+
+  function extractFn(src, name) {
+    const start = src.indexOf('function ' + name);
+    if (start < 0) throw new Error('missing ' + name);
+    let end = start, depth = 0, started = false;
+    for (; end < src.length; end++) {
+      const ch = src[end];
+      if (ch === '{') { depth++; started = true; }
+      else if (ch === '}') { depth--; if (started && depth === 0) { end++; break; } }
+    }
+    return src.slice(start, end);
+  }
+  const helpers = vm.runInNewContext(
+    extractFn(cloudJs, 'isPlaceholder') + ';' +
+    extractFn(cloudJs, 'looksLikeServiceAccount') + ';' +
+    extractFn(cloudJs, 'usableFirebase') + ';' +
+    '({ usableFirebase: usableFirebase, isPlaceholder: isPlaceholder, looksLikeServiceAccount: looksLikeServiceAccount })'
+  );
+  record('placeholder Firebase config is not usable',
+    helpers.isPlaceholder('PLACEHOLDER_API_KEY') === true &&
+    helpers.usableFirebase({
+      apiKey: 'PLACEHOLDER_API_KEY', authDomain: 'PLACEHOLDER_AUTH_DOMAIN', projectId: 'PLACEHOLDER_PROJECT_ID',
+      storageBucket: 'PLACEHOLDER_STORAGE_BUCKET', messagingSenderId: 'PLACEHOLDER_MESSAGING_SENDER_ID', appId: 'PLACEHOLDER_APP_ID'
+    }) === false);
+  record('filled Firebase web config is usable and service accounts are rejected',
+    helpers.usableFirebase({
+      apiKey: 'AIzaSyTestOnlyNotReal000', authDomain: 'demo.firebaseapp.com', projectId: 'demo',
+      storageBucket: 'demo.appspot.com', messagingSenderId: '123', appId: '1:123:web:abc'
+    }) === true &&
+    helpers.looksLikeServiceAccount({ type: 'service_account', private_key: 'x' }) === true);
+
+  const bdStart = cloudJs.indexOf('function backoffDelay(attempt)');
+  let bdEnd = bdStart, d2 = 0, st2 = false;
+  for (; bdEnd < cloudJs.length; bdEnd++) {
+    const ch = cloudJs[bdEnd];
+    if (ch === '{') { d2++; st2 = true; }
+    else if (ch === '}') { d2--; if (st2 && d2 === 0) { bdEnd++; break; } }
+  }
+  const backoffDelay = vm.runInNewContext('var MAX_BACKOFF_MS = 8000; ' + cloudJs.slice(bdStart, bdEnd) + '; backoffDelay');
+  record('backoff delay doubles and caps',
+    backoffDelay(1) === 250 && backoffDelay(2) === 500 && backoffDelay(3) === 1000 && backoffDelay(10) === 8000);
+
+  const parseStart = cloudJs.indexOf('function parseNativeAuthUrl(raw)');
+  let parseEnd = parseStart, d3 = 0, st3 = false;
+  for (; parseEnd < cloudJs.length; parseEnd++) {
+    const ch = cloudJs[parseEnd];
+    if (ch === '{') { d3++; st3 = true; }
+    else if (ch === '}') { d3--; if (st3 && d3 === 0) { parseEnd++; break; } }
+  }
+  const parseNativeAuthUrl = vm.runInNewContext(cloudJs.slice(parseStart, parseEnd) + '; parseNativeAuthUrl', { URL: URL, URLSearchParams: URLSearchParams });
+  const deep = parseNativeAuthUrl('com.prismburst.brickodyssey://auth#id_token=abc&state=xyz');
+  record('deep-link parser extracts id_token and state without other schemes',
+    deep && deep.idToken === 'abc' && deep.state === 'xyz' && parseNativeAuthUrl('https://evil.example/#id_token=x') === null);
 
     record('the Google button is an inline SVG and is not fetched',
     html.includes('data-action="google"') && html.includes('<svg') && html.includes('#4285') === false && html.includes('#FFC107') && html.includes('Continue with Google') && !/googleusercontent|gstatic\.com|logo\.svg/.test(html));

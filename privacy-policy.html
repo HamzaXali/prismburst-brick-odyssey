@@ -35,7 +35,7 @@
   </ul>
 
   <h2>Who is responsible</h2>
-  <p>The game is made by the developer behind the GitHub account <code>HamzaXali</code> (repository <code>HamzaXali/prismburst-brick-odyssey</code>). Cloud accounts are stored in the developer's Supabase project.</p>
+  <p>The game is made by the developer behind the GitHub account <code>HamzaXali</code> (repository <code>HamzaXali/prismburst-brick-odyssey</code>). Cloud accounts are stored in the developer's Firebase project (Google).</p>
   <p id="contact">Contact: <a href="mailto:hamzaxali44@gmail.com">hamzaxali44@gmail.com</a>, or open an issue at <a href="https://github.com/HamzaXali/prismburst-brick-odyssey/issues" rel="noopener">github.com/HamzaXali/prismburst-brick-odyssey/issues</a>. Do not post passwords or personal details in a public issue.</p>
 
   <h2>Data collected</h2>
@@ -43,22 +43,22 @@
     <tr><th>Data</th><th>When</th><th>Why</th><th>Where</th></tr>
     <tr><td>Game progress (levels, stars, scores, coins, owned and equipped skins, settings, daily rewards, missions, achievements, stats)</td><td>Always</td><td>So the game remembers your progress</td><td>On your device only, under <code>prismburst.save.v1</code></td></tr>
     <tr><td>Guest display name (for example PrismPlayer1234)</td><td>Always</td><td>Shown in the game</td><td>On your device only</td></tr>
-    <tr><td>Email address and sign-in provider (email or Google) with the provider's account id</td><td>Only if you sign in</td><td>To create and sign in to your account (Supabase Auth)</td><td>Developer's Supabase project</td></tr>
-    <tr><td>Password (email sign-in)</td><td>Only if you use email sign-in</td><td>Sign-in. Stored hashed by Supabase Auth; the developer cannot read it</td><td>Developer's Supabase project</td></tr>
-    <tr><td>Display name you choose</td><td>Only if you sign in and save a name</td><td>Shown in the game. Your email is never used as the name</td><td>Developer's Supabase project</td></tr>
-    <tr><td>Cloud copy of the game save and the time it last changed</td><td>Only while signed in</td><td>Cloud save and sync between devices</td><td>Developer's Supabase project</td></tr>
+    <tr><td>Email address and sign-in provider (email or Google) with the provider's account id</td><td>Only if you sign in</td><td>To create and sign in to your account (Firebase Authentication)</td><td>Developer's Firebase project</td></tr>
+    <tr><td>Password (email sign-in)</td><td>Only if you use email sign-in</td><td>Sign-in. Stored hashed by Firebase Authentication; the developer cannot read it</td><td>Developer's Firebase project</td></tr>
+    <tr><td>Display name you choose</td><td>Only if you sign in and save a name</td><td>Shown in the game. Your email is never used as the name</td><td>Developer's Firebase project</td></tr>
+    <tr><td>Cloud copy of the game save and the time it last changed</td><td>Only while signed in</td><td>Cloud save and sync between devices</td><td>Developer's Firebase project</td></tr>
   </table>
   <p>The game does not ask for contacts, location, photos, camera, microphone or device identifiers for advertising. The Android app only uses the Internet permission. The game has no analytics or crash-reporting SDK and no third-party advertising SDK.</p>
-  <p>Supabase (the hosting provider) processes sign-in requests and may keep standard server logs such as IP addresses for security, under its own policy. GitHub Pages, which serves the web game, may also keep standard access logs. Google sign-in is handled by Google under Google's policy.</p>
+  <p>Google Firebase processes sign-in and cloud-save requests and may keep standard server logs such as IP addresses for security, under Google's / Firebase's own policy. GitHub Pages, which serves the web game, may also keep standard access logs. Google sign-in is handled by Google under Google's policy.</p>
 
   <h2>How data is protected</h2>
-  <p>Data is sent over HTTPS. The game only contains Supabase's publishable key. Row level security lets each signed-in player read and change only their own row. Secret keys are never shipped in the app.</p>
+  <p>Data is sent over HTTPS. The game only contains Firebase's public web config (apiKey and related client ids). Firestore security rules let each signed-in player read and change only their own documents. Secret keys are never shipped in the app.</p>
 
   <h2>Sharing</h2>
   <p>Data is not sold or shared with third parties for advertising or any other purpose. It is processed only by the service providers named above to run the game.</p>
 
   <h2>Retention</h2>
-  <p>Device data stays until you use Settings → Reset progress, clear the app or site data, or uninstall the app. Account data (email, provider id, display name, cloud save) stays until you delete the account. Deletion removes it from the live database straight away. Routine backups held by Supabase, if any, are overwritten on their normal schedule and are not used to restore deleted accounts.</p>
+  <p>Device data stays until you use Settings → Reset progress, clear the app or site data, or uninstall the app. Account data (email, provider id, display name, cloud save) stays until you delete the account. Deletion removes it from the live database straight away. Routine backups held by Google Firebase, if any, are overwritten on their normal schedule and are not used to restore deleted accounts.</p>
 
   <h2 id="deletion">How to delete your data</h2>
   <ul>

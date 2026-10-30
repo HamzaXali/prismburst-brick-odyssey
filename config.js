@@ -1,17 +1,13 @@
 /*
- * PRISMBURST cloud config.
- * Only the Supabase project URL and the publishable (anon) key belong here.
- * Never put the dashboard secret key in this file or anywhere else in the repo.
- * Leave the strings empty to keep the game fully offline.
+ * PRISMBURST cloud config (provider switches only).
+ * Firebase project values live in js/firebase-config.js.
+ * Never put a service-account JSON, private key, or Admin SDK credential here.
  *
- * A provider button is active only when its flag below is true AND both
- * strings are filled in. Google and Facebook ship off; turn them on only
- * after that provider's OAuth client is saved in the Supabase dashboard.
- * Email is allowed here, but the button stays off until the URL and key exist.
+ * A provider button is active only when its flag below is true AND
+ * js/firebase-config.js has real (non-PLACEHOLDER_) values.
+ * Facebook stays off until you explicitly enable it after OAuth setup.
  */
 window.PB_CONFIG = {
-  supabaseUrl: 'https://qogqnutpqzatxnbhcznc.supabase.co',
-  supabaseAnonKey: 'sb_publishable_GXcDg41LoH39qGsu_zY9Zw_0I_elhPq',
   providers: {
     email: true,
     google: true,

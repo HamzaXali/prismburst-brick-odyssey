@@ -4,11 +4,11 @@
  * pushed to GitHub appears on the next launch. Paths are relative to this file,
  * so it works under a GitHub Pages sub-path (https://<user>.github.io/<repo>/).
  * Bump VERSION to force-drop old caches. */
-var VERSION = 'prismburst-v1.4.5';
+var VERSION = 'prismburst-v1.5.0';
 var ASSETS = [
   './', './index.html', './style.css', './levels.js', './game.js', './config.js', './privacy.html', './privacy-policy.html', './delete-account.html',
   './js/save-plain.js', './js/build-flags.js', './js/core.js', './js/home.js', './js/achievements.js', './js/shop.js', './js/ads.js', './js/home-ui.js', './js/menus.js', './js/save-sync.js', './js/profile.js', './js/delete-core.js', './js/delete-page.js', './js/cloud.js', './js/account.js',
-  './lib/phaser.min.js', './lib/supabase.min.js', './manifest.webmanifest',
+  './lib/phaser.min.js', './lib/firebase-app-compat.js', './lib/firebase-auth-compat.js', './lib/firebase-firestore-compat.js', './js/firebase-config.js', './config.js', './auth-bridge.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'
 ];
 self.addEventListener('install', function (e) {
@@ -20,7 +20,7 @@ self.addEventListener('activate', function (e) {
   }).then(function () { return self.clients.claim(); }));
 });
 function isSupabaseHost(hostname) {
-  return /(^|\.)supabase\.co$/i.test(hostname) || /(^|\.)supabase\.in$/i.test(hostname);
+  return /(^|\.)googleapis\.com$/i.test(hostname) || /(^|\.)firebaseio\.com$/i.test(hostname) || /(^|\.)firebaseapp\.com$/i.test(hostname) || /(^|\.)cloudfunctions\.net$/i.test(hostname) || hostname === 'firestore.googleapis.com' || hostname === 'identitytoolkit.googleapis.com' || hostname === 'securetoken.googleapis.com';
 }
 function isAuthReturn(url) {
   var q = url.search || '';

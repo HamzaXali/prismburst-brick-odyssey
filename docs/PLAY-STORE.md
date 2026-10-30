@@ -1,4 +1,4 @@
-# Google Play Store prep (1.4.4)
+# Google Play Store prep (1.5.0)
 
 This is the checklist and copy for publishing PRISMBURST — Brick Odyssey on Google Play, written for someone who only has an Android phone. Anything marked **NOT VERIFIED** has not been checked against the live Play Console or on a real phone.
 
@@ -17,10 +17,8 @@ These pages go live only after this PR is merged and the Pages workflow finishes
 ## 0. Before anything: the three things only you can do
 
 1. **Contact email in the privacy policy.** Done: `privacy-policy.html` lists the developer's public contact email (added by Ali on 27 Oct 2026).
-2. **Apply migration 004.** Dost applies `supabase/migrations/004_delete_my_account.sql` in the Supabase SQL editor after review. Until then the Delete account button shows "Account deletion is not switched on in the cloud yet. Nothing was deleted."
-3. **Supabase redirect URLs.** Supabase → Authentication → URL Configuration → Redirect URLs must contain both:
-   - `https://hamzaxali.github.io/prismburst-brick-odyssey/**` (also covers `delete-account.html` Google sign-in)
-   - `com.prismburst.brickodyssey://**`
+2. **Firebase project on Spark.** Ali creates the Firebase project and pastes the public web config into `js/firebase-config.js` (see `docs/FIREBASE-SETUP.md`). Until then the game stays in guest mode ("Cloud save not set up yet").
+3. **Firebase authorized domains + Google provider.** Authentication → Authorized domains must include `hamzaxali.github.io` and `localhost`. Enable Email/Password and Google; keep Facebook off. Deep link for the Android app: `com.prismburst.brickodyssey://auth`.
 
 ---
 
@@ -61,9 +59,9 @@ Answer based on what 1.4.4 actually does:
 | Question | Answer |
 | --- | --- |
 | Does your app collect or share any of the required user data types? | **Yes** (only when the player signs in) |
-| Is all user data encrypted in transit? | **Yes** (HTTPS to Supabase) |
+| Is all user data encrypted in transit? | **Yes** (HTTPS to Google Firebase) |
 | Do you provide a way for users to request that their data is deleted? | **Yes** — in-app (Settings → Delete account) and the delete account URL above |
-| Data shared with third parties | **None** (Supabase is a service provider processing on your behalf, which Google does not count as sharing) |
+| Data shared with third parties | **None** (Firebase/Google is a service provider processing on your behalf; declare it under "data processors" / SDK as required by Play) |
 
 Data types to declare as **collected** (not shared):
 
@@ -71,7 +69,7 @@ Data types to declare as **collected** (not shared):
 | --- | --- | --- | --- |
 | Personal info → **Email address** | Yes | Optional (only if signing in) | Account management |
 | Personal info → **Name** (display name the player chooses) | Yes | Optional | App functionality, Account management |
-| Personal info → **User IDs** (Supabase account id) | Yes | Optional | Account management, App functionality |
+| Personal info → **User IDs** (Firebase Auth uid) | Yes | Optional | Account management, App functionality |
 | App activity → **Other user-generated content** or **In-app actions** (the game save: levels, stars, coins, skins) | Yes | Optional | App functionality (cloud save) |
 
 Not collected: location, contacts, photos, files, audio, messages, financial info, health, web browsing, device or other IDs, crash logs, diagnostics, advertising ID. No analytics SDK, no crash SDK, no ad SDK.
@@ -206,7 +204,7 @@ Use **Chrome on the phone**. Play Console is a website; there is also a **Google
 | Store text lengths (name 25, short 76, full under 4000, notes under 500 characters) | Checked by `tests/delete-unit.js` |
 | Graphic sizes | Checked with a PNG header read |
 | In-app and web account deletion (mocked server) | Tested with Playwright mocks |
-| `delete_my_account()` on the real Supabase project | **NOT VERIFIED** (migration not yet applied) |
+| Account deletion on the real Firebase project | **NOT VERIFIED** (no Firebase project yet) |
 | Signed release AAB with your secrets | **NOT VERIFIED** (secrets not added yet) |
 | Content rating, Data safety acceptance, review outcome | **NOT VERIFIED** |
 | Play Console uploads from mobile Chrome | **NOT VERIFIED** |

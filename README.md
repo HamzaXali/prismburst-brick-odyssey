@@ -1,7 +1,7 @@
 # PRISMBURST — Brick Odyssey
 
 A mobile-first neon-crystal brick-breaker that runs in any modern Android browser.
-It's a plain static site: no build step and no paid APIs. Guest play has no account and no tracking. Optional cloud save uses a free Supabase project when `config.js` is filled in.
+It's a plain static site: no build step and no paid APIs. Guest play has no account and no tracking. Optional cloud save uses a free Firebase (Spark) project when `js/firebase-config.js` is filled in.
 It's built to be hosted free on **GitHub Pages**. A Capacitor Android project builds a debug APK from the same files. See [docs/ANDROID.md](docs/ANDROID.md).
 
 - **5 themed worlds × 20 levels** (Prism Nebula, Crystal Caverns, Neon Reef, Solar Forge, Void Citadel)
@@ -27,7 +27,8 @@ index.html             page shell, viewport/zoom guards, service-worker registra
 style.css              full-screen, no-scroll, no-zoom mobile styles
 levels.js              world data, hand-made level templates + deterministic generator
 game.js                gameplay scene (physics, power-ups, scoring), Phaser config, test hook
-config.js              public Supabase URL, publishable key, and provider switches (empty = offline)
+config.js              provider switches (email / Google / Facebook)
+js/firebase-config.js  public Firebase web config (PLACEHOLDER_ = offline guest mode)
 privacy-policy.html    privacy policy (no ad SDK, no analytics; account data only if you sign in)
 privacy.html           old address, forwards to privacy-policy.html
 delete-account.html    public account deletion page (Google Play requirement)
@@ -36,14 +37,16 @@ js/core.js             save system, WebAudio synth, haptics, procedural textures
 js/home.js             daily bonus, lucky wheel, and daily tasks (save.home)
 js/home-ui.js          home bar, shortcuts, and the startup popup queue
 js/save-sync.js        cloud merge and validation (no network)
-js/cloud.js            Supabase auth and sync (real client only; no-op when config is empty)
+js/cloud.js            Firebase Auth + Firestore sync (real client only; no-op when config is placeholder)
 js/account.js          account sheet (guest, Google, Facebook, email)
 js/menus.js            boot, menu, world/level select, settings, rewards, pause/complete/game-over
-sw.js                  offline cache; Supabase calls are network-only
+sw.js                  offline cache; Firebase / Google API calls are network-only
 manifest.webmanifest   installable PWA manifest (portrait, fullscreen)
 lib/phaser.min.js      Phaser 3.90.0, vendored (MIT, see lib/PHASER-LICENSE.md)
-lib/supabase.min.js    @supabase/supabase-js 2.118.0 UMD, vendored (MIT, see lib/SUPABASE-LICENSE.md)
-supabase/schema.sql    SQL to paste into the Supabase SQL editor (not deployed)
+lib/firebase-*-compat.js  Firebase JS 10.14.1 compat, vendored (Apache-2.0)
+auth-bridge.html       Native Google sign-in bridge for Capacitor Android
+firestore.rules        Owner-only Firestore security rules
+supabase/              LEGACY Supabase SQL (unused by the live client)
 icons/                 original launcher icons (192, 512, maskable 512, 1024)
 scripts/validate-levels.js   checks all 100 levels (reachability, objectives, duplicates)
 scripts/make-icons.py        regenerates the icons (Python + Pillow)
@@ -55,7 +58,8 @@ scripts/check-secrets.js     fails if a shipped file contains a secret-role JWT 
 android/                Capacitor Android project
 docs/PLAY-RELEASE.md         phone steps for the Play upload key and the release workflow
 docs/MOBILE-TESTING.md       Android phone test checklist
-docs/CLOUD-SETUP.md          Supabase, Google, and Facebook setup for a phone browser
+docs/FIREBASE-SETUP.md       Firebase Spark setup for a phone browser
+docs/CLOUD-SETUP.md          Cloud save overview (points at Firebase)
 tests/                 optional headless-browser tests (not needed to play or host)
 ```
 
@@ -77,7 +81,7 @@ but browsers only enable the service worker over http(s).
 Put these files at the root of a public repository named `prismburst-brick-odyssey`, then go to
 **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 `.github/workflows/pages.yml` validates the levels, file paths, secret scan, and cloud merge tests, then deploys only the game files
-(no `tests/`, `scripts/`, `docs/`, `supabase/` or `.github/`) on every push to `main`. You can also run it by hand
+(no `tests/`, `scripts/`, `docs/`, `supabase/`, `firestore.rules` source-only paths, or `.github/`) on every push to `main`. You can also run it by hand
 from the Actions tab. `config.js`, `privacy-policy.html`, `privacy.html` and `delete-account.html` are deployed. The database script is not.
 The game will be at `https://<your-username>.github.io/prismburst-brick-odyssey/`.
 All paths are relative, so any repository name works.
@@ -85,11 +89,11 @@ All paths are relative, so any repository name works.
 Phone test checklist: [docs/MOBILE-TESTING.md](docs/MOBILE-TESTING.md).
 
 ## Accounts and privacy
-With the empty `config.js` in this repo, the game does not sign anyone in and does not call Supabase.
+With PLACEHOLDER_ values in `js/firebase-config.js`, the game does not sign anyone in and does not call Firebase.
 Progress (levels, coins, skins, settings) is saved in `localStorage` on the device under `prismburst.save.v1`.
-Login, logout, and auth errors do not clear that key. Setup steps for a free Supabase project, email, Google,
+Login, logout, and auth errors do not clear that key. Setup steps for a free Firebase Spark project, email, Google,
 and Facebook are in [docs/CLOUD-SETUP.md](docs/CLOUD-SETUP.md). The public policy is [privacy-policy.html](privacy-policy.html). Players delete their account in Settings or on [delete-account.html](delete-account.html). Play Store steps: [docs/PLAY-STORE.md](docs/PLAY-STORE.md).
 
 ## Credits
 Game code and art © the PrismBurst author. Phaser © Photon Storm Ltd (MIT license).
-Auth client © Supabase (MIT license), vendored at `lib/supabase.min.js`.
+Auth / Firestore client © Google Firebase (Apache-2.0), vendored at `lib/firebase-*-compat.js`.

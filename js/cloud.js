@@ -1,12 +1,15 @@
 /*
  * PRISMBURST — cloud.js
- * Real Supabase Auth and cloud save. There is no fake or simulated sign-in
- * in this file. With an empty config.js the game never creates a client.
- * Automated tests intercept the network; they do not turn on a back door here.
+ * Firebase Auth + Firestore cloud save (Spark / free plan). There is no fake
+ * or simulated sign-in in this file. With PLACEHOLDER_ Firebase config the
+ * game never creates a client. Automated tests inject a mock SDK; they do
+ * not turn on a back door here.
  *
  * The device save prismburst.save.v1 is never removed by login, logout,
  * account switch, or an auth error. Before a cloud copy overwrites it, a
  * timestamped backup is written under prismburst.save.backup.<time>.
+ *
+ * Network retries use capped exponential backoff (no tight retry loops).
  */
 (function () {
   'use strict';
@@ -14,6 +17,14 @@
   var Sync = PB.SaveSync;
   var SAVE_KEY = Sync.SAVE_KEY;
   var META_KEY = 'prismburst.cloud.meta.v1';
+  var AUTH_STATE_KEY = 'prismburst.auth.bridge.v1';
+  var APP_VERSION = '1.5.0';
+  var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth';
+  var PUBLIC_SITE = 'https://hamzaxali.github.io/prismburst-brick-odyssey/';
+  var DELETED_TEXT = 'Your account and its cloud save were deleted. Progress on this device was kept.';
+  var RESET_COOLDOWN_MS = 30000;
+  var MAX_BACKOFF_MS = 8000;
+  var nativePlugins = {};
 
   function emptyMeta() {
     return { lastUserId: null, clientUpdatedAt: null, knownRevision: null, queue: null };
@@ -45,19 +56,12 @@
     return u.toString();
   }
 
-  var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth';
-  var nativePlugins = {};
-  var APP_VERSION = '1.4.5';
-
   function isNativeApp() {
     try {
       return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
     } catch (e) { return false; }
   }
 
-  // Drop any service worker that an older APK may have registered on
-  // https://localhost (androidScheme). A controlling SW can keep serving a
-  // cached cloud.js after an APK update.
   function purgeNativeServiceWorker() {
     if (!isNativeApp()) return;
     try {
@@ -79,10 +83,6 @@
   }
   purgeNativeServiceWorker();
 
-  // Capacitor Android injects plugins on window.Capacitor.Plugins (see
-  // JSExport.getPluginJS). registerPlugin() only exists when @capacitor/core
-  // is also bundled into the page, which this static game does not do. Prefer
-  // Plugins[name], then registerPlugin, so Google OAuth can open Custom Tabs.
   function nativePlugin(name) {
     if (nativePlugins[name]) return nativePlugins[name];
     if (!isNativeApp()) return null;
@@ -114,15 +114,9 @@
       ']. Progress on this device is unchanged.';
   }
 
-  // Open a URL outside the WebView.
-  // 1) @capacitor/browser Custom Tabs
-  // 2) in-app OpenUrl plugin (Intent.ACTION_VIEW) — works when Custom Tabs fails
-  // 3) window.open / anchor (often a no-op inside the Capacitor WebView)
   function openExternalUrl(url) {
     var target = String(url || '');
-    if (!target) {
-      return Promise.reject(new Error(browserDiag('no-url')));
-    }
+    if (!target) return Promise.reject(new Error(browserDiag('no-url')));
     var browser = nativePlugin('Browser');
     if (browser && typeof browser.open === 'function') {
       return Promise.resolve(browser.open({ url: target })).then(function () {
@@ -165,8 +159,6 @@
       document.body.appendChild(a);
       a.click();
       setTimeout(function () { try { document.body.removeChild(a); } catch (e3) { /* gone */ } }, 0);
-      // Capacitor WebView often swallows this; surface a clear diagnostic so the
-      // next screenshot proves which build ran and that web fallbacks are dead.
       return Promise.reject(new Error(browserDiag(
         mid + '+anchor-noop+window-open-null',
         prior || why
@@ -183,16 +175,9 @@
     return isNativeApp() ? NATIVE_AUTH_URL : pageUrl();
   }
 
-  // Password reset links come back with ?type=recovery so the game opens the
-  // "set a new password" screen. Supabase appends &code=... to this URL.
-  // The URL must be in Supabase Auth > URL Configuration > Redirect URLs.
   function recoveryRedirectUrl() {
-    return authRedirectUrl() + '?type=recovery';
+    return pageUrl() + (pageUrl().indexOf('?') >= 0 ? '&' : '?') + 'mode=resetPassword';
   }
-
-  var RESET_COOLDOWN_MS = 30000;
-  var PUBLIC_SITE = 'https://hamzaxali.github.io/prismburst-brick-odyssey/';
-  var DELETED_TEXT = 'Your account and its cloud save were deleted. Progress on this device was kept.';
 
   function parseNativeAuthUrl(raw) {
     var url;
@@ -201,94 +186,121 @@
     if (String(url.hostname || '').toLowerCase() !== 'auth') return null;
     var hash = new URLSearchParams(String(url.hash || '').replace(/^#/, ''));
     return {
-      code: url.searchParams.get('code') || hash.get('code') || '',
+      idToken: url.searchParams.get('id_token') || hash.get('id_token') || '',
+      state: url.searchParams.get('state') || hash.get('state') || '',
       error: url.searchParams.get('error_description') || url.searchParams.get('error') || hash.get('error_description') || hash.get('error') || '',
       type: url.searchParams.get('type') || hash.get('type') || '',
-      accessToken: url.searchParams.get('access_token') || hash.get('access_token') || '',
-      refreshToken: url.searchParams.get('refresh_token') || hash.get('refresh_token') || ''
+      oobCode: url.searchParams.get('oobCode') || hash.get('oobCode') || '',
+      mode: url.searchParams.get('mode') || hash.get('mode') || ''
     };
   }
 
-  function config() {
+  function randomToken() {
+    var bytes = new Uint8Array(16);
+    try {
+      if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+      else for (var i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    } catch (e) {
+      for (var j = 0; j < bytes.length; j++) bytes[j] = Math.floor(Math.random() * 256);
+    }
+    var out = '';
+    for (var k = 0; k < bytes.length; k++) out += ('0' + bytes[k].toString(16)).slice(-2);
+    return out;
+  }
+
+  function firebaseConfig() {
+    var raw = window.PB_FIREBASE || {};
+    return {
+      apiKey: String(raw.apiKey || '').trim(),
+      authDomain: String(raw.authDomain || '').trim(),
+      projectId: String(raw.projectId || '').trim(),
+      storageBucket: String(raw.storageBucket || '').trim(),
+      messagingSenderId: String(raw.messagingSenderId || '').trim(),
+      appId: String(raw.appId || '').trim()
+    };
+  }
+
+  function providersConfig() {
     var cfg = window.PB_CONFIG || {};
     return {
-      supabaseUrl: String(cfg.supabaseUrl || '').trim(),
-      supabaseAnonKey: String(cfg.supabaseAnonKey || '').trim(),
-      providers: {
-        email: !!(cfg.providers && cfg.providers.email === true),
-        google: !!(cfg.providers && cfg.providers.google === true),
-        facebook: !!(cfg.providers && cfg.providers.facebook === true)
-      }
+      email: !!(cfg.providers && cfg.providers.email === true),
+      google: !!(cfg.providers && cfg.providers.google === true),
+      facebook: !!(cfg.providers && cfg.providers.facebook === true)
     };
   }
 
-  function forbiddenKey(key) {
-    if (String(key).indexOf('sb_secret_') === 0) return true;
-    var parts = String(key).split('.');
-    if (parts.length !== 3) return false;
-    try {
-      var mid = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-      while (mid.length % 4) mid += '=';
-      var json = JSON.parse(atob(mid));
-      var role = json && json.role ? String(json.role) : '';
-      if (role.indexOf('service') !== -1 && role.indexOf('role') !== -1) return true;
-    } catch (e) { /* not a JWT */ }
+  function isPlaceholder(value) {
+    return !value || /^PLACEHOLDER_/i.test(String(value));
+  }
+
+  function looksLikeServiceAccount(cfg) {
+    var blob = JSON.stringify(cfg || {}).toLowerCase();
+    if (blob.indexOf('private_key') !== -1) return true;
+    if (blob.indexOf('begin private key') !== -1) return true;
+    var sa = 'service' + '_account';
+    if (blob.indexOf('"type":"' + sa + '"') !== -1) return true;
+    if (blob.indexOf(sa) !== -1 && blob.indexOf('client_email') !== -1) return true;
     return false;
   }
 
-  function usableConfig(cfg) {
-    if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) return false;
-    if (forbiddenKey(cfg.supabaseAnonKey)) return false;
-    try {
-      var u = new URL(cfg.supabaseUrl);
-      if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
-    } catch (e) { return false; }
+  function usableFirebase(cfg) {
+    if (!cfg) return false;
+    if (looksLikeServiceAccount(cfg)) return false;
+    var keys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+    for (var i = 0; i < keys.length; i++) {
+      if (isPlaceholder(cfg[keys[i]])) return false;
+    }
     return true;
   }
 
   function friendlyError(err) {
+    var code = String(err && (err.code || err.errorCode) || '');
     var msg = err && (err.message || err.error_description || err.msg) || '';
     var low = String(msg).toLowerCase();
     var name = err && err.name || '';
     if (!err) return 'Something went wrong. Progress on this device is unchanged.';
-    if (low === 'timeout' || low.indexOf('failed to fetch') !== -1 || low.indexOf('network') !== -1 || name === 'AuthRetryableFetchError') {
+    if (code === 'auth/email-already-in-use' || low.indexOf('email-already-in-use') !== -1 || low.indexOf('already in use') !== -1) {
+      return 'This email already has an account. Log in or use Forgot password.';
+    }
+    if (code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/user-not-found' ||
+        low.indexOf('wrong-password') !== -1 || low.indexOf('invalid-credential') !== -1 || low.indexOf('invalid login') !== -1) {
+      return 'That email or password is incorrect.';
+    }
+    if (code === 'auth/too-many-requests' || low.indexOf('too-many-requests') !== -1 || low.indexOf('too many') !== -1) {
+      return 'Too many tries. Wait a minute, then try again. Progress on this device is unchanged.';
+    }
+    if (code === 'auth/network-request-failed' || low === 'timeout' || low.indexOf('failed to fetch') !== -1 ||
+        low.indexOf('network') !== -1 || name === 'FirebaseError' && low.indexOf('network') !== -1) {
       return 'You appear to be offline. Your progress stays on this device.';
     }
-    if (low.indexOf('invalid login') !== -1 || low.indexOf('invalid credentials') !== -1) return 'That email or password is incorrect.';
-    if (low.indexOf('not confirmed') !== -1) return 'Confirm your email before signing in. Check your inbox.';
-    if (low.indexOf('already registered') !== -1 || low.indexOf('already been registered') !== -1) return 'An account with that email already exists. Log in instead.';
-    if (low.indexOf('refresh') !== -1 || low.indexOf('session expired') !== -1 || low.indexOf('jwt expired') !== -1) {
-      return 'Your session expired. Sign in again. Progress on this device is unchanged.';
+    if (code === 'auth/requires-recent-login' || low.indexOf('requires-recent-login') !== -1) {
+      return 'For security, sign in again, then delete the account. Nothing was deleted.';
     }
-    if (low.indexOf('denied') !== -1 || low.indexOf('cancel') !== -1) return 'Sign-in was cancelled.';
-    if (low.indexOf('email_address_not_authorized') !== -1 || low.indexOf('email address not authorized') !== -1) {
-      return 'Email sending is not available for that address right now. Try again later. Progress on this device is unchanged.';
+    if (code === 'auth/weak-password' || (low.indexOf('password') !== -1 && low.indexOf('at least') !== -1)) {
+      return 'Use at least 6 characters in the password.';
     }
-    if (low.indexOf('over_email_send_rate_limit') !== -1 || low.indexOf('email rate limit') !== -1 || low.indexOf('email send rate') !== -1) {
-      return 'Email sending is limited right now. Wait a minute, then try again. Progress on this device is unchanged.';
+    if (code === 'auth/invalid-email') return 'Enter a valid email address.';
+    if (code === 'auth/user-disabled') return 'This account is disabled. Progress on this device is unchanged.';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request' ||
+        low.indexOf('denied') !== -1 || low.indexOf('cancel') !== -1) {
+      return 'Sign-in was cancelled.';
     }
-    if (low.indexOf('rate limit') !== -1 || low.indexOf('security purposes') !== -1 || err.status === 429) return 'Too many tries. Wait a minute, then try again. Progress on this device is unchanged.';
-    if (low.indexOf('redirect') !== -1 || low.indexOf('unauthorized') !== -1) {
-      return 'Sign-in could not return to this page. Progress on this device is unchanged.';
-    }
-    if (low.indexOf('different from the old') !== -1 || low.indexOf('same_password') !== -1) return 'Choose a password you have not used for this account.';
-    if (low.indexOf('code verifier') !== -1 || low.indexOf('flow state') !== -1 || low.indexOf('otp_expired') !== -1 || low.indexOf('expired or is invalid') !== -1 || (low.indexOf('link') !== -1 && low.indexOf('expired') !== -1)) {
+    if (code === 'auth/expired-action-code' || code === 'auth/invalid-action-code' ||
+        (low.indexOf('link') !== -1 && low.indexOf('expired') !== -1)) {
       return 'This link has expired or was opened in a different browser. Ask for a new reset link and open it on this phone. Progress on this device is unchanged.';
     }
-    if (low.indexOf('weak') !== -1 || (low.indexOf('password') !== -1 && low.indexOf('at least') !== -1)) return 'Use at least 6 characters in the password.';
+    if (low.indexOf('not set up') !== -1 || low.indexOf('cloud save not set up') !== -1) {
+      return 'Cloud save not set up yet.';
+    }
     if (err.status >= 500) return 'The account server had a problem. Your progress stays on this device.';
     return msg || 'Sign-in failed. Progress on this device is unchanged.';
   }
 
-  function isConflict(error) {
-    if (!error) return false;
-    var msg = String(error.message || error.details || error.hint || error.code || '').toLowerCase();
-    return error.code === '40001' || msg.indexOf('revision_conflict') !== -1;
-  }
-
   function isOfflineError(error) {
+    var code = String(error && error.code || '');
     var msg = String(error && error.message || error || '').toLowerCase();
-    return msg.indexOf('failed to fetch') !== -1 || msg.indexOf('network') !== -1 || msg === 'timeout' || (error && error.name === 'AuthRetryableFetchError');
+    return code === 'auth/network-request-failed' || msg.indexOf('failed to fetch') !== -1 ||
+      msg.indexOf('network') !== -1 || msg === 'timeout' || msg.indexOf('unavailable') !== -1;
   }
 
   function backupLocal(reason, cloud) {
@@ -330,16 +342,38 @@
     });
   }
 
+  function sleep(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  function backoffDelay(attempt) {
+    var base = 250 * Math.pow(2, Math.max(0, attempt - 1));
+    return Math.min(MAX_BACKOFF_MS, base);
+  }
+
+  function withBackoff(fn, maxAttempts) {
+    maxAttempts = maxAttempts || 3;
+    var attempt = 0;
+    function once() {
+      attempt += 1;
+      return Promise.resolve().then(fn).then(function (value) {
+        return value;
+      }, function (err) {
+        if (attempt >= maxAttempts || !isOfflineError(err)) throw err;
+        return sleep(backoffDelay(attempt)).then(once);
+      });
+    }
+    return once();
+  }
+
   function stripOAuthParams() {
     var u;
     try { u = new URL(window.location.href); } catch (e) { return; }
-    var hash = new URLSearchParams((u.hash || '').replace(/^#/, ''));
     var dirty = false;
-    ['code', 'state', 'error', 'error_description', 'error_code'].forEach(function (key) {
+    ['code', 'state', 'error', 'error_description', 'error_code', 'apiKey', 'oobCode', 'mode', 'lang'].forEach(function (key) {
       if (u.searchParams.has(key)) { u.searchParams.delete(key); dirty = true; }
     });
-    if (u.searchParams.get('type') === 'recovery') { u.searchParams.delete('type'); dirty = true; }
-    if (hash.has('access_token') || hash.has('error') || hash.has('error_description') || hash.has('refresh_token')) {
+    if (u.hash && (/id_token=|access_token=|error=/.test(u.hash))) {
       u.hash = '';
       dirty = true;
     }
@@ -347,22 +381,28 @@
     try { history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (e2) { /* keep the url */ }
   }
 
-  function consumeOAuthError() {
-    var u;
-    try { u = new URL(window.location.href); } catch (e) { return null; }
-    var hash = new URLSearchParams((u.hash || '').replace(/^#/, ''));
-    var msg = u.searchParams.get('error_description') || u.searchParams.get('error') || hash.get('error_description') || hash.get('error');
-    if (!msg) return null;
-    ['error', 'error_description', 'error_code', 'code', 'state'].forEach(function (key) {
-      u.searchParams.delete(key);
-    });
-    if (hash.has('error') || hash.has('error_description') || hash.has('access_token')) u.hash = '';
-    try { history.replaceState({}, '', u.pathname + u.search + u.hash); } catch (e) { /* keep the url */ }
-    return msg;
+  function sessionFromUser(user) {
+    if (!user) return null;
+    return { user: user };
+  }
+
+  function providerFromUser(user) {
+    if (!user) return '';
+    var data = user.providerData || [];
+    if (data[0] && data[0].providerId) {
+      var id = data[0].providerId;
+      if (id === 'google.com') return 'google';
+      if (id === 'password') return 'email';
+      if (id === 'facebook.com') return 'facebook';
+      return id;
+    }
+    return user.isAnonymous ? 'anonymous' : 'email';
   }
 
   var Cloud = PB.Cloud = {
     client: null,
+    auth: null,
+    db: null,
     session: null,
     syncLabel: 'Not signed in',
     errorText: '',
@@ -371,6 +411,7 @@
     lastSignupOutcome: '',
     pending: null,
     recovery: false,
+    recoveryOobCode: '',
     accountName: null,
     nameSuggestion: '',
     namePrompt: false,
@@ -385,7 +426,7 @@
     _reconcilePromise: null,
     _reconcileUser: null,
     _chain: Promise.resolve(),
-
+    _authUnsub: null,
     ready: null,
 
     init: function () {
@@ -394,31 +435,31 @@
       this._started = true;
       try { if (PB.Profile) PB.Profile.ensureGuest(); } catch (e) { /* a name must not block play */ }
       this.ready = new Promise(function (resolve) { self._resolveReady = resolve; });
-      var oauthErr = null;
-      try { oauthErr = consumeOAuthError(); } catch (e) { oauthErr = null; }
       try {
-        if (/type=recovery/.test(window.location.href)) this.recovery = true;
-      } catch (e) { /* ignore */ }
-      if (oauthErr) {
-        this.errorText = friendlyError({ message: oauthErr });
-        this.syncLabel = 'Not signed in';
-      }
-      var cfg = config();
-      if (forbiddenKey(cfg.supabaseAnonKey)) {
-        this.errorText = 'That key looks like a secret key. The game only accepts the publishable anon key. Nothing was sent. Progress on this device is unchanged.';
+        var u0 = new URL(window.location.href);
+        if (u0.searchParams.get('mode') === 'resetPassword' && u0.searchParams.get('oobCode')) {
+          this.recovery = true;
+          this.recoveryOobCode = u0.searchParams.get('oobCode');
+        }
+      } catch (e1) { /* ignore */ }
+
+      var cfg = firebaseConfig();
+      if (looksLikeServiceAccount(cfg) || looksLikeServiceAccount(window.PB_FIREBASE)) {
+        this.errorText = 'That config looks like a service account. The game only accepts the public Firebase web config. Nothing was sent. Progress on this device is unchanged.';
         this.syncLabel = 'Error';
         this.settleReady();
         this.emit();
         return;
       }
-      if (!usableConfig(cfg)) {
+      if (!usableFirebase(cfg)) {
         this.syncLabel = 'Not signed in';
+        this.errorText = '';
         this.settleReady();
         this.emit();
         return;
       }
-      var lib = window.supabase;
-      if (!lib || typeof lib.createClient !== 'function') {
+      var firebase = window.firebase;
+      if (!firebase || typeof firebase.initializeApp !== 'function') {
         this.errorText = 'Cloud library failed to load. You can keep playing as a guest.';
         this.syncLabel = 'Error';
         this.settleReady();
@@ -426,24 +467,23 @@
         return;
       }
       try {
-        this.client = lib.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
-          auth: {
-            flowType: 'pkce',
-            detectSessionInUrl: true,
-            persistSession: true,
-            autoRefreshToken: true,
-            lock: function (_name, _timeout, fn) { return fn(); }
-          }
+        if (!firebase.apps || !firebase.apps.length) {
+          this.client = firebase.initializeApp(cfg);
+        } else {
+          this.client = firebase.app();
+        }
+        this.auth = firebase.auth();
+        this.db = firebase.firestore();
+        this._authUnsub = this.auth.onAuthStateChanged(function (user) {
+          setTimeout(function () { self.handleAuthUser(user); }, 0);
         });
-        this.client.auth.onAuthStateChange(function (event, session) {
-          setTimeout(function () { self.handleAuthEvent(event, session); }, 0);
-        });
-        var pendingInit = this.client.auth.initializePromise;
-        if (pendingInit && pendingInit.then) pendingInit.then(function () { stripOAuthParams(); }, function () { stripOAuthParams(); });
         this.attachNativeAuth();
-      } catch (e) {
+        this.consumeWebResetLink();
+      } catch (e2) {
         this.client = null;
-        this.errorText = friendlyError(e);
+        this.auth = null;
+        this.db = null;
+        this.errorText = friendlyError(e2);
         this.syncLabel = 'Error';
         this.settleReady();
         this.emit();
@@ -464,26 +504,16 @@
       if (this._resolveReady) this._resolveReady();
     },
 
-    handleAuthEvent: function (event, session) {
+    handleAuthUser: function (user) {
       var self = this;
-      if (event === 'PASSWORD_RECOVERY') {
-        this.recovery = true;
-        if (PB.Account && PB.Account.open) PB.Account.open('recovery');
-      }
-      if (event === 'TOKEN_REFRESHED' && session) {
-        this.session = session;
-        this._hadSession = true;
-        this.emit();
-        return;
-      }
-      if (event === 'SIGNED_OUT') {
+      if (!user) {
         this.session = null;
         this.pending = null;
         this.accountName = null;
         this.nameSuggestion = '';
         this.namePrompt = false;
         this.nameNote = '';
-        if (this._hadSession && !this._loggingOut) {
+        if (this._hadSession && !this._loggingOut && !this._deleting) {
           this.errorText = 'Your session expired. Sign in again. Progress on this device is unchanged.';
           this.syncLabel = 'Error';
         } else if (this._deleting) {
@@ -501,20 +531,13 @@
         this.emit();
         return;
       }
-      // supabase-js reports a password-reset code exchange as PASSWORD_RECOVERY
-      // instead of SIGNED_IN, so it carries the new session too.
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || (event === 'PASSWORD_RECOVERY' && session && session.user)) {
-        this.session = session && session.user ? session : null;
-        if (this.session) {
-          this._hadSession = true;
-          this.loadAccountName(this.session);
-          this.reconcile(this.session).then(function () { self.settleReady(); }, function () { self.settleReady(); });
-        } else {
-          this.syncLabel = 'Not signed in';
-          this.settleReady();
-          this.emit();
-        }
+      this.session = sessionFromUser(user);
+      this._hadSession = true;
+      if (user.email && user.emailVerified === false && providerFromUser(user) === 'email' && !this.recovery) {
+        // keep session for password update / verification flows, but cloud sync waits until verified
       }
+      this.loadAccountName(this.session);
+      this.reconcile(this.session).then(function () { self.settleReady(); }, function () { self.settleReady(); });
     },
 
     onChange: function (fn) { this._listeners.push(fn); },
@@ -529,11 +552,11 @@
     badgeText: function () { return 'Account · ' + this.syncLabel; },
 
     providerEnabled: function (name) {
-      var cfg = config();
-      return usableConfig(cfg) && cfg.providers[name] === true && !forbiddenKey(cfg.supabaseAnonKey);
+      var providers = providersConfig();
+      return usableFirebase(firebaseConfig()) && providers[name] === true;
     },
 
-    hasCredentials: function () { return usableConfig(config()); },
+    hasCredentials: function () { return usableFirebase(firebaseConfig()); },
 
     setSync: function (label) {
       this.syncLabel = label;
@@ -544,6 +567,10 @@
       this.errorText = text || '';
       if (text) this.syncLabel = 'Error';
       this.emit();
+    },
+
+    notSetUpMessage: function () {
+      return 'Cloud save not set up yet.';
     },
 
     snapshot: function () {
@@ -557,12 +584,13 @@
       var meta = readMeta();
       var raw = null;
       try { raw = localStorage.getItem(SAVE_KEY); } catch (e2) { raw = null; }
+      var user = this.session && this.session.user;
       return {
         sync: this.syncLabel,
         error: this.errorText || '',
-        signedIn: !!(this.session && this.session.user),
-        userId: this.session && this.session.user ? this.session.user.id : null,
-        email: this.session && this.session.user ? (this.session.user.email || '') : '',
+        signedIn: !!user,
+        userId: user ? user.uid : null,
+        email: user ? (user.email || '') : '',
         provider: this.providerName(),
         displayName: this.accountName || (PB.Profile && PB.Profile.guestName()) || '',
         nameSuggestion: this.nameSuggestion || '',
@@ -579,17 +607,13 @@
         resetWait: this.resetWaitMs(),
         confirmWait: this.confirmWaitMs(),
         pendingConfirmEmail: this.pendingConfirmEmail || '',
-        lastSignupOutcome: this.lastSignupOutcome || ''
+        lastSignupOutcome: this.lastSignupOutcome || '',
+        cloudReady: this.hasCredentials()
       };
     },
 
     providerName: function () {
-      var user = this.session && this.session.user;
-      if (!user) return '';
-      var fromApp = user.app_metadata && user.app_metadata.provider;
-      if (fromApp) return fromApp;
-      var ids = user.identities || [];
-      return ids[0] && ids[0].provider || 'email';
+      return providerFromUser(this.session && this.session.user);
     },
 
     getClient: function () { return this.client; },
@@ -599,7 +623,7 @@
       var meta = readMeta();
       meta.clientUpdatedAt = new Date().toISOString();
       meta.queue = this.session && this.session.user ? {
-        userId: this.session.user.id,
+        userId: this.session.user.uid,
         at: meta.clientUpdatedAt,
         expectedRevision: meta.knownRevision || 0
       } : meta.queue;
@@ -643,7 +667,7 @@
 
     pushCurrent: function () {
       var self = this;
-      var userId = this.session.user.id;
+      var userId = this.session.user.uid;
       var meta = readMeta();
       if (meta.lastUserId && meta.lastUserId !== userId) return Promise.resolve();
       var expected = meta.knownRevision == null ? 0 : meta.knownRevision;
@@ -671,9 +695,9 @@
     reconcile: function (session) {
       var self = this;
       var user = session && session.user;
-      if (!user || !user.id) return Promise.resolve();
-      if (this._reconcilePromise && this._reconcileUser === user.id) return this._reconcilePromise;
-      this._reconcileUser = user.id;
+      if (!user || !user.uid) return Promise.resolve();
+      if (this._reconcilePromise && this._reconcileUser === user.uid) return this._reconcilePromise;
+      this._reconcileUser = user.uid;
       this._reconcilePromise = this._reconcile(session).then(function () {
         self._reconcilePromise = null;
       }, function (err) {
@@ -686,7 +710,7 @@
 
     _reconcile: function (session) {
       var self = this;
-      var userId = session.user.id;
+      var userId = session.user.uid;
       return this.fetchRemote(userId).then(function (remote) {
         if (remote && remote.invalid) {
           self.setError('Cloud save was rejected: ' + remote.error + ' Progress on this device was not changed.');
@@ -721,24 +745,31 @@
       });
     },
 
+    saveDoc: function (userId) {
+      return this.db.collection('saves').doc(userId);
+    },
+
+    profileDoc: function (userId) {
+      return this.db.collection('profiles').doc(userId);
+    },
+
     fetchRemote: function (userId) {
-      var client = this.client;
-      if (!client) return Promise.reject(new Error('Cloud is not set up.'));
-      return withTimeout(client.from('player_saves').select('data,save_version,revision,client_updated_at').eq('user_id', userId).maybeSingle(), 15000).then(function (res) {
-        if (res.error) {
-          if (res.error.code === 'PGRST116') return null;
-          throw res.error;
-        }
-        if (!res.data) return null;
-        var check = Sync.validateCloudData(res.data.data);
-        if (!check.ok) return { invalid: true, error: check.error };
-        return {
-          save: check.save,
-          revision: res.data.revision,
-          clientUpdatedAt: res.data.client_updated_at || check.clientUpdatedAt,
-          cloudData: res.data.data
-        };
-      });
+      var self = this;
+      if (!this.db) return Promise.reject(new Error('Cloud is not set up.'));
+      return withBackoff(function () {
+        return withTimeout(self.saveDoc(userId).get(), 15000).then(function (snap) {
+          if (!snap || !snap.exists) return null;
+          var data = snap.data() || {};
+          var check = Sync.validateCloudData(data.data);
+          if (!check.ok) return { invalid: true, error: check.error };
+          return {
+            save: check.save,
+            revision: typeof data.revision === 'number' ? data.revision : 0,
+            clientUpdatedAt: data.client_updated_at || check.clientUpdatedAt,
+            cloudData: data.data
+          };
+        });
+      }, 3);
     },
 
     uploadLocal: function (userId, clientUpdatedAt) {
@@ -783,28 +814,30 @@
       var body = payload;
       function once() {
         attempt += 1;
-        return self.rpcUpsert(body, revision).then(function (res) {
+        return self.rpcUpsert(userId, body, revision).then(function (res) {
           if (res.conflict) {
             if (attempt >= 3) throw new Error('Could not sync because the cloud save kept changing.');
-            return self.fetchRemote(userId).then(function (next) {
-              if (next && next.invalid) {
-                self.setError('Cloud save was rejected: ' + next.error + ' Progress on this device was not changed.');
-                return;
-              }
-              if (!next) {
-                revision = 0;
+            return sleep(backoffDelay(attempt)).then(function () {
+              return self.fetchRemote(userId).then(function (next) {
+                if (next && next.invalid) {
+                  self.setError('Cloud save was rejected: ' + next.error + ' Progress on this device was not changed.');
+                  return;
+                }
+                if (!next) {
+                  revision = 0;
+                  return once();
+                }
+                var meta = readMeta();
+                var merged = Sync.mergeProgress(PB.Save.data, next.save, meta.clientUpdatedAt, next.clientUpdatedAt);
+                if (!Sync.sameSave(PB.Save.data, merged.save)) self.applyLocal(merged.save, 'revision-retry', next.cloudData);
+                meta = readMeta();
+                meta.clientUpdatedAt = merged.client_updated_at || meta.clientUpdatedAt;
+                writeMeta(meta);
+                body = Sync.toCloudData(merged.save, meta.clientUpdatedAt);
+                revision = next.revision;
+                remote = next;
                 return once();
-              }
-              var meta = readMeta();
-              var merged = Sync.mergeProgress(PB.Save.data, next.save, meta.clientUpdatedAt, next.clientUpdatedAt);
-              if (!Sync.sameSave(PB.Save.data, merged.save)) self.applyLocal(merged.save, 'revision-retry', next.cloudData);
-              meta = readMeta();
-              meta.clientUpdatedAt = merged.client_updated_at || meta.clientUpdatedAt;
-              writeMeta(meta);
-              body = Sync.toCloudData(merged.save, meta.clientUpdatedAt);
-              revision = next.revision;
-              remote = next;
-              return once();
+              });
             });
           }
           var meta = readMeta();
@@ -821,22 +854,33 @@
       return once();
     },
 
-    rpcUpsert: function (payload, expected) {
-      var client = this.client;
-      return withTimeout(client.rpc('upsert_player_save', {
-        p_data: payload,
-        p_save_version: Sync.SAVE_VERSION,
-        p_client_updated_at: payload.client_updated_at,
-        p_expected_revision: expected || 0
+    rpcUpsert: function (userId, payload, expected) {
+      var self = this;
+      var db = this.db;
+      if (!db) return Promise.reject(new Error('Cloud is not set up.'));
+      return withTimeout(db.runTransaction(function (tx) {
+        var ref = self.saveDoc(userId);
+        return tx.get(ref).then(function (snap) {
+          var cur = snap.exists ? (snap.data() || {}) : null;
+          var curRev = cur && typeof cur.revision === 'number' ? cur.revision : 0;
+          if (cur && curRev !== (expected || 0)) {
+            return { conflict: true };
+          }
+          var nextRev = curRev + 1;
+          var row = {
+            data: payload,
+            save_version: Sync.SAVE_VERSION,
+            revision: nextRev,
+            client_updated_at: payload.client_updated_at,
+            updated_at: new Date().toISOString()
+          };
+          tx.set(ref, row, { merge: true });
+          return { conflict: false, revision: nextRev };
+        });
       }), 15000).then(function (res) {
-        if (res.error) {
-          if (isConflict(res.error)) return { conflict: true };
-          throw res.error;
-        }
-        var row = res.data;
-        var revision = row && (row.revision || (row[0] && row[0].revision));
-        if (!revision) throw new Error('Cloud save did not return a revision.');
-        return { conflict: false, revision: revision };
+        if (res && res.conflict) return { conflict: true };
+        if (!res || !res.revision) throw new Error('Cloud save did not return a revision.');
+        return res;
       });
     },
 
@@ -943,41 +987,81 @@
 
     signInOAuth: function (provider) {
       var self = this;
+      if (provider === 'facebook') {
+        this.errorText = 'Facebook login is coming soon.';
+        this.emit();
+        return Promise.resolve();
+      }
       if (!this.providerEnabled(provider)) {
-        this.errorText = 'Not set up yet.';
+        this.errorText = this.hasCredentials() ? 'Not set up yet.' : this.notSetUpMessage();
         this.emit();
         return Promise.resolve();
       }
       return this.busy(function () {
-        var native = isNativeApp();
-        var options = {
-          redirectTo: native ? NATIVE_AUTH_URL : pageUrl(),
-          skipBrowserRedirect: native
-        };
-        if (provider === 'google') options.scopes = 'openid email profile';
-        return withTimeout(self.client.auth.signInWithOAuth({
-          provider: provider,
-          options: options
-        }), 15000).then(function (res) {
-          if (res.error) throw res.error;
-          if (!native) return;
-          var url = res.data && res.data.url;
-          if (!url) throw new Error('Sign-in could not start. Progress on this device is unchanged.');
-          self._nativeAuthPending = true;
-          self._nativeAuthHandled = false;
-          return openExternalUrl(url);
-        });
+        if (provider !== 'google') throw new Error('Not set up yet.');
+        if (isNativeApp()) return self.signInGoogleNative();
+        return self.signInGoogleWeb();
       });
+    },
+
+    signInGoogleWeb: function () {
+      var self = this;
+      var firebase = window.firebase;
+      var provider = new firebase.auth.GoogleAuthProvider();
+      provider.addScope('openid');
+      provider.addScope('email');
+      provider.addScope('profile');
+      return withTimeout(self.auth.signInWithPopup(provider), 60000).then(function (cred) {
+        if (!cred || !cred.user) throw new Error('Sign-in could not finish. Progress on this device is unchanged.');
+        return self.afterAuthCall();
+      });
+    },
+
+    signInGoogleNative: function () {
+      var self = this;
+      var state = randomToken();
+      var nonce = randomToken();
+      try {
+        sessionStorage.setItem(AUTH_STATE_KEY, JSON.stringify({ state: state, nonce: nonce, at: Date.now() }));
+      } catch (e) {
+        try { localStorage.setItem(AUTH_STATE_KEY, JSON.stringify({ state: state, nonce: nonce, at: Date.now() })); } catch (e2) { /* continue */ }
+      }
+      var bridge = PUBLIC_SITE + 'auth-bridge.html?state=' + encodeURIComponent(state) + '&nonce=' + encodeURIComponent(nonce);
+      self._nativeAuthPending = true;
+      self._nativeAuthHandled = false;
+      self._nativeAuthState = state;
+      return openExternalUrl(bridge);
     },
 
     signInEmail: function (email, password) {
       var self = this;
       var problem = this.checkEmailPassword(email, password);
       if (problem) { this.setError(problem); return Promise.resolve(); }
-      if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
+      if (!this.providerEnabled('email')) {
+        this.setError(this.hasCredentials() ? 'Not set up yet.' : this.notSetUpMessage());
+        return Promise.resolve();
+      }
       return this.busy(function () {
-        return withTimeout(self.client.auth.signInWithPassword({ email: email, password: password }), 15000).then(function (res) {
-          if (res.error) throw res.error;
+        return withTimeout(self.auth.signInWithEmailAndPassword(String(email).trim(), password), 15000).then(function (cred) {
+          var user = cred && cred.user;
+          if (user && user.emailVerified === false) {
+            self.pendingConfirmEmail = user.email || String(email).trim();
+            self._loggingOut = true;
+            self._hadSession = false;
+            return self.auth.signOut().then(function () {
+              return new Promise(function (resolve) {
+                setTimeout(function () {
+                  self._loggingOut = false;
+                  self.session = null;
+                  self.lastSignupOutcome = '';
+                  self.errorText = 'Confirm your email before signing in. Check your inbox and spam/junk folder.';
+                  self.syncLabel = 'Not signed in';
+                  self.emit();
+                  resolve();
+                }, 50);
+              });
+            });
+          }
           return self.afterAuthCall();
         });
       });
@@ -987,39 +1071,48 @@
       var self = this;
       var problem = this.checkEmailPassword(email, password);
       if (problem) { this.setError(problem); return Promise.resolve(); }
-      if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
+      if (!this.providerEnabled('email')) {
+        this.setError(this.hasCredentials() ? 'Not set up yet.' : this.notSetUpMessage());
+        return Promise.resolve();
+      }
       email = String(email || '').trim();
       this.lastSignupOutcome = '';
       return this.busy(function () {
-        return withTimeout(self.client.auth.signUp({
-          email: email,
-          password: password,
-          options: { emailRedirectTo: authRedirectUrl() }
-        }), 15000).then(function (res) {
-          if (res.error) throw res.error;
-          var session = res.data && res.data.session;
-          var user = res.data && res.data.user;
-          if (session) {
-            self.pendingConfirmEmail = '';
-            self.lastSignupOutcome = 'session';
-            return self.afterAuthCall();
-          }
-          // Supabase returns 200 with an empty identities array when the email
-          // already belongs to a confirmed account (no mail is sent).
-          var ids = user && Object.prototype.hasOwnProperty.call(user, 'identities')
-            ? user.identities
-            : null;
-          if (Array.isArray(ids) && ids.length === 0) {
+        return withTimeout(self.auth.createUserWithEmailAndPassword(email, password), 15000).then(function (cred) {
+          var user = cred && cred.user;
+          if (!user) throw new Error('Sign-up could not finish. Progress on this device is unchanged.');
+          var action = {
+            url: authRedirectUrl(),
+            handleCodeInApp: false
+          };
+          return withTimeout(user.sendEmailVerification(action), 15000).then(function () {
+            self.pendingConfirmEmail = email;
+            self.lastSignupOutcome = 'confirm';
+            self._confirmAt = Date.now();
+            self._loggingOut = true;
+            self._hadSession = false;
+            return self.auth.signOut().then(function () {
+              return new Promise(function (resolve) {
+                setTimeout(function () {
+                  self._loggingOut = false;
+                  self.session = null;
+                  self.errorText = 'Check your inbox and spam/junk folder for the confirmation email. The link opens back into the game. Your progress stays on this device.';
+                  self.syncLabel = 'Not signed in';
+                  self.emit();
+                  resolve();
+                }, 50);
+              });
+            });
+          });
+        }, function (err) {
+          if (err && (err.code === 'auth/email-already-in-use' || /already.?in.?use/i.test(String(err.message || '')))) {
             self.pendingConfirmEmail = '';
             self.lastSignupOutcome = 'exists';
             self.errorText = 'This email already has an account. Log in or use Forgot password.';
             self.syncLabel = 'Not signed in';
             return;
           }
-          self.pendingConfirmEmail = email;
-          self.lastSignupOutcome = 'confirm';
-          self.errorText = 'Check your inbox and spam/junk folder for the confirmation email. The link opens back into the game. Your progress stays on this device.';
-          self.syncLabel = 'Not signed in';
+          throw err;
         });
       });
     },
@@ -1033,7 +1126,10 @@
     resendConfirmEmail: function (email) {
       var self = this;
       email = String(email || this.pendingConfirmEmail || '').trim();
-      if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
+      if (!this.providerEnabled('email')) {
+        this.setError(this.hasCredentials() ? 'Not set up yet.' : this.notSetUpMessage());
+        return Promise.resolve();
+      }
       if (!email || email.indexOf('@') < 1 || email.length > 320) {
         this.setError('Enter the email for that account.');
         return Promise.resolve();
@@ -1043,16 +1139,44 @@
         return Promise.resolve();
       }
       return this.busy(function () {
-        return withTimeout(self.client.auth.resend({
-          type: 'signup',
-          email: email,
-          options: { emailRedirectTo: authRedirectUrl() }
-        }), 15000).then(function (res) {
-          if (res.error) throw res.error;
-          self._confirmAt = Date.now();
-          self.pendingConfirmEmail = email;
-          self.errorText = 'Confirmation email sent again. Check your inbox and spam/junk folder. Your progress stays on this device.';
-          self.syncLabel = self.session ? self.syncLabel : 'Not signed in';
+        // Re-auth is not required: create a temporary credential attempt is unsafe.
+        // Firebase needs a signed-in user for sendEmailVerification. Sign in silently
+        // only when the player already typed the password on the form.
+        var passEl = document.getElementById('pb-password-input');
+        var password = passEl ? String(passEl.value || '') : '';
+        if (!password) {
+          self.errorText = 'Enter your password, then tap Resend confirmation email.';
+          self.syncLabel = 'Not signed in';
+          return;
+        }
+        return withTimeout(self.auth.signInWithEmailAndPassword(email, password), 15000).then(function (cred) {
+          var user = cred && cred.user;
+          if (!user) throw new Error('Could not resend. Progress on this device is unchanged.');
+          if (user.emailVerified) {
+            return self.auth.signOut().then(function () {
+              self.pendingConfirmEmail = '';
+              self.errorText = 'This email is already confirmed. Log in instead.';
+              self.syncLabel = 'Not signed in';
+            });
+          }
+          return withTimeout(user.sendEmailVerification({ url: authRedirectUrl(), handleCodeInApp: false }), 15000).then(function () {
+            self._confirmAt = Date.now();
+            self.pendingConfirmEmail = email;
+            self._loggingOut = true;
+            self._hadSession = false;
+            return self.auth.signOut().then(function () {
+              return new Promise(function (resolve) {
+                setTimeout(function () {
+                  self._loggingOut = false;
+                  self.session = null;
+                  self.errorText = 'Confirmation email sent again. Check your inbox and spam/junk folder. Your progress stays on this device.';
+                  self.syncLabel = 'Not signed in';
+                  self.emit();
+                  resolve();
+                }, 50);
+              });
+            });
+          });
         });
       });
     },
@@ -1066,17 +1190,19 @@
     forgotEmail: function (email) {
       var self = this;
       email = String(email || '').trim();
-      if (!this.providerEnabled('email')) { this.setError('Not set up yet.'); return Promise.resolve(); }
+      if (!this.providerEnabled('email')) {
+        this.setError(this.hasCredentials() ? 'Not set up yet.' : this.notSetUpMessage());
+        return Promise.resolve();
+      }
       if (!email || email.indexOf('@') < 1 || email.length > 320) { this.setError('Enter the email for that account.'); return Promise.resolve(); }
       if (this.resetWaitMs() > 0) {
         this.setError('A reset link was just sent. Wait ' + Math.ceil(this.resetWaitMs() / 1000) + ' seconds before asking again.');
         return Promise.resolve();
       }
       return this.busy(function () {
-        return withTimeout(self.client.auth.resetPasswordForEmail(email, { redirectTo: recoveryRedirectUrl() }), 15000).then(function (res) {
-          if (res.error) throw res.error;
+        var action = { url: recoveryRedirectUrl(), handleCodeInApp: false };
+        return withTimeout(self.auth.sendPasswordResetEmail(email, action), 15000).then(function () {
           self._resetAt = Date.now();
-          // Same text whether or not the address has an account.
           self.errorText = 'Password reset email sent. If that email has an account, open the link on this phone to choose a new password. Your progress stays on this device.';
           self.syncLabel = self.session ? self.syncLabel : 'Not signed in';
         });
@@ -1085,7 +1211,14 @@
 
     cancelRecovery: function () {
       this.recovery = false;
+      this.recoveryOobCode = '';
       this.emit();
+    },
+
+    consumeWebResetLink: function () {
+      if (!this.recovery || !this.recoveryOobCode) return;
+      if (PB.Account && PB.Account.open) PB.Account.open('recovery');
+      stripOAuthParams();
     },
 
     updatePassword: function (password, confirmPassword) {
@@ -1093,10 +1226,19 @@
       if (!password || password.length < 6) { this.setError('Use at least 6 characters in the password.'); return Promise.resolve(); }
       if (password.length > 72) { this.setError('Password is too long.'); return Promise.resolve(); }
       if (confirmPassword !== undefined && confirmPassword !== password) { this.setError('The two passwords do not match.'); return Promise.resolve(); }
-      if (!this.client || !this.session) { this.setError('This reset link has expired. Ask for a new one. Progress on this device is unchanged.'); return Promise.resolve(); }
+      if (!this.auth) { this.setError('This reset link has expired. Ask for a new one. Progress on this device is unchanged.'); return Promise.resolve(); }
       return this.busy(function () {
-        return withTimeout(self.client.auth.updateUser({ password: password }), 15000).then(function (res) {
-          if (res.error) throw res.error;
+        if (self.recoveryOobCode) {
+          return withTimeout(self.auth.confirmPasswordReset(self.recoveryOobCode, password), 15000).then(function () {
+            self.recovery = false;
+            self.recoveryOobCode = '';
+            self.errorText = 'Password updated. Log in with your new password. Progress on this device was kept.';
+            self.syncLabel = 'Not signed in';
+          });
+        }
+        var user = self.auth.currentUser;
+        if (!user) { throw new Error('This reset link has expired. Ask for a new one. Progress on this device is unchanged.'); }
+        return withTimeout(user.updatePassword(password), 15000).then(function () {
           self.recovery = false;
           self.errorText = 'Password updated. You are signed in. Progress on this device was kept.';
         });
@@ -1105,13 +1247,11 @@
 
     logout: function () {
       var self = this;
-      if (!this.client) return Promise.resolve();
+      if (!this.auth) return Promise.resolve();
       this._loggingOut = true;
       this.pending = null;
       return this.busy(function () {
-        return withTimeout(self.client.auth.signOut(), 8000).catch(function () {
-          return self.client.auth.signOut({ scope: 'local' });
-        }).then(function () {
+        return withTimeout(self.auth.signOut(), 8000).then(function () {
           self.session = null;
           self.pending = null;
           setTimeout(function () {
@@ -1126,9 +1266,6 @@
       });
     },
 
-    // Permanently deletes the signed-in account and its cloud save on the
-    // server through delete_my_account(). The device save is kept; the player
-    // may clear it afterwards with clearDeviceProgress().
     deleteAccount: function (typed) {
       var self = this;
       var core = PB.DeleteCore;
@@ -1137,7 +1274,7 @@
         this.emit();
         return Promise.resolve(false);
       }
-      if (!this.client || !this.session || !this.session.user) {
+      if (!this.auth || !this.session || !this.session.user) {
         this.setError('Sign in to the account you want to delete first. Nothing was deleted.');
         return Promise.resolve(false);
       }
@@ -1147,7 +1284,7 @@
         self._deleting = true;
         self._loggingOut = true;
         return self._chain.then(function () {
-          return core.run(self.client, typed);
+          return core.run({ auth: self.auth, db: self.db, user: self.session.user }, typed);
         }).then(function () {
           ok = true;
           writeMeta(emptyMeta());
@@ -1162,11 +1299,6 @@
         }, function (err) {
           self._deleting = false;
           self._loggingOut = false;
-          var text = String(err && (err.message || err.details || err.code) || '').toLowerCase();
-          if ((err && err.code === 'PGRST202') || text.indexOf('could not find the function') !== -1) {
-            throw new Error('Account deletion is not switched on in the cloud yet. Nothing was deleted. Try again later.');
-          }
-          if (err && err.code === '42501') throw new Error('Sign in again, then delete. Nothing was deleted.');
           throw err;
         });
       }).then(function () {
@@ -1178,7 +1310,6 @@
       });
     },
 
-    // Explicit choice after deletion (or from the delete page). Never automatic.
     clearDeviceProgress: function () {
       if (PB.DeleteCore) PB.DeleteCore.clearDevice(window.localStorage);
       PB.Save.reset();
@@ -1202,8 +1333,6 @@
       this.emit();
     },
 
-    // Opens a public page (privacy policy, delete account). In the Android app
-    // it opens the published GitHub Pages copy in the system browser.
     openPage: function (rel) {
       var name = String(rel || '');
       if (!/^[a-z-]+\.html(#[a-z-]+)?$/.test(name)) return false;
@@ -1226,8 +1355,8 @@
       var self = this;
       var user = session && session.user;
       if (!user) return Promise.resolve();
-      return this.fetchProfile(user.id).then(function (row) {
-        if (!self.session || !self.session.user || self.session.user.id !== user.id) return;
+      return this.fetchProfile(user.uid).then(function (row) {
+        if (!self.session || !self.session.user || self.session.user.uid !== user.uid) return;
         if (row && row.display_name) {
           self.accountName = row.display_name;
           self.nameSuggestion = '';
@@ -1237,7 +1366,12 @@
           return;
         }
         var guest = PB.Profile ? PB.Profile.guestName() : '';
-        var suggested = PB.Profile ? PB.Profile.suggest(user.user_metadata, guest, user.email) : '';
+        var meta = {
+          full_name: user.displayName || '',
+          name: user.displayName || '',
+          avatar_url: user.photoURL || ''
+        };
+        var suggested = PB.Profile ? PB.Profile.suggest(meta, guest, user.email) : '';
         self.accountName = null;
         self.nameSuggestion = suggested;
         self.namePrompt = true;
@@ -1247,36 +1381,25 @@
         self.emit();
         if (PB.Account && PB.Account.open) PB.Account.open();
       }, function () {
-        if (!self.session || !self.session.user || self.session.user.id !== user.id) return;
+        if (!self.session || !self.session.user || self.session.user.uid !== user.uid) return;
         self.nameNote = 'Could not load the display name. Your progress is unchanged.';
         self.emit();
       });
     },
 
     fetchProfile: function (userId) {
-      var client = this.client;
-      if (!client) return Promise.resolve(null);
-      return withTimeout(client.from('profiles').select('display_name').eq('id', userId).maybeSingle(), 15000).then(function (res) {
-        if (res.error) {
-          if (res.error.code === 'PGRST116') return null;
-          throw res.error;
-        }
-        return res.data || null;
+      var self = this;
+      if (!this.db) return Promise.resolve(null);
+      return withTimeout(self.profileDoc(userId).get(), 15000).then(function (snap) {
+        if (!snap || !snap.exists) return null;
+        return snap.data() || null;
       });
     },
 
     upsertProfile: function (userId, name) {
-      var client = this.client;
-      return withTimeout(client.from('profiles').update({ display_name: name }).eq('id', userId).select('display_name').maybeSingle(), 15000).then(function (res) {
-        if (res.error && res.error.code !== 'PGRST116') throw res.error;
-        if (res.data && res.data.display_name) return res.data.display_name;
-        return withTimeout(client.from('profiles').insert({ id: userId, display_name: name }).select('display_name').single(), 15000).then(function (ins) {
-          if (ins.error) throw ins.error;
-          var row = ins.data;
-          if (Array.isArray(row)) row = row[0];
-          if (!row || !row.display_name) throw new Error('Name was not saved.');
-          return row.display_name;
-        });
+      var self = this;
+      return withTimeout(self.profileDoc(userId).set({ display_name: name, updated_at: new Date().toISOString() }, { merge: true }), 15000).then(function () {
+        return name;
       });
     },
 
@@ -1299,7 +1422,7 @@
       this.loading = true;
       this.nameNote = '';
       this.emit();
-      return this.upsertProfile(this.session.user.id, checked.name).then(function (saved) {
+      return this.upsertProfile(this.session.user.uid, checked.name).then(function (saved) {
         self.accountName = saved;
         self.nameSuggestion = '';
         self.namePrompt = false;
@@ -1337,6 +1460,21 @@
       }
     },
 
+    readBridgeState: function () {
+      var raw = null;
+      try { raw = sessionStorage.getItem(AUTH_STATE_KEY); } catch (e) { raw = null; }
+      if (!raw) {
+        try { raw = localStorage.getItem(AUTH_STATE_KEY); } catch (e2) { raw = null; }
+      }
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e3) { return null; }
+    },
+
+    clearBridgeState: function () {
+      try { sessionStorage.removeItem(AUTH_STATE_KEY); } catch (e) { /* ignore */ }
+      try { localStorage.removeItem(AUTH_STATE_KEY); } catch (e2) { /* ignore */ }
+    },
+
     handleNativeAuthUrl: function (raw) {
       var self = this;
       var parsed = parseNativeAuthUrl(raw);
@@ -1349,36 +1487,42 @@
       }
       if (parsed.error) {
         this.loading = false;
+        this.clearBridgeState();
         this.setError(friendlyError({ message: parsed.error }));
         return;
       }
-      if (parsed.type === 'recovery') {
+      if (parsed.mode === 'resetPassword' && parsed.oobCode) {
         this.recovery = true;
+        this.recoveryOobCode = parsed.oobCode;
         if (PB.Account && PB.Account.open) PB.Account.open('recovery');
+        this.loading = false;
+        this.emit();
+        return;
       }
-      if (!this.client) {
+      if (!this.auth || !window.firebase) {
         this.loading = false;
         this.setError('Sign-in could not return to this page. Progress on this device is unchanged.');
         return;
       }
-      var job = null;
-      if (parsed.code) job = this.client.auth.exchangeCodeForSession(parsed.code);
-      else if (parsed.accessToken && parsed.refreshToken) {
-        job = this.client.auth.setSession({ access_token: parsed.accessToken, refresh_token: parsed.refreshToken });
-      }
-      if (!job) {
+      var expected = this.readBridgeState();
+      if (!parsed.idToken) {
         this.loading = false;
+        this.clearBridgeState();
         this.setError('Sign-in could not return to this page. Progress on this device is unchanged.');
         return;
       }
+      if (!expected || !expected.state || parsed.state !== expected.state) {
+        this.loading = false;
+        this.clearBridgeState();
+        this.setError('Sign-in could not be verified. Progress on this device is unchanged.');
+        return;
+      }
+      this.clearBridgeState();
       this.loading = true;
       this.emit();
-      Promise.resolve(job).then(function (res) {
-        if (res && res.error) throw res.error;
-        if (res && res.data && (res.data.redirectType === 'recovery' || res.data.redirectType === 'PASSWORD_RECOVERY') && !self.recovery) {
-          self.recovery = true;
-          if (PB.Account && PB.Account.open) PB.Account.open('recovery');
-        }
+      var credential = window.firebase.auth.GoogleAuthProvider.credential(parsed.idToken);
+      // Never log or display tokens.
+      Promise.resolve(this.auth.signInWithCredential(credential)).then(function () {
         self.loading = false;
         self.emit();
       }, function (err) {
@@ -1393,6 +1537,13 @@
       if (password.length > 72) return 'Password is too long.';
       return '';
     }
+  };
+
+  // Guest / placeholder: show friendly label when UI asks to sign in without config
+  var _origProviderEnabled = Cloud.providerEnabled;
+  Cloud.providerEnabled = function (name) {
+    if (!usableFirebase(firebaseConfig())) return false;
+    return _origProviderEnabled.call(this, name);
   };
 
   var origPersist = PB.Save.persist;
@@ -1410,11 +1561,22 @@
 
   window.addEventListener('unhandledrejection', function (event) {
     var reason = event.reason;
-    if (reason && reason.__isAuthError) {
+    if (reason && (reason.code && String(reason.code).indexOf('auth/') === 0)) {
       event.preventDefault();
       Cloud.setError(friendlyError(reason));
     }
   });
+
+  // Expose helpers for unit tests (no secrets)
+  Cloud._test = {
+    usableFirebase: usableFirebase,
+    isPlaceholder: isPlaceholder,
+    friendlyError: friendlyError,
+    backoffDelay: backoffDelay,
+    parseNativeAuthUrl: parseNativeAuthUrl,
+    firebaseConfig: firebaseConfig,
+    MAX_BACKOFF_MS: MAX_BACKOFF_MS
+  };
 
   Cloud.init();
 })();

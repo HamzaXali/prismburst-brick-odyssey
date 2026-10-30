@@ -1,3 +1,5 @@
+<!-- Legacy Supabase Google notes. Current flow: docs/FIREBASE-SETUP.md + auth-bridge.html -->
+
 # Google sign-in (phone browser)
 
 Use Chrome on the Android phone. If a button is cut off or a form is too wide, open the Chrome menu (the three dots) and turn on **Desktop site**. You can turn it off again after the form is saved.

@@ -240,7 +240,7 @@ function installMockSource() {
       this.setCustomParameters = function () {};
     };
     window.firebase.auth.GoogleAuthProvider.credential = function (idToken, accessToken) {
-      return { idToken: idToken, accessToken: accessToken || null, providerId: 'google.com' };
+      return { idToken: idToken || null, accessToken: accessToken || null, providerId: 'google.com' };
     };
     window.firebase.auth.GoogleAuthProvider.credentialFromResult = function (result) {
       var c = result && result.credential;

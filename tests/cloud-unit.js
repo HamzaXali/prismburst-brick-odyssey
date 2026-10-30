@@ -186,7 +186,7 @@ try {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const shippedVersion = require('../package.json').version;
   record('service worker cache version matches the semver and precaches the game',
-    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/firebase-app-compat.js') && sw.includes('./lib/firebase-auth-compat.js') && sw.includes('./lib/firebase-firestore-compat.js') && sw.includes('./js/firebase-config.js') && sw.includes('./auth-bridge.html') && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.5') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0'));
+    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/firebase-app-compat.js') && sw.includes('./lib/firebase-auth-compat.js') && sw.includes('./lib/firebase-firestore-compat.js') && sw.includes('./js/firebase-config.js') && sw.includes('isAuthBridge') && sw.includes('prismburst-v1.5.0-bridge2') && !sw.includes("'./auth-bridge.html'") && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.5') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
   record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '" + shippedVersion + "'") && sw.includes('prismburst-v' + shippedVersion));
   record('service worker keeps Firebase/Google APIs network-only and skips OAuth returns', (sw.includes('googleapis') || sw.includes('firebaseio') || sw.includes('identitytoolkit')) && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
@@ -258,6 +258,7 @@ try {
   record('auth-bridge hosts Google popup/redirect and deep-links Google OAuth tokens with state',
     authBridge.includes('signInWithPopup') && authBridge.includes('com.prismburst.brickodyssey://auth')
     && authBridge.includes('credentialFromResult') && authBridge.includes('access_token')
+    && authBridge.includes("BRIDGE_VERSION = '2'") && authBridge.includes('bv')
     && authBridge.includes('id_token') && authBridge.includes('state')
     && !authBridge.includes('result.user.getIdToken') && authBridge.indexOf('console.log') === -1);
 
@@ -475,15 +476,19 @@ try {
     friendlyError({ code: 'auth/too-many-requests' }).indexOf('Too many tries') >= 0 &&
     friendlyError({ code: 'auth/network-request-failed' }).indexOf('offline') >= 0 &&
     friendlyError({ code: 'auth/email-already-in-use' }).indexOf('auth/email-already-in-use') === -1);
-  const gFail = friendlyError({ code: 'auth/invalid-credential', message: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.aaa.bbb for user@example.com' }, 'google');
+  const gFail = friendlyError({ code: 'auth/invalid-credential', message: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.aaa.bbb for user@example.com', diag: '[bridge v2, token firebase]' }, 'google');
   record('Google friendlyError never looks like a password mistake and includes the auth code',
     gFail.indexOf('incorrect') === -1 && gFail.indexOf('password') === -1
     && gFail.indexOf('(auth/invalid-credential)') >= 0 && gFail.indexOf('Google sign-in') >= 0
-    && gFail.indexOf('eyJ') === -1 && gFail.indexOf('@') === -1);
-  record('native Google credential uses idToken and optional accessToken',
+    && gFail.indexOf('eyJ') === -1 && gFail.indexOf('user@') === -1
+    && gFail.indexOf('[bridge v2, token firebase]') >= 0);
+  record('native Google prefers accessToken credential and cache-busts the bridge URL',
     cloudJs.includes('GoogleAuthProvider.credential')
-    && cloudJs.includes('parsed.accessToken')
-    && cloudJs.includes("friendlyError(err, 'google')"));
+    && cloudJs.includes('credential(null, parsed.accessToken)')
+    && cloudJs.includes('authBridgeOpenUrl')
+    && cloudJs.includes('peekJwtIss')
+    && cloudJs.includes('EXPECTED_BRIDGE_VERSION')
+    && /friendlyError\([^\n]+,\s*'google'\)/.test(cloudJs));
 
   function extractFn(src, name) {
     const start = src.indexOf('function ' + name);
@@ -534,10 +539,25 @@ try {
     else if (ch === '}') { d3--; if (st3 && d3 === 0) { parseEnd++; break; } }
   }
   const parseNativeAuthUrl = vm.runInNewContext(cloudJs.slice(parseStart, parseEnd) + '; parseNativeAuthUrl', { URL: URL, URLSearchParams: URLSearchParams });
-  const deep = parseNativeAuthUrl('com.prismburst.brickodyssey://auth#id_token=abc&access_token=tok&state=xyz');
-  record('deep-link parser extracts id_token, access_token, and state without other schemes',
-    deep && deep.idToken === 'abc' && deep.accessToken === 'tok' && deep.state === 'xyz'
+  const deep = parseNativeAuthUrl('com.prismburst.brickodyssey://auth#access_token=tok&id_token=abc&state=xyz&bv=2');
+  record('deep-link parser extracts id_token, access_token, bv, and state without other schemes',
+    deep && deep.idToken === 'abc' && deep.accessToken === 'tok' && deep.state === 'xyz' && deep.bv === '2'
     && parseNativeAuthUrl('https://evil.example/#id_token=x') === null);
+  const peekFnStart = cloudJs.indexOf('function peekJwtIss');
+  let peekEnd = peekFnStart, pd = 0, ps = false;
+  for (; peekEnd < cloudJs.length; peekEnd++) {
+    const ch = cloudJs[peekEnd];
+    if (ch === '{') { pd++; ps = true; }
+    else if (ch === '}') { pd--; if (ps && pd === 0) { peekEnd++; break; } }
+  }
+  const peekJwtIss = vm.runInNewContext(cloudJs.slice(peekFnStart, peekEnd) + '; peekJwtIss', { atob: atob });
+  function b64url(obj) {
+    return Buffer.from(JSON.stringify(obj)).toString('base64').replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
+  }
+  const fbTok = b64url({alg:'none'}) + '.' + b64url({iss:'https://securetoken.google.com/proj'}) + '.x';
+  const gTok = b64url({alg:'none'}) + '.' + b64url({iss:'https://accounts.google.com'}) + '.x';
+  record('peekJwtIss classifies Firebase vs Google issuers',
+    peekJwtIss(fbTok).kind === 'firebase' && peekJwtIss(gTok).kind === 'google');
 
     record('the Google button is an inline SVG and is not fetched',
     html.includes('data-action="google"') && html.includes('<svg') && html.includes('#4285') === false && html.includes('#FFC107') && html.includes('Continue with Google') && !/googleusercontent|gstatic\.com|logo\.svg/.test(html));

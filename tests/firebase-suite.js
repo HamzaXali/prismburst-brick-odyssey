@@ -201,7 +201,7 @@ async function boot(browser, server, state, providers) {
       const good = await page.evaluate(() => {
         sessionStorage.setItem('prismburst.auth.bridge.v1', JSON.stringify({ state: 'state-ok', nonce: 'nonce-ok', at: Date.now() }));
         const before = localStorage.getItem('prismburst.save.v1');
-        PB.Cloud.handleNativeAuthUrl('com.prismburst.brickodyssey://auth#id_token=google-id-tok&access_token=google-access-tok&state=state-ok&nonce=nonce-ok');
+        PB.Cloud.handleNativeAuthUrl('com.prismburst.brickodyssey://auth#access_token=google-access-tok&id_token=google-id-tok&state=state-ok&nonce=nonce-ok&bv=2');
         return new Promise(function (r) {
           setTimeout(function () {
             r({ signed: PB.Cloud.snapshot().signedIn, provider: PB.Cloud.providerName(), before: before, save: localStorage.getItem('prismburst.save.v1'), creds: window.__PB_MOCK_STATE.credentialLog });
@@ -209,8 +209,7 @@ async function boot(browser, server, state, providers) {
         });
       });
       record('native deep-link: credential sign-in', good.signed && good.provider === 'google', good);
-      record('native deep-link: credential used idToken', good.creds.some(c => c.hasIdToken), good);
-      record('native deep-link: credential used accessToken', good.creds.some(c => c.hasAccessToken), good);
+      record('native deep-link: credential used accessToken preferentially', good.creds.some(c => c.hasAccessToken && !c.hasIdToken), good);
       record('native deep-link: save unchanged on success', good.save === good.before, good);
 
       const badState = await page.evaluate(() => {
@@ -229,7 +228,7 @@ async function boot(browser, server, state, providers) {
         PB.Cloud.handleNativeAuthUrl('com.prismburst.brickodyssey://auth#state=s2&nonce=other');
         return { err: PB.Cloud.errorText, save: localStorage.getItem('prismburst.save.v1'), before: before };
       });
-      record('native deep-link: missing id_token rejected', /could not return|could not be verified/i.test(badNonce.err || ''), badNonce);
+      record('native deep-link: missing tokens rejected', /could not finish|bridge-error|could not return|could not be verified/i.test(badNonce.err || ''), badNonce);
 
 
       record('native deep-link: missing token keeps save', badNonce.save === badNonce.before, badNonce);
@@ -252,6 +251,20 @@ async function boot(browser, server, state, providers) {
       });
       record('Google invalid-credential never says password', /Google sign-in could not finish/i.test(gErr.err || '') && /\(auth\/invalid-credential\)/.test(gErr.err || '') && !/password/i.test(gErr.err || '') && !/incorrect/i.test(gErr.err || ''), gErr);
       record('Google invalid-credential keeps save and hides tokens/email', gErr.save === gErr.before && !/eyJ/.test(gErr.err || '') && !/@/.test(gErr.err || ''), gErr);
+
+      const stale = await page.evaluate(() => {
+        function b64(obj) {
+          const s = btoa(JSON.stringify(obj));
+          return s.replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
+        }
+        const fbTok = b64({alg:'none'}) + '.' + b64({iss:'https://securetoken.google.com/prismburst-brick-odyssey'}) + '.x';
+        sessionStorage.setItem('prismburst.auth.bridge.v1', JSON.stringify({ state: 'st-fb', nonce: 'n-fb', at: Date.now() }));
+        const before = localStorage.getItem('prismburst.save.v1');
+        PB.Cloud.handleNativeAuthUrl('com.prismburst.brickodyssey://auth#id_token=' + encodeURIComponent(fbTok) + '&state=st-fb&nonce=n-fb&bv=1');
+        return { err: PB.Cloud.errorText, save: localStorage.getItem('prismburst.save.v1'), before: before };
+      });
+      record('stale firebase JWT rejected with bridge diagnostic', /token firebase/i.test(stale.err || '') && /bridge v/i.test(stale.err || '') && !/password/i.test(stale.err || ''), stale);
+      record('stale firebase JWT keeps save', stale.save === stale.before, stale);
       await ctx.close();
     }
 

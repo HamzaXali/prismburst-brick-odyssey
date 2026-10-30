@@ -117,9 +117,47 @@
   var BRIDGE_UNAVAILABLE_MSG =
     'Google sign-in page is not available yet. Email login still works in the app. Progress on this device is unchanged.';
 
+  var EXPECTED_BRIDGE_VERSION = '2';
+
   function authBridgeUrl() {
     return PUBLIC_SITE + 'auth-bridge.html';
   }
+
+  function authBridgeOpenUrl(state, nonce) {
+    return authBridgeUrl()
+      + '?state=' + encodeURIComponent(state)
+      + '&nonce=' + encodeURIComponent(nonce)
+      + '&v=' + encodeURIComponent(APP_VERSION)
+      + '&bv=' + encodeURIComponent(EXPECTED_BRIDGE_VERSION)
+      + '&cb=' + encodeURIComponent(String(Date.now()));
+  }
+
+  /** Decode JWT payload without verifying the signature. Never log the token. */
+  function peekJwtIss(token) {
+    try {
+      var parts = String(token || '').split('.');
+      if (parts.length < 2) return { kind: 'none' };
+      var json = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (json.length % 4) json += '=';
+      var payload = JSON.parse(atob(json));
+      var iss = String(payload && payload.iss || '');
+      var kind = 'other';
+      if (/securetoken\.google\.com/i.test(iss)) kind = 'firebase';
+      else if (/accounts\.google\.com/i.test(iss)) kind = 'google';
+      return { kind: kind, issHost: iss.replace(/^https?:\/\//i, '').split('/')[0], hasNonce: !!(payload && payload.nonce) };
+    } catch (e) {
+      return { kind: 'bad' };
+    }
+  }
+
+  function googleAuthDiag(parsed, peek, lenInfo) {
+    var bv = (parsed && parsed.bv) || '?';
+    var tokenKind = (peek && peek.kind) || 'none';
+    var bits = ['bridge v' + bv, 'token ' + tokenKind];
+    if (lenInfo) bits.push('len ' + lenInfo);
+    return '[' + bits.join(', ') + ']';
+  }
+
 
   /** HEAD/GET the live Pages bridge before opening Chrome. Avoids a raw GitHub 404 tab. */
   function probeAuthBridge() {
@@ -217,14 +255,20 @@
     if (String(url.protocol || '').toLowerCase() !== 'com.prismburst.brickodyssey:') return null;
     if (String(url.hostname || '').toLowerCase() !== 'auth') return null;
     var hash = new URLSearchParams(String(url.hash || '').replace(/^#/, ''));
+    var idToken = url.searchParams.get('id_token') || hash.get('id_token') || '';
+    var accessToken = url.searchParams.get('access_token') || hash.get('access_token') || '';
     return {
-      idToken: url.searchParams.get('id_token') || hash.get('id_token') || '',
-      accessToken: url.searchParams.get('access_token') || hash.get('access_token') || '',
+      idToken: idToken,
+      accessToken: accessToken,
+      bv: url.searchParams.get('bv') || hash.get('bv') || '',
       state: url.searchParams.get('state') || hash.get('state') || '',
       error: url.searchParams.get('error_description') || url.searchParams.get('error') || hash.get('error_description') || hash.get('error') || '',
       type: url.searchParams.get('type') || hash.get('type') || '',
       oobCode: url.searchParams.get('oobCode') || hash.get('oobCode') || '',
-      mode: url.searchParams.get('mode') || hash.get('mode') || ''
+      mode: url.searchParams.get('mode') || hash.get('mode') || '',
+      rawUrlLen: String(raw || '').length,
+      idTokenLen: idToken.length,
+      accessTokenLen: accessToken.length
     };
   }
 
@@ -307,8 +351,10 @@
       if (code === 'auth/popup-closed-by-user' || /cancel/i.test(low)) {
         return 'Google sign-in was cancelled.';
       }
-      // Never map Google failures to the email/password message.
-      return 'Google sign-in could not finish (' + safeCode + '). Try again, or use email login. Progress on this device is unchanged.';
+      var diag = err && err.diag ? (' ' + String(err.diag).slice(0, 80)) : '';
+      // Never map Google failures to the email/password message. Never show tokens/email/sub.
+      return 'Google sign-in could not finish (' + safeCode + ')' + diag
+        + '. Try again, or use email login. Progress on this device is unchanged.';
     }
     if (code === 'auth/email-already-in-use' || low.indexOf('email-already-in-use') !== -1 || low.indexOf('already in use') !== -1) {
       return 'This email already has an account. Log in or use Forgot password.';
@@ -1085,10 +1131,11 @@
         } catch (e) {
           try { localStorage.setItem(AUTH_STATE_KEY, JSON.stringify({ state: state, nonce: nonce, at: Date.now() })); } catch (e2) { /* continue */ }
         }
-        var bridge = authBridgeUrl() + '?state=' + encodeURIComponent(state) + '&nonce=' + encodeURIComponent(nonce);
+        var bridge = authBridgeOpenUrl(state, nonce);
         self._nativeAuthPending = true;
         self._nativeAuthHandled = false;
         self._nativeAuthState = state;
+        self._nativeAuthBridgeUrlLen = bridge.length;
         return openExternalUrl(bridge);
       }, function () {
         self._nativeAuthPending = false;
@@ -1570,10 +1617,10 @@
         return;
       }
       var expected = this.readBridgeState();
-      if (!parsed.idToken) {
+      if (!parsed.accessToken && !parsed.idToken) {
         this.loading = false;
         this.clearBridgeState();
-        this.setError('Sign-in could not return to this page. Progress on this device is unchanged.');
+        this.setError(friendlyError({ code: 'auth/bridge-error', diag: googleAuthDiag(parsed, { kind: 'none' }, '0') }, 'google'));
         return;
       }
       if (!expected || !expected.state || parsed.state !== expected.state) {
@@ -1582,21 +1629,38 @@
         this.setError('Sign-in could not be verified. Progress on this device is unchanged.');
         return;
       }
+      var peek = peekJwtIss(parsed.idToken);
+      var lenInfo = 'a' + parsed.accessTokenLen + '/i' + parsed.idTokenLen + '/u' + parsed.rawUrlLen;
+      var diag = googleAuthDiag(parsed, peek, lenInfo);
+      // Stale bridge (v1 / missing bv) often still sends a Firebase JWT.
+      if (peek.kind === 'firebase' || (parsed.bv && parsed.bv !== EXPECTED_BRIDGE_VERSION && !parsed.accessToken)) {
+        this.loading = false;
+        this.clearBridgeState();
+        this.setError(friendlyError({
+          code: 'auth/invalid-credential',
+          diag: diag + ' Clear Chrome site data for hamzaxali.github.io, then retry.'
+        }, 'google'));
+        return;
+      }
       this.clearBridgeState();
       this.loading = true;
       this.emit();
-      // Google OAuth idToken (+ optional accessToken) from the bridge — not a Firebase JWT.
-      var credential = window.firebase.auth.GoogleAuthProvider.credential(
-        parsed.idToken,
-        parsed.accessToken || undefined
-      );
+      // Prefer Google access_token only (avoids id_token nonce/audience issues). Fall back to id_token.
+      var credential;
+      if (parsed.accessToken) {
+        credential = window.firebase.auth.GoogleAuthProvider.credential(null, parsed.accessToken);
+      } else {
+        credential = window.firebase.auth.GoogleAuthProvider.credential(parsed.idToken, null);
+      }
       // Never log or display tokens.
       Promise.resolve(this.auth.signInWithCredential(credential)).then(function () {
         self.loading = false;
         self.emit();
       }, function (err) {
         self.loading = false;
-        self.setError(friendlyError(err, 'google'));
+        var e2 = err || {};
+        e2.diag = diag;
+        self.setError(friendlyError(e2, 'google'));
       });
     },
 
@@ -1647,6 +1711,10 @@
     MAX_BACKOFF_MS: MAX_BACKOFF_MS,
     probeAuthBridge: probeAuthBridge,
     authBridgeUrl: authBridgeUrl,
+    authBridgeOpenUrl: authBridgeOpenUrl,
+    peekJwtIss: peekJwtIss,
+    googleAuthDiag: googleAuthDiag,
+    EXPECTED_BRIDGE_VERSION: EXPECTED_BRIDGE_VERSION,
     BRIDGE_UNAVAILABLE_MSG: BRIDGE_UNAVAILABLE_MSG
   };
 

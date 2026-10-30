@@ -21,6 +21,12 @@ Until those placeholders are replaced, the game stays in guest / local mode and 
 
 ## 0. Already created
 
+Web app config is filled in `js/firebase-config.js` (apiKey / appId / messagingSenderId / measurementId). The game does **not** initialize Analytics even though `measurementId` is present.
+
+**Still required before cloud works on a phone:** enable Authentication (Email/Password + Google), authorized domains, create Firestore, publish `firestore.rules`. Until Authentication is enabled, Identity Toolkit returns `CONFIGURATION_NOT_FOUND` for this project's API key.
+
+## 0b. Project record
+
 Ali created the Firebase project:
 
 - Project ID: `prismburst-brick-odyssey`

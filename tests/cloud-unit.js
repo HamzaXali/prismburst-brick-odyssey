@@ -154,9 +154,11 @@ try {
   const shipped = sandbox.window.PB_CONFIG || {};
   const fb = sandbox.window.PB_FIREBASE || {};
   const shippedProviders = shipped.providers || {};
-  const stillGuest = ['apiKey','messagingSenderId','appId'].every(k => String(fb[k] || '').indexOf('PLACEHOLDER_') === 0);
-  record('shipped Firebase config has known project fields and remaining placeholders (guest mode) with Google on and Facebook off',
-    stillGuest && fb.projectId === 'prismburst-brick-odyssey' && /firebaseapp\.com$/.test(fb.authDomain) && shippedProviders.google === true && shippedProviders.facebook === false && shippedProviders.email === true);
+  record('shipped Firebase web config is complete (cloud ready) with Google on and Facebook off',
+    fb.projectId === 'prismburst-brick-odyssey' && /firebaseapp\.com$/.test(fb.authDomain) &&
+    String(fb.apiKey || '').indexOf('PLACEHOLDER_') !== 0 && String(fb.appId || '').indexOf('PLACEHOLDER_') !== 0 &&
+    String(fb.messagingSenderId) === '1094215889946' && String(fb.measurementId || '').indexOf('G-') === 0 &&
+    shippedProviders.google === true && shippedProviders.facebook === false && shippedProviders.email === true);
   record('email and google are enabled and facebook ships off', /email:\s*true/.test(cfg) && /google:\s*true/.test(cfg) && /facebook:\s*false/.test(cfg));
   record('config and firebase-config have no JWT or private key', !/eyJ/.test(cfg) && !/eyJ/.test(fbCfgText) && !/private_key/.test(fbCfgText));
 
@@ -250,7 +252,7 @@ try {
     && fbSetup.includes('apiKey') && fbSetup.includes('PLACEHOLDER_'));
   const fbCfg = fs.readFileSync(path.join(root, 'js/firebase-config.js'), 'utf8');
   record('firebase-config.js ships PLACEHOLDER_ public fields only',
-    fbCfg.includes("apiKey: 'PLACEHOLDER_API_KEY'") && fbCfg.includes("projectId: 'prismburst-brick-odyssey'") && fbCfg.includes('prismburst-brick-odyssey.firebaseapp.com') && fbCfg.includes('PLACEHOLDER_APP_ID')
+    fbCfg.includes("projectId: 'prismburst-brick-odyssey'") && fbCfg.includes('prismburst-brick-odyssey.firebaseapp.com') && fbCfg.includes('1094215889946') && fbCfg.includes('measurementId') && !/BEGIN [A-Z ]*PRIVATE KEY/.test(fbCfg)
     && !/BEGIN [A-Z ]*PRIVATE KEY/.test(fbCfg) && !/service_account/.test(fbCfg));
   const authBridge = fs.readFileSync(path.join(root, 'auth-bridge.html'), 'utf8');
   record('auth-bridge hosts Google popup/redirect and deep-links id_token with state',

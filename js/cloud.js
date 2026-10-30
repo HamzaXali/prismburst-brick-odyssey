@@ -210,7 +210,7 @@
 
   function firebaseConfig() {
     var raw = window.PB_FIREBASE || {};
-    return {
+    var out = {
       apiKey: String(raw.apiKey || '').trim(),
       authDomain: String(raw.authDomain || '').trim(),
       projectId: String(raw.projectId || '').trim(),
@@ -218,6 +218,11 @@
       messagingSenderId: String(raw.messagingSenderId || '').trim(),
       appId: String(raw.appId || '').trim()
     };
+    var mid = String(raw.measurementId || '').trim();
+    // Keep measurementId in the public config object if present, but never
+    // initialize Analytics from it.
+    if (mid && !isPlaceholder(mid)) out.measurementId = mid;
+    return out;
   }
 
   function providersConfig() {
@@ -246,6 +251,7 @@
   function usableFirebase(cfg) {
     if (!cfg) return false;
     if (looksLikeServiceAccount(cfg)) return false;
+    // measurementId is optional (Analytics). The game never calls getAnalytics.
     var keys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
     for (var i = 0; i < keys.length; i++) {
       if (isPlaceholder(cfg[keys[i]])) return false;

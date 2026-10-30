@@ -9,6 +9,7 @@ node cloud-unit.js            # merge rule, Firebase rules, secret scan, Android
 node cloud-suite.js           # mocked Firebase Auth + Firestore in the browser
 node auth-shop-suite.js       # login popup, forgot/reset, Facebook off (mocked)
 node play-prep-suite.js       # version footer, delete account, privacy (mocked)
+node firebase-suite.js         # extra Firebase auth/save/delete/backoff mock coverage
 node delete-unit.js           # delete core + Firebase wording (no browser)
 ```
 

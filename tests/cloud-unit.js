@@ -274,6 +274,9 @@ try {
     && fs.existsSync(path.join(root, 'js/firebase-config.js'))
     && fs.existsSync(path.join(root, 'lib/firebase-app-compat.js'))
     && fs.existsSync(path.join(root, 'lib/firebase-auth-compat.js')));
+  record('googleWebClientId ships in firebase-config (public OAuth web client)',
+    fs.readFileSync(path.join(root, 'js/firebase-config.js'), 'utf8').includes('googleWebClientId')
+    && fs.readFileSync(path.join(root, 'js/firebase-config.js'), 'utf8').includes('apps.googleusercontent.com'));
   const apk = fs.readFileSync(path.join(root, '.github/workflows/android-debug.yml'), 'utf8');
   const releaseYml = fs.readFileSync(path.join(root, '.github/workflows/android-release.yml'), 'utf8');
   record('debug APK workflow validates, syncs, and uploads the debug artifact',

@@ -343,18 +343,26 @@ try {
     && fs.existsSync(path.join(root, 'js/firebase-config.js'))
     && fs.existsSync(path.join(root, 'lib/firebase-app-compat.js'))
     && fs.existsSync(path.join(root, 'lib/firebase-auth-compat.js')));
-  record('auth-bridge returns Google OAuth tokens via credentialFromResult (not Firebase user JWT)',
+  record('auth-bridge v3 uses top-level Google OAuth redirect (Custom Tab safe)',
     (function () {
       var abHtml = fs.readFileSync(path.join(root, 'auth-bridge.html'), 'utf8');
-      return abHtml.includes('credentialFromResult') && abHtml.includes('access_token')
-        && abHtml.includes("BRIDGE_VERSION = '2'") && abHtml.includes('bv')
+  record('googleWebClientId ships in firebase-config (public OAuth web client)',
+    fs.readFileSync(path.join(root, 'js/firebase-config.js'), 'utf8').includes('googleWebClientId')
+    && fs.readFileSync(path.join(root, 'js/firebase-config.js'), 'utf8').includes('apps.googleusercontent.com'));
+
+      return abHtml.includes("BRIDGE_VERSION = '3'")
+        && abHtml.includes('accounts.google.com/o/oauth2')
+        && abHtml.includes('response_type')
+        && abHtml.includes('error_code')
+        && abHtml.includes('googleWebClientId')
+        && !abHtml.includes('signInWithPopup')
         && !abHtml.includes('result.user.getIdToken');
     })());
   record('Pages service worker never caches auth-bridge (network-only) and bumps VERSION',
     (function () {
       var sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
       return sw.includes('isAuthBridge') && sw.includes('auth-bridge') && sw.includes("cache: 'no-store'")
-        && sw.includes('prismburst-v1.4.2-bridge2') && !/ASSETS[\s\S]*auth-bridge\.html/.test(sw);
+        && sw.includes('prismburst-v1.4.2-bridge3') && !/ASSETS[\s\S]*auth-bridge\.html/.test(sw);
     })());
 
 

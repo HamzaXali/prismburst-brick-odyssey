@@ -18,29 +18,22 @@
 <body>
   <div class="card">
     <h1>Continue with Google</h1>
-    <p class="fine">Android Google sign-in bridge for PRISMBURST (bridge v2). After Google, you return to the app. Email login never uses this page. Progress on your phone stays until you choose.</p>
+    <p class="fine">Android Google sign-in bridge for PRISMBURST (bridge v3). Uses a full-page Google sign-in (works in Chrome Custom Tabs). Email login never uses this page.</p>
     <p id="err" role="status" aria-live="polite"></p>
     <button type="button" id="go">Continue with Google</button>
   </div>
-  <!-- cache-bust query on scripts so SW/HTTP cache cannot keep old Firebase libs beside a new HTML -->
-  <script src="js/firebase-config.js?bv=2"></script>
-  <script src="lib/firebase-app-compat.js?bv=2"></script>
-  <script src="lib/firebase-auth-compat.js?bv=2"></script>
+  <script src="js/firebase-config.js?bv=3"></script>
   <script>
   (function () {
     'use strict';
-    var BRIDGE_VERSION = '2';
+    var BRIDGE_VERSION = '3';
+    var REDIRECT_URI = 'https://hamzaxali.github.io/prismburst-brick-odyssey/auth-bridge.html';
     var params = new URLSearchParams(location.search);
-    var state = params.get('state') || '';
+    var hashParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+    var state = params.get('state') || hashParams.get('state') || '';
     var nonce = params.get('nonce') || '';
     var errEl = document.getElementById('err');
     function say(t) { errEl.textContent = t || ''; }
-    function isPlaceholder(v) { return !v || /^PLACEHOLDER_/i.test(String(v)); }
-    function usable(cfg) {
-      if (!cfg) return false;
-      return !['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId']
-        .some(function (k) { return isPlaceholder(cfg[k]); });
-    }
     function deepLink(hash) {
       return 'com.prismburst.brickodyssey://auth#' + hash;
     }
@@ -48,8 +41,7 @@
       parts = parts || {};
       parts.bv = BRIDGE_VERSION;
       var q = new URLSearchParams();
-      // Prefer access_token first in the hash (shorter path for parsing / truncation diagnostics).
-      ['access_token', 'id_token', 'state', 'nonce', 'bv', 'error'].forEach(function (k) {
+      ['access_token', 'id_token', 'state', 'nonce', 'bv', 'error', 'error_code', 'diag'].forEach(function (k) {
         if (parts[k] != null && parts[k] !== '') q.set(k, parts[k]);
       });
       Object.keys(parts).forEach(function (k) {
@@ -59,62 +51,99 @@
       // Never put tokens in the visible page text or console.
       location.replace(deepLink(q.toString()));
     }
-    function sendGoogleTokens(result) {
-      var oauth = null;
-      try { oauth = firebase.auth.GoogleAuthProvider.credentialFromResult(result); } catch (e) { oauth = null; }
-      var googleId = oauth && oauth.idToken;
-      var googleAccess = oauth && oauth.accessToken;
-      // Prefer access_token (avoids id_token nonce/audience issues). Keep id_token as fallback.
-      if (!googleAccess && !googleId) {
-        goBack({ error: 'Google sign-in could not finish. Close this tab and try again from the game.', state: state });
-        return;
+    function clientId() {
+      var cfg = window.PB_FIREBASE || {};
+      return String(cfg.googleWebClientId || '').trim();
+    }
+    function buildGoogleAuthUrl() {
+      var cid = clientId();
+      if (!cid) return '';
+      var q = new URLSearchParams();
+      q.set('client_id', cid);
+      q.set('redirect_uri', REDIRECT_URI);
+      // id_token only — this Web client is registered for OpenID id_token (Firebase Google provider).
+      q.set('response_type', 'id_token');
+      q.set('scope', 'openid email profile');
+      q.set('state', state);
+      q.set('nonce', nonce || ('n' + String(Date.now())));
+      q.set('prompt', 'select_account');
+      return 'https://accounts.google.com/o/oauth2/v2/auth?' + q.toString();
+    }
+    function handleOAuthReturn() {
+      var idToken = hashParams.get('id_token') || params.get('id_token') || '';
+      var accessToken = hashParams.get('access_token') || params.get('access_token') || '';
+      var err = hashParams.get('error') || params.get('error') || '';
+      var errDesc = hashParams.get('error_description') || params.get('error_description') || '';
+      var retState = hashParams.get('state') || params.get('state') || state;
+      if (!idToken && !accessToken && !err) return false;
+      // Clear hash so a refresh does not re-post tokens.
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+      if (err) {
+        goBack({
+          error: errDesc || err || 'Google sign-in was cancelled.',
+          error_code: /^auth\//.test(err) ? err : ('auth/bridge-' + String(err).replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || 'error'),
+          diag: '[bridge v' + BRIDGE_VERSION + ', oauth-error]',
+          state: retState
+        });
+        return true;
+      }
+      if (!idToken && !accessToken) {
+        goBack({
+          error: 'Google returned no tokens.',
+          error_code: 'auth/bridge-empty-tokens',
+          diag: '[bridge v' + BRIDGE_VERSION + ', empty-tokens]',
+          state: retState
+        });
+        return true;
       }
       goBack({
-        access_token: googleAccess || '',
-        id_token: googleId || '',
-        state: state,
-        nonce: nonce
+        access_token: accessToken || '',
+        id_token: idToken || '',
+        state: retState,
+        nonce: nonce,
+        diag: '[bridge v' + BRIDGE_VERSION + ', oauth-ok]'
       });
+      return true;
     }
-    var cfg = window.PB_FIREBASE || {};
-    if (!usable(cfg) || !window.firebase) {
-      say('Google sign-in is not ready on this page. Close the tab and use email login in the app, or try Google again later.');
-      document.getElementById('go').disabled = true;
-      return;
-    }
+
+    if (handleOAuthReturn()) return;
+
     if (!state) {
       say('Sign-in could not start. Close this tab and try again from the game.');
       document.getElementById('go').disabled = true;
-      return;
-    }
-    try {
-      if (!firebase.apps.length) firebase.initializeApp(cfg);
-    } catch (e) {
-      say('Google sign-in libraries failed to load. Close the tab and try again from the game, or use email login.');
-      return;
-    }
-    document.getElementById('go').addEventListener('click', function () {
-      say('Opening Google…');
-      var provider = new firebase.auth.GoogleAuthProvider();
-      provider.addScope('openid');
-      provider.addScope('email');
-      provider.addScope('profile');
-      provider.setCustomParameters({ prompt: 'select_account' });
-      firebase.auth().signInWithPopup(provider).then(sendGoogleTokens, function (err) {
-        var code = err && err.code || '';
-        var msg = (err && err.message) || 'Sign-in was cancelled.';
-        if (code === 'auth/popup-blocked') {
-          return firebase.auth().signInWithRedirect(provider);
-        }
-        goBack({ error: msg, state: state });
+      goBack({
+        error: 'Missing state.',
+        error_code: 'auth/bridge-missing-state',
+        diag: '[bridge v' + BRIDGE_VERSION + ', missing-state]'
       });
-    });
-    firebase.auth().getRedirectResult().then(function (result) {
-      if (!result || !result.user) return;
-      sendGoogleTokens(result);
-    }, function (err) {
-      if (!err) return;
-      goBack({ error: (err && err.message) || 'Sign-in failed.', state: state });
+      return;
+    }
+    if (!clientId()) {
+      say('Google sign-in is not configured on this page.');
+      document.getElementById('go').disabled = true;
+      goBack({
+        error: 'Missing Google web client id.',
+        error_code: 'auth/bridge-missing-client',
+        diag: '[bridge v' + BRIDGE_VERSION + ', missing-client]',
+        state: state
+      });
+      return;
+    }
+
+    document.getElementById('go').addEventListener('click', function () {
+      var url = buildGoogleAuthUrl();
+      if (!url) {
+        goBack({
+          error: 'Could not start Google sign-in.',
+          error_code: 'auth/bridge-build-url',
+          diag: '[bridge v' + BRIDGE_VERSION + ', build-url]',
+          state: state
+        });
+        return;
+      }
+      say('Opening Google…');
+      // Top-level navigation works inside Chrome Custom Tabs (popup does not).
+      location.assign(url);
     });
   })();
   </script>

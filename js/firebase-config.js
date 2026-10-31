@@ -17,5 +17,7 @@ window.PB_FIREBASE = {
   storageBucket: 'prismburst-brick-odyssey.firebasestorage.app',
   messagingSenderId: '1094215889946',
   appId: '1:1094215889946:web:6ee44187bdc09fc8278da3',
-  measurementId: 'G-LX8NX50NFH'
+  measurementId: 'G-LX8NX50NFH',
+  // Public Google OAuth Web client (Firebase console). Safe to ship; needed for Custom Tab OAuth.
+  googleWebClientId: '1094215889946-kmhnvips4rccbg1hgs3h0n72p493apc7.apps.googleusercontent.com'
 };

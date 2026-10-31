@@ -4,6 +4,8 @@
 
 -keep class com.getcapacitor.** { *; }
 -keep class com.capacitorjs.plugins.** { *; }
+-keep class com.capacitorjs.plugins.browser.** { *; }
+-keep class androidx.browser.** { *; }
 -keep class com.prismburst.brickodyssey.** { *; }
 
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,JavascriptInterface,Exceptions

@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    function validDisplayName() {
+      return request.resource.data.display_name is string
+        && request.resource.data.display_name.size() >= 2
+        && request.resource.data.display_name.size() <= 24;
+    }
+    function validSave() {
+      return request.resource.data.keys().hasAll(['data', 'save_version', 'revision', 'client_updated_at'])
+        && request.resource.data.save_version is int
+        && request.resource.data.revision is int
+        && request.resource.data.revision > 0
+        && request.resource.data.client_updated_at is string
+        && request.resource.data.data is map
+        && request.resource.data.data.keys().size() < 40;
+    }
+
+    match /profiles/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validDisplayName();
+      allow delete: if isOwner(uid);
+    }
+
+    match /saves/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validSave();
+      allow delete: if isOwner(uid);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

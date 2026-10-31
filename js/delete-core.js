@@ -2,10 +2,9 @@
  * PRISMBURST — delete-core.js
  * Account deletion shared by the game (js/cloud.js) and delete-account.html.
  *
- * The browser only holds the publishable key. Deletion runs on the server in
- * public.delete_my_account() (supabase/migrations/004_delete_my_account.sql),
- * a SECURITY DEFINER function that removes only the caller's own rows
- * (auth.uid()) and the caller's auth user. No privileged key is used here.
+ * The browser only holds the public Firebase web config. Deletion removes the
+ * caller's own Firestore docs (saves/{uid}, profiles/{uid}) then calls
+ * user.delete(). No Admin SDK or service-account key is used here.
  *
  * The device save prismburst.save.v1 is never cleared by run(). clearDevice()
  * runs only when the player taps "Also clear this device's progress".
@@ -21,7 +20,6 @@
   'use strict';
 
   var PHRASE = 'DELETE';
-  var RPC = 'delete_my_account';
   var SAVE_KEY = 'prismburst.save.v1';
   var META_KEY = 'prismburst.cloud.meta.v1';
   var BACKUP_PREFIX = 'prismburst.save.backup.';
@@ -37,21 +35,33 @@
     });
   }
 
-  // Calls the server function, then forgets the session on this device only.
-  // Resolves true when the server confirmed the deletion.
-  function run(client, typed) {
+  // ctx: { auth, db, user } from Firebase Auth + Firestore.
+  // Deletes Firestore docs first, then the Auth user. Resolves true on success.
+  function run(ctx, typed) {
     if (!matches(typed)) return Promise.reject(new Error('Type ' + PHRASE + ' in capitals to confirm.'));
-    if (!client || typeof client.rpc !== 'function') return Promise.reject(new Error('Cloud is not set up on this device.'));
-    return timeout(client.rpc(RPC), 20000).then(function (res) {
-      if (res && res.error) throw res.error;
-      var auth = client.auth;
-      if (!auth || typeof auth.signOut !== 'function') return true;
-      return Promise.resolve(auth.signOut({ scope: 'local' })).then(function () { return true; }, function () { return true; });
+    if (!ctx || !ctx.user || !ctx.db || !ctx.auth) {
+      return Promise.reject(new Error('Cloud is not set up on this device.'));
+    }
+    var uid = ctx.user.uid;
+    if (!uid) return Promise.reject(new Error('Sign in to the account you want to delete first. Nothing was deleted.'));
+    var saveRef = ctx.db.collection('saves').doc(uid);
+    var profileRef = ctx.db.collection('profiles').doc(uid);
+    return timeout(Promise.all([
+      saveRef.delete().catch(function () { return null; }),
+      profileRef.delete().catch(function () { return null; })
+    ]).then(function () {
+      return ctx.user.delete();
+    }), 20000).then(function () {
+      return true;
+    }, function (err) {
+      var code = String(err && err.code || '');
+      if (code === 'auth/requires-recent-login') {
+        throw new Error('For security, sign in again, then delete the account. Nothing was deleted.');
+      }
+      throw err;
     });
   }
 
-  // Removes this device's game progress, its backups, and the cloud sync
-  // bookkeeping. The guest display name (prismburst.profile.v1) is kept.
   function clearDevice(storage) {
     var removed = [];
     if (!storage) return removed;
@@ -68,5 +78,5 @@
     return removed;
   }
 
-  return { PHRASE: PHRASE, RPC: RPC, SAVE_KEY: SAVE_KEY, matches: matches, run: run, clearDevice: clearDevice };
+  return { PHRASE: PHRASE, SAVE_KEY: SAVE_KEY, matches: matches, run: run, clearDevice: clearDevice };
 });

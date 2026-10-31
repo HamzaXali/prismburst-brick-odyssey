@@ -47,6 +47,8 @@ Save. The Site URL stays the GitHub Pages address. Email confirmation and passwo
 
 If that redirect URL is missing, Supabase sends the player to the Site URL instead of back into the app. Closing the browser without finishing leaves the phone save as it was.
 
+The app opens Google through the Capacitor **Browser** plugin (Custom Tabs), then an in-app **OpenUrl** Intent.ACTION_VIEW helper if Custom Tabs fails, then window.open. Errors include a short `[vX.Y.Z step=…]` code so a screenshot shows which build and step failed (`window.Capacitor.Plugins.Browser.open`), which uses Android Custom Tabs. If that plugin handle is missing, the game falls back to `window.open`. This static WebView build does not ship `@capacitor/core`'s `registerPlugin` API.
+
 The Google Cloud **Authorized redirect URI** is still the Supabase callback (`https://qogqnutpqzatxnbhcznc.supabase.co/auth/v1/callback`, or whatever the Supabase Google page shows). Do not put the `com.prismburst.brickodyssey` address into Google Cloud. That address belongs only in Supabase's redirect allow list.
 
 ## 5. Play Store build

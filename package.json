@@ -1,8 +1,8 @@
 {
   "name": "prismburst-brick-odyssey",
-  "version": "1.4.2",
-  "androidVersionCode": 4,
-  "description": "PRISMBURST — Brick Odyssey: a mobile-first neon-crystal brick-breaker (Phaser 3, static site, offline-ready).",
+  "version": "1.5.0",
+  "androidVersionCode": 8,
+  "description": "PRISMBURST \u2014 Brick Odyssey: a mobile-first neon-crystal brick-breaker (Phaser 3, static site, offline-ready).",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
@@ -16,7 +16,7 @@
     "node": ">=18"
   },
   "phaser": "3.90.0 (vendored at lib/phaser.min.js, MIT license)",
-  "supabase": "2.118.0 (vendored UMD at lib/supabase.min.js, MIT license)",
+  "firebase": "10.14.1 (vendored compat at lib/firebase-*-compat.js, Apache-2.0)",
   "devDependencies": {
     "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.2",

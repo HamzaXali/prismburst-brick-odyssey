@@ -11,6 +11,8 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Must run before BridgeActivity.onCreate so the plugin is in the bridge.
+        registerPlugin(OpenUrlPlugin.class);
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

@@ -18,6 +18,7 @@ const INCLUDE_FILES = [
   'privacy.html',
   'privacy-policy.html',
   'delete-account.html',
+  'auth-bridge.html',
   '.nojekyll'
 ];
 const INCLUDE_DIRS = ['js', 'lib', 'icons'];

@@ -130,6 +130,8 @@
       $('pb-acct-sync').textContent = snap.sync;
       $('pb-acct-msg').textContent = snap.error || '';
       $('pb-acct-loading').hidden = !snap.loading;
+      var ver = $('pb-acct-version');
+      if (ver) ver.textContent = 'v' + (PB.VERSION || '');
 
       // Log in / Sign up tabs.
       var signup = this.tab === 'signup';
@@ -146,6 +148,19 @@
       show(document.querySelector('[data-action="login"]'), !signup);
       show(document.querySelector('[data-action="signup"]'), signup);
       show(document.querySelector('#pb-email-form [data-action="forgot"]'), !signup);
+      var resendBtn = document.querySelector('[data-action="resend-confirm"]');
+      var pendingConfirm = !!(snap.pendingConfirmEmail);
+      show(resendBtn, pendingConfirm && view === 'auth');
+      if (resendBtn) {
+        var cWait = snap.confirmWait || 0;
+        resendBtn.textContent = cWait > 0
+          ? 'Resend confirmation · wait ' + Math.ceil(cWait / 1000) + 's'
+          : 'Resend confirmation email';
+        if (cWait > 0 && !this._tick) {
+          var selfConfirm = this;
+          this._tick = setTimeout(function () { selfConfirm._tick = null; selfConfirm.render(); }, 1000);
+        }
+      }
       var pass = $('pb-password-input');
       if (pass) pass.setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
 
@@ -213,13 +228,14 @@
         setDisabled(el, sheetBusy);
       });
       var emailIds = ['pb-email-input', 'pb-password-input', 'pb-password2-input', 'pb-forgot-email'];
-      var emailActions = ['login', 'signup', 'forgot', 'send-reset'];
+      var emailActions = ['login', 'signup', 'forgot', 'send-reset', 'resend-confirm'];
       document.querySelectorAll('#pb-account input, #pb-account button').forEach(function (el) {
         if (el.closest && el.closest('#pb-migrate, #pb-confirm')) return;
         var action = el.getAttribute('data-action') || '';
         if (emailIds.indexOf(el.id) >= 0 || emailActions.indexOf(action) >= 0) {
           var block = sheetBusy || !emailOn;
           if (action === 'send-reset' && (snap.resetWait || 0) > 0) block = true;
+          if (action === 'resend-confirm' && (snap.confirmWait || 0) > 0) block = true;
           setDisabled(el, block);
         } else if (action === 'set-password' || el.id === 'pb-new-password' || el.id === 'pb-new-password2') {
           setDisabled(el, sheetBusy || !snap.signedIn);
@@ -255,8 +271,18 @@
         return;
       }
       PB.Cloud.signUpEmail(emailValue(), passwordValue()).then(function () {
-        if (!PB.Cloud.session && /confirm the account/i.test(PB.Cloud.errorText || '')) {
+        if (PB.Cloud.session) return;
+        var outcome = PB.Cloud.lastSignupOutcome || '';
+        if (outcome === 'exists' || /already has an account/i.test(PB.Cloud.errorText || '')) {
           Account.tab = 'login';
+          $('pb-password2-input').value = '';
+          // Keep email prefilled; clear password so they type it for login.
+          $('pb-password-input').value = '';
+          Account.render();
+          return;
+        }
+        if (outcome === 'confirm') {
+          // Stay on Sign up so Resend confirmation stays visible; email stays filled.
           $('pb-password2-input').value = '';
           Account.render();
         }
@@ -326,6 +352,15 @@
     if (action === 'send-reset') {
       event.preventDefault();
       PB.Cloud.forgotEmail(($('pb-forgot-email').value || '').trim());
+      return;
+    }
+    if (action === 'resend-confirm') {
+      event.preventDefault();
+      var email = emailValue() || (PB.Cloud.pendingConfirmEmail || '');
+      if (email && $('pb-email-input') && !$('pb-email-input').value) {
+        $('pb-email-input').value = email;
+      }
+      PB.Cloud.resendConfirmEmail(email);
       return;
     }
     if (action === 'to-login') {

@@ -82,7 +82,7 @@
     <li>Your display name.</li>
     <li>Your cloud save (levels, stars, coins, skins, settings and stats).</li>
   </ul>
-  <p>Deletion happens straight away in the live database. Nothing is kept for advertising or analytics, because the game has neither. Routine backups held by the hosting provider (Supabase), if any, are overwritten on their normal schedule and are not used to restore deleted accounts.</p>
+  <p>Deletion happens straight away in the live database. Nothing is kept for advertising or analytics, because the game has neither. Routine backups held by the hosting provider (Google Firebase), if any, are overwritten on their normal schedule and are not used to restore deleted accounts.</p>
 
   <h2>What is not deleted</h2>
   <p>Progress saved on your phone stays on your phone. In the game, after deleting, you can choose <strong>Also clear this device's progress</strong>, or use <strong>Settings → Reset progress</strong> at any time. Uninstalling the Android app also removes it.</p>
@@ -92,7 +92,10 @@
 
   <p><a href="privacy-policy.html">Privacy policy</a> · <a href="./">Back to the game</a></p>
 </main>
-<script src="lib/supabase.min.js"></script>
+<script src="lib/firebase-app-compat.js"></script>
+<script src="lib/firebase-auth-compat.js"></script>
+<script src="lib/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
 <script src="config.js"></script>
 <script src="js/delete-core.js"></script>
 <script src="js/delete-page.js"></script>

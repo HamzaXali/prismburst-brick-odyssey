@@ -82,6 +82,7 @@
           <button type="submit" class="pb-btn email" data-action="login">Log in</button>
           <button type="button" class="pb-btn email" data-action="signup" hidden>Create account</button>
           <button type="button" class="pb-linkbtn" data-action="forgot">Forgot password?</button>
+          <button type="button" class="pb-linkbtn" data-action="resend-confirm" id="pb-resend-confirm" hidden>Resend confirmation email</button>
           <p class="pb-note" id="pb-note-email"></p>
         </form>
 
@@ -151,6 +152,7 @@
 
       <p class="pb-fine">Progress is always stored on this device. Cloud save runs only while you are signed in.</p>
       <p class="pb-fine"><a href="privacy-policy.html" data-action="open-page" data-page="privacy-policy.html">Privacy policy</a> · <a href="delete-account.html" data-action="open-page" data-page="delete-account.html">Delete account page</a></p>
+      <p class="pb-fine" id="pb-acct-version" aria-label="App version"></p>
     </div>
 
     <div id="pb-confirm" hidden>
@@ -180,7 +182,10 @@
     <noscript><p>This game needs JavaScript enabled.</p></noscript>
   </div>
   <script src="lib/phaser.min.js"></script>
-  <script src="lib/supabase.min.js"></script>
+  <script src="lib/firebase-app-compat.js"></script>
+  <script src="lib/firebase-auth-compat.js"></script>
+  <script src="lib/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
   <script src="config.js"></script>
   <script src="levels.js"></script>
   <script src="js/save-plain.js"></script>
@@ -199,13 +204,33 @@
   <script src="js/home-ui.js"></script>
   <script src="game.js"></script>
   <script>
-    // Offline support on the web (GitHub Pages). Skipped inside native wrappers,
-    // where the files are already bundled on the device.
-    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !window.Capacitor) {
-      window.addEventListener('load', function () {
-        navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW registration failed', e); });
-      });
-    }
+    // Offline support on the web (GitHub Pages) only. Never register inside the
+    // Android WebView (androidScheme https://localhost): a leftover SW can keep
+    // serving a cached cloud.js after an APK update.
+    (function () {
+      var native = false;
+      try {
+        native = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+      } catch (e) { native = !!window.Capacitor; }
+      if (native) {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            (regs || []).forEach(function (r) { try { r.unregister(); } catch (e1) {} });
+          }, function () {});
+        }
+        if (window.caches && caches.keys) {
+          caches.keys().then(function (keys) {
+            (keys || []).forEach(function (k) { try { caches.delete(k); } catch (e2) {} });
+          }, function () {});
+        }
+        return;
+      }
+      if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW registration failed', e); });
+        });
+      }
+    })();
   </script>
 </body>
 </html>

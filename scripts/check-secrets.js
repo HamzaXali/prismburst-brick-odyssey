@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* Fail if a shipped file contains a secret key or a JWT whose payload
- * role is the Supabase secret role. Documentation may name that role;
+ * role is the privileged secret role. Documentation may name that role;
  * the files copied to GitHub Pages may not. The official supabase-js
  * bundle mentions the publishable/secret key prefixes as a format check;
  * a real key is the prefix plus token characters, and that still fails.
@@ -57,6 +57,12 @@ function scanText(rel, text) {
   const problems = [];
   if (text.includes(FORBIDDEN_WORD)) problems.push(rel + ': contains the secret-role name');
   if (SECRET_KEY_RE.test(text)) problems.push(rel + ': contains a secret API key');
+  if (/BEGIN [A-Z ]*PRIVATE KEY/.test(text) || /"private_key"\s*:/.test(text)) {
+    problems.push(rel + ': contains a private key / service-account material');
+  }
+  if (/"type"\s*:\s*"service_account"/.test(text)) {
+    problems.push(rel + ': contains a Google service-account JSON');
+  }
   JWT_RE.lastIndex = 0;
   let match;
   while ((match = JWT_RE.exec(text))) {

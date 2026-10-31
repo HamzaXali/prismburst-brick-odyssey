@@ -201,7 +201,7 @@ async function boot(browser, server, state, providers) {
       const good = await page.evaluate(() => {
         sessionStorage.setItem('prismburst.auth.bridge.v1', JSON.stringify({ state: 'state-ok', nonce: 'nonce-ok', at: Date.now() }));
         const before = localStorage.getItem('prismburst.save.v1');
-        PB.Cloud.handleNativeAuthUrl('com.prismburst.brickodyssey://auth#access_token=google-access-tok&id_token=google-id-tok&state=state-ok&nonce=nonce-ok&bv=2');
+        PB.Cloud.handleNativeAuthUrl('com.prismburst.brickodyssey://auth#access_token=google-access-tok&id_token=google-id-tok&state=state-ok&nonce=nonce-ok&bv=3');
         return new Promise(function (r) {
           setTimeout(function () {
             r({ signed: PB.Cloud.snapshot().signedIn, provider: PB.Cloud.providerName(), before: before, save: localStorage.getItem('prismburst.save.v1'), creds: window.__PB_MOCK_STATE.credentialLog });
@@ -265,6 +265,13 @@ async function boot(browser, server, state, providers) {
       });
       record('stale firebase JWT rejected with bridge diagnostic', /token firebase/i.test(stale.err || '') && /bridge v/i.test(stale.err || '') && !/password/i.test(stale.err || ''), stale);
       record('stale firebase JWT keeps save', stale.save === stale.before, stale);
+
+      const bridgeErr = await page.evaluate(() => {
+        sessionStorage.setItem('prismburst.auth.bridge.v1', JSON.stringify({ state: 'st-be', nonce: 'n-be', at: Date.now() }));
+        PB.Cloud.handleNativeAuthUrl('com.prismburst.brickodyssey://auth#error=popup_failed&error_code=auth/bridge-popup&diag=' + encodeURIComponent('[bridge v3, oauth-error]') + '&state=st-be&bv=3');
+        return { err: PB.Cloud.errorText };
+      });
+      record('bridge-error always shows diag bracket', /\(auth\/bridge-popup\)/.test(bridgeErr.err || '') && /\[bridge v3, oauth-error\]/.test(bridgeErr.err || ''), bridgeErr);
       await ctx.close();
     }
 

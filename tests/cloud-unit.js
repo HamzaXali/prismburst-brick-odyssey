@@ -186,7 +186,7 @@ try {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const shippedVersion = require('../package.json').version;
   record('service worker cache version matches the semver and precaches the game',
-    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/firebase-app-compat.js') && sw.includes('./lib/firebase-auth-compat.js') && sw.includes('./lib/firebase-firestore-compat.js') && sw.includes('./js/firebase-config.js') && sw.includes('isAuthBridge') && sw.includes('prismburst-v1.5.0-bridge2') && !sw.includes("'./auth-bridge.html'") && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.5') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0'));
+    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/firebase-app-compat.js') && sw.includes('./lib/firebase-auth-compat.js') && sw.includes('./lib/firebase-firestore-compat.js') && sw.includes('./js/firebase-config.js') && sw.includes('isAuthBridge') && sw.includes('prismburst-v1.5.0-bridge3') && !sw.includes("'./auth-bridge.html'") && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.5') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
   record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '" + shippedVersion + "'") && sw.includes('prismburst-v' + shippedVersion));
   record('service worker keeps Firebase/Google APIs network-only and skips OAuth returns', (sw.includes('googleapis') || sw.includes('firebaseio') || sw.includes('identitytoolkit')) && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
@@ -255,12 +255,15 @@ try {
     fbCfg.includes("projectId: 'prismburst-brick-odyssey'") && fbCfg.includes('prismburst-brick-odyssey.firebaseapp.com') && fbCfg.includes('1094215889946') && fbCfg.includes('measurementId') && !/BEGIN [A-Z ]*PRIVATE KEY/.test(fbCfg)
     && !/BEGIN [A-Z ]*PRIVATE KEY/.test(fbCfg) && !/service_account/.test(fbCfg));
   const authBridge = fs.readFileSync(path.join(root, 'auth-bridge.html'), 'utf8');
-  record('auth-bridge hosts Google popup/redirect and deep-links Google OAuth tokens with state',
-    authBridge.includes('signInWithPopup') && authBridge.includes('com.prismburst.brickodyssey://auth')
-    && authBridge.includes('credentialFromResult') && authBridge.includes('access_token')
-    && authBridge.includes("BRIDGE_VERSION = '2'") && authBridge.includes('bv')
-    && authBridge.includes('id_token') && authBridge.includes('state')
-    && !authBridge.includes('result.user.getIdToken') && authBridge.indexOf('console.log') === -1);
+  record('auth-bridge v3 uses top-level Google OAuth and deep-links tokens with bv/error_code',
+    authBridge.includes('com.prismburst.brickodyssey://auth')
+    && authBridge.includes("BRIDGE_VERSION = '3'")
+    && authBridge.includes('accounts.google.com/o/oauth2')
+    && authBridge.includes('error_code')
+    && authBridge.includes('id_token')
+    && !authBridge.includes('signInWithPopup')
+    && !authBridge.includes('result.user.getIdToken')
+    && authBridge.indexOf('console.log') === -1);
 
     const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.')).sort();
   record('Pages, the debug APK, and the release workflow are the only workflows', workflows.join(',') === 'android-debug.yml,android-release.yml,pages.yml');
@@ -476,12 +479,15 @@ try {
     friendlyError({ code: 'auth/too-many-requests' }).indexOf('Too many tries') >= 0 &&
     friendlyError({ code: 'auth/network-request-failed' }).indexOf('offline') >= 0 &&
     friendlyError({ code: 'auth/email-already-in-use' }).indexOf('auth/email-already-in-use') === -1);
-  const gFail = friendlyError({ code: 'auth/invalid-credential', message: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.aaa.bbb for user@example.com', diag: '[bridge v2, token firebase]' }, 'google');
+  const gFail = friendlyError({ code: 'auth/invalid-credential', message: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.aaa.bbb for user@example.com', diag: '[bridge v3, token firebase]' }, 'google');
+  const gFailNoDiag = friendlyError({ code: 'auth/bridge-error', message: 'x' }, 'google');
   record('Google friendlyError never looks like a password mistake and includes the auth code',
     gFail.indexOf('incorrect') === -1 && gFail.indexOf('password') === -1
     && gFail.indexOf('(auth/invalid-credential)') >= 0 && gFail.indexOf('Google sign-in') >= 0
     && gFail.indexOf('eyJ') === -1 && gFail.indexOf('user@') === -1
-    && gFail.indexOf('[bridge v2, token firebase]') >= 0);
+    && gFail.indexOf('[bridge v3, token firebase]') >= 0);
+  record('Google friendlyError always includes a diag bracket even when diag is omitted',
+    /\[[^\]]+\]/.test(gFailNoDiag) && gFailNoDiag.indexOf('(auth/bridge-error)') >= 0);
   record('native Google prefers accessToken credential and cache-busts the bridge URL',
     cloudJs.includes('GoogleAuthProvider.credential')
     && cloudJs.includes('credential(null, parsed.accessToken)')
@@ -489,6 +495,13 @@ try {
     && cloudJs.includes('peekJwtIss')
     && cloudJs.includes('EXPECTED_BRIDGE_VERSION')
     && /friendlyError\([^\n]+,\s*'google'\)/.test(cloudJs));
+  record('emailActionContinueUrl always uses GitHub Pages HTTPS (never Capacitor localhost)',
+    cloudJs.includes('function emailActionContinueUrl')
+    && cloudJs.includes('PUBLIC_SITE')
+    && /function authRedirectUrl\(\) \{\s*return emailActionContinueUrl/.test(cloudJs)
+    && /function recoveryRedirectUrl\(\) \{\s*return emailActionContinueUrl\('mode=resetPassword'\)/.test(cloudJs)
+    && !/function authRedirectUrl\(\) \{\s*return isNativeApp\(\) \? NATIVE_AUTH_URL/.test(cloudJs));
+
 
   function extractFn(src, name) {
     const start = src.indexOf('function ' + name);
@@ -539,9 +552,9 @@ try {
     else if (ch === '}') { d3--; if (st3 && d3 === 0) { parseEnd++; break; } }
   }
   const parseNativeAuthUrl = vm.runInNewContext(cloudJs.slice(parseStart, parseEnd) + '; parseNativeAuthUrl', { URL: URL, URLSearchParams: URLSearchParams });
-  const deep = parseNativeAuthUrl('com.prismburst.brickodyssey://auth#access_token=tok&id_token=abc&state=xyz&bv=2');
+  const deep = parseNativeAuthUrl('com.prismburst.brickodyssey://auth#access_token=tok&id_token=abc&state=xyz&bv=3');
   record('deep-link parser extracts id_token, access_token, bv, and state without other schemes',
-    deep && deep.idToken === 'abc' && deep.accessToken === 'tok' && deep.state === 'xyz' && deep.bv === '2'
+    deep && deep.idToken === 'abc' && deep.accessToken === 'tok' && deep.state === 'xyz' && deep.bv === '3'
     && parseNativeAuthUrl('https://evil.example/#id_token=x') === null);
   const peekFnStart = cloudJs.indexOf('function peekJwtIss');
   let peekEnd = peekFnStart, pd = 0, ps = false;

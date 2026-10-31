@@ -117,7 +117,7 @@
   var BRIDGE_UNAVAILABLE_MSG =
     'Google sign-in page is not available yet. Email login still works in the app. Progress on this device is unchanged.';
 
-  var EXPECTED_BRIDGE_VERSION = '2';
+  var EXPECTED_BRIDGE_VERSION = '3';
 
   function authBridgeUrl() {
     return PUBLIC_SITE + 'auth-bridge.html';
@@ -241,12 +241,21 @@
     }
   }
 
+  /** Continue URL for email verification / password-reset emails.
+   * Must be HTTPS on an authorized domain — never Capacitor https://localhost. */
+  function emailActionContinueUrl(extraQuery) {
+    var base = PUBLIC_SITE;
+    var q = String(extraQuery || '').replace(/^\?/, '');
+    if (!q) return base;
+    return base + (base.indexOf('?') >= 0 ? '&' : '?') + q;
+  }
+
   function authRedirectUrl() {
-    return isNativeApp() ? NATIVE_AUTH_URL : pageUrl();
+    return emailActionContinueUrl('');
   }
 
   function recoveryRedirectUrl() {
-    return pageUrl() + (pageUrl().indexOf('?') >= 0 ? '&' : '?') + 'mode=resetPassword';
+    return emailActionContinueUrl('mode=resetPassword');
   }
 
   function parseNativeAuthUrl(raw) {
@@ -263,6 +272,8 @@
       bv: url.searchParams.get('bv') || hash.get('bv') || '',
       state: url.searchParams.get('state') || hash.get('state') || '',
       error: url.searchParams.get('error_description') || url.searchParams.get('error') || hash.get('error_description') || hash.get('error') || '',
+      errorCode: url.searchParams.get('error_code') || hash.get('error_code') || '',
+      bridgeDiag: url.searchParams.get('diag') || hash.get('diag') || '',
       type: url.searchParams.get('type') || hash.get('type') || '',
       oobCode: url.searchParams.get('oobCode') || hash.get('oobCode') || '',
       mode: url.searchParams.get('mode') || hash.get('mode') || '',
@@ -351,9 +362,12 @@
       if (code === 'auth/popup-closed-by-user' || /cancel/i.test(low)) {
         return 'Google sign-in was cancelled.';
       }
-      var diag = err && err.diag ? (' ' + String(err.diag).slice(0, 80)) : '';
+      var diagRaw = err && err.diag ? String(err.diag) : '[bridge ?, no-diag]';
+      diagRaw = diagRaw.replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[token]')
+        .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]');
+      if (diagRaw.charAt(0) !== '[') diagRaw = '[' + diagRaw + ']';
       // Never map Google failures to the email/password message. Never show tokens/email/sub.
-      return 'Google sign-in could not finish (' + safeCode + ')' + diag
+      return 'Google sign-in could not finish (' + safeCode + ') ' + diagRaw.slice(0, 80)
         + '. Try again, or use email login. Progress on this device is unchanged.';
     }
     if (code === 'auth/email-already-in-use' || low.indexOf('email-already-in-use') !== -1 || low.indexOf('already in use') !== -1) {
@@ -1600,7 +1614,11 @@
       if (parsed.error) {
         this.loading = false;
         this.clearBridgeState();
-        this.setError(friendlyError({ message: parsed.error, code: 'auth/bridge-error' }, 'google'));
+        var errCode = parsed.errorCode || 'auth/bridge-error';
+        if (!/^auth\//i.test(errCode)) errCode = 'auth/bridge-error';
+        var peekErr = peekJwtIss(parsed.idToken);
+        var diagErr = parsed.bridgeDiag || googleAuthDiag(parsed, peekErr, 'a' + parsed.accessTokenLen + '/i' + parsed.idTokenLen);
+        this.setError(friendlyError({ message: parsed.error, code: errCode, diag: diagErr }, 'google'));
         return;
       }
       if (parsed.mode === 'resetPassword' && parsed.oobCode) {
@@ -1712,6 +1730,7 @@
     probeAuthBridge: probeAuthBridge,
     authBridgeUrl: authBridgeUrl,
     authBridgeOpenUrl: authBridgeOpenUrl,
+    emailActionContinueUrl: emailActionContinueUrl,
     peekJwtIss: peekJwtIss,
     googleAuthDiag: googleAuthDiag,
     EXPECTED_BRIDGE_VERSION: EXPECTED_BRIDGE_VERSION,

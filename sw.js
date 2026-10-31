@@ -4,7 +4,7 @@
  * pushed to GitHub appears on the next launch. Paths are relative to this file,
  * so it works under a GitHub Pages sub-path (https://<user>.github.io/<repo>/).
  * Bump VERSION to force-drop old caches. */
-var VERSION = 'prismburst-v1.5.0-bridge2';
+var VERSION = 'prismburst-v1.5.0-bridge3';
 var ASSETS = [
   './', './index.html', './style.css', './levels.js', './game.js', './config.js', './privacy.html', './privacy-policy.html', './delete-account.html',
   './js/save-plain.js', './js/build-flags.js', './js/core.js', './js/home.js', './js/achievements.js', './js/shop.js', './js/ads.js', './js/home-ui.js', './js/menus.js', './js/save-sync.js', './js/profile.js', './js/delete-core.js', './js/delete-page.js', './js/cloud.js', './js/account.js',

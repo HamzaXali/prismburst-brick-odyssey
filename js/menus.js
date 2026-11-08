@@ -7,7 +7,7 @@
   'use strict';
   var PB = window.PB, L = window.PB_LEVELS, Save = PB.Save, Sfx = PB.Sfx;
   var W = PB.W, H = PB.H;
-  PB.VERSION = '1.5.0';
+  PB.VERSION = '1.6.0';
   // Honest summary shown at the bottom of Settings. Update it when a real ad SDK is added.
   PB.SETTINGS_FOOTER = 'Demo ads only promote PRISMBURST itself. No third-party ad SDK and no tracking. Progress stays on this device; cloud save runs only when you sign in.';
 
@@ -57,6 +57,10 @@
       }, { color: 0xff3df0, size: 36 });
       PB.text(this, cx + 36, y0 + 24, (has ? 'Continue: ' : 'Begin: ') + L.WORLDS[ct.world].name + ' · Level ' + (ct.level + 1), 20, '#c9b8ff');
       PB.button(this, cx + 36, y0 + 100, 420, 88, 'PLAY', function () { PB.fadeTo(self, 'Worlds'); }, { color: 0x22e8ff, size: 34 });
+      var tunnel = PB.button(this, cx + 36, 828, 420, 64, 'PIXEL TUNNEL', function () {
+        if (window.PB.PixelTunnel) window.PB.PixelTunnel.open();
+      }, { color: 0x21c6db, size: 22 });
+      tunnel.name = 'pixelTunnel';
       var nameText = PB.text(this, cx + 36, 1048, (PB.Cloud.snapshot && PB.Cloud.snapshot().displayName) || '', 20, '#9fe9ff', { strokeThickness: 0 });
       nameText.name = 'playerName';
       var acct = PB.button(this, cx + 36, 1096, 420, 60, PB.Cloud.badgeText(), function () { PB.Account.open(); }, { color: 0x22e8ff, size: 20 });

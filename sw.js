@@ -4,10 +4,11 @@
  * pushed to GitHub appears on the next launch. Paths are relative to this file,
  * so it works under a GitHub Pages sub-path (https://<user>.github.io/<repo>/).
  * Bump VERSION to force-drop old caches. */
-var VERSION = 'prismburst-v1.5.0-bridge3';
+var VERSION = 'prismburst-v1.6.0';
 var ASSETS = [
   './', './index.html', './style.css', './levels.js', './game.js', './config.js', './privacy.html', './privacy-policy.html', './delete-account.html',
   './js/save-plain.js', './js/build-flags.js', './js/core.js', './js/home.js', './js/achievements.js', './js/shop.js', './js/ads.js', './js/home-ui.js', './js/menus.js', './js/save-sync.js', './js/profile.js', './js/delete-core.js', './js/delete-page.js', './js/cloud.js', './js/account.js',
+  './js/pixel-tunnel/config.js', './js/pixel-tunnel/levels.js', './js/pixel-tunnel/storage.js', './js/pixel-tunnel/audio.js', './js/pixel-tunnel/physics.js', './js/pixel-tunnel/input.js', './js/pixel-tunnel/renderer.js', './js/pixel-tunnel/game.js', './js/pixel-tunnel/ui.js', './js/pixel-tunnel/main.js',
   './lib/phaser.min.js', './lib/firebase-app-compat.js', './lib/firebase-auth-compat.js', './lib/firebase-firestore-compat.js', './js/firebase-config.js', './config.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'
 ];

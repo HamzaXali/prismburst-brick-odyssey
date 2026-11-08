@@ -43,7 +43,7 @@ function startServer() {
     await page.waitForFunction(() => window.PB && PB.Cloud && PB.Cloud.readySettled, null, { timeout: 20000 });
 
     const ver = await page.evaluate(() => PB.VERSION);
-    record('app version is 1.5.0', ver === '1.5.0', ver);
+    record('app version is 1.6.0', ver === '1.6.0', ver);
 
     await page.evaluate(() => {
       localStorage.setItem('prismburst.save.v1', JSON.stringify({ v: 1, coins: 15, unlocked: [1,0,0,0,0], levels: {}, owned: { ball: ['classic'], paddle: ['classic'] }, equipped: { ball: 'classic', paddle: 'classic' }, settings: { sound: true, vibration: true, shake: true }, daily: { last: null, streak: 0 }, missions: { date: null, list: [] }, stats: { bricks: 0, played: 0, cleared: 0 }, last: null }));

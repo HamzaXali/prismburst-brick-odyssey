@@ -42,8 +42,10 @@
   'use strict';
 
   var plain = null;
+  var tunnelStore = null;
   if (typeof require === 'function') {
     try { plain = require('./save-plain.js'); } catch (e) { plain = null; }
+    try { tunnelStore = require('./pixel-tunnel/storage.js'); } catch (e2) { tunnelStore = null; }
   }
   if (!plain) {
     var rootObj = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
@@ -465,7 +467,17 @@
       }
     };
     if (plain) plain.mergeUnknown(merged.save, local, remote, remoteNewer, 0);
+    var tunnel = mergePixelTunnel(local.pixelTunnel, remote.pixelTunnel);
+    if (tunnel) merged.save.pixelTunnel = tunnel;
     return merged;
+  }
+
+  function mergePixelTunnel(localSide, remoteSide) {
+    var api = tunnelStore;
+    var g = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
+    if (g.PB && g.PB.PTStorage && g.PB.PTStorage.merge) api = g.PB.PTStorage;
+    if (!api || !api.merge) return null;
+    try { return api.merge(localSide, remoteSide); } catch (err) { return null; }
   }
 
   return {

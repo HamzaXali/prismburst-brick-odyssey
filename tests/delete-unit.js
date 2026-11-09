@@ -114,10 +114,10 @@ function fakeCtx(opts) {
       html.includes('firebase-app-compat.js') && html.includes('firebase-config.js') && !html.includes('supabase.min.js'));
     record('privacy and Play Store mention Firebase/Google not Supabase Auth as the live backend',
       /Firebase/i.test(privacy) && /Firebase/i.test(play) && !/Supabase Auth/i.test(privacy));
-    record('version is 1.5.0 / versionCode 8',
-      pkg.version === '1.5.0' && pkg.androidVersionCode === 8 &&
-      read('js/menus.js').includes("PB.VERSION = '1.5.0'") &&
-      read('sw.js').includes('prismburst-v1.5.0'));
+    record('version is 1.6.0 / versionCode 9',
+      pkg.version === '1.6.0' && pkg.androidVersionCode === 9 &&
+      read('js/menus.js').includes("PB.VERSION = '1.6.0'") &&
+      read('sw.js').includes('prismburst-v1.6.0'));
     record('device save key is never cleared by cloud auth paths',
       !cloud.includes("removeItem('prismburst.save.v1')") &&
       cloud.includes("prismburst.save.v1") === false ? false :

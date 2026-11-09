@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pixel Tunnel sample</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;background:#363636}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{height:100%;width:auto;max-width:100%;touch-action:none;image-rendering:pixelated;background:#363636}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+/*
+ * PRISMBURST — Pixel Tunnel config.
+ * Values marked [?] in the video rebuild prompt live here and in
+ * docs/pixel-tunnel/ASSUMPTIONS.md. Nothing in this file is a measured
+ * fact unless the prompt marked it [C].
+ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root && root.window === root) {
+    root.PB = root.PB || {};
+    root.PB.PTConfig = api;
+  }
+})(typeof window !== 'undefined' ? window : globalThis, function () {
+  'use strict';
+
+  var CELL = {
+    OPEN: 0,
+    OLIVE: 1,
+    YELLOW: 2,
+    RED: 3,
+    GRAY: 4
+  };
+
+  var CONFIG = {
+    CELL: 8,
+    COLS: 50,
+    ROWS: 50,
+    /* Canvas is 52×86 cells: 1 cell margin, the field, 25 black rows, 9 band rows. */
+    CANVAS_COLS: 52,
+    CANVAS_ROWS: 86,
+    FIELD_TOP: 1.5,
+    BLACK_ROWS: 25,
+    BOTTOM_ROWS: 9,
+    MARGIN_COLS: 1,
+
+    BALL_SPEED_CELLS: 37.3,
+    BALL_DIAMETER_CELLS: 0.77,
+    PADDLE_W_CELLS: 10,
+    PADDLE_H_CELLS: 1,
+    PADDLE_MAX_ANGLE: 60,
+    PADDLE_BELOW_FIELD: 15.2,
+
+    PICKUP_FALL_CELLS: 7.5,
+    PICKUP_DIAMETER_CELLS: 2.4,
+    SAFETY_BAR_SEC: 3.8,
+    SAFETY_H_CELLS: 0.5,
+    PLUS_BALLS: 3,
+    MULTIPLY: 3,
+    MAX_BALLS: 1000,
+    SUBSTEPS: 2,
+
+    /* [?] Chance an ordinary olive cell drops a pickup. */
+    DROP_CHANCE: 0.02,
+    /* [?] +3 is the most common. The rest share the remainder. */
+    DROP_WEIGHTS: { plus3: 0.5, safety: 0.2, times3: 0.2, heart: 0.1 },
+
+    /* Ali: every gray wall is immortal. Not pocket+bottom. */
+    GRAY_BREAKABLE: false,
+    ROSE_BAR_MODE: 'ball-loss',
+    /* [?] Hearts, and the rose bar, shrink when the last ball is lost. */
+    LIVES: 5,
+    /* [?] Clearing the destructible field always awards this many stars. */
+    WIN_STARS: 3,
+    /* [?] Score is not on screen in the prompt. */
+    SCORE_CELL: 10,
+    SCORE_TARGET: 100,
+
+    ROSE_Y: 0.6,
+    ROSE_H: 0.5,
+    /* [?] Light gray under the rose bar. The video colour was not sampled. */
+    PROGRESS_COLOR: '#C8C8C8',
+    /* [?] 1px gap. No video file was attached, so this is a darker sample. */
+    GAP_OLIVE: '#33350D',
+    GAP_GRAY: '#4E4E4E',
+    GAP_YELLOW: '#8A7610',
+    GAP_RED: '#7A1014',
+    STAR_COLOR: '#F0C84A',
+    PANEL_COLOR: '#3A3A3A',
+    CATCH_SEC: 0.18,
+
+    COLORS: {
+      field: '#5D6018',
+      wall: '#7B7B7B',
+      black: '#181818',
+      frame: '#363636',
+      paddle: '#F06366',
+      rose: '#964B54',
+      yellow: '#EACF18',
+      red: '#E11E24',
+      plus3: '#21C6DB',
+      times3: '#B4D243',
+      heart: '#F2A0B5',
+      safetyOrb: '#EE9B45'
+    }
+  };
+
+  function layout() {
+    var cell = CONFIG.CELL;
+    var fieldX = CONFIG.MARGIN_COLS * cell;
+    var fieldY = CONFIG.FIELD_TOP * cell;
+    var fieldW = CONFIG.COLS * cell;
+    var fieldH = CONFIG.ROWS * cell;
+    var blackTop = fieldY + fieldH;
+    return {
+      cell: cell,
+      fieldX: fieldX,
+      fieldY: fieldY,
+      fieldW: fieldW,
+      fieldH: fieldH,
+      blackTop: blackTop,
+      blackBottom: blackTop + CONFIG.BLACK_ROWS * cell,
+      canvasW: CONFIG.CANVAS_COLS * cell,
+      canvasH: CONFIG.CANVAS_ROWS * cell,
+      paddleTop: blackTop + CONFIG.PADDLE_BELOW_FIELD * cell,
+      paddleW: CONFIG.PADDLE_W_CELLS * cell,
+      paddleH: CONFIG.PADDLE_H_CELLS * cell,
+      speed: CONFIG.BALL_SPEED_CELLS * cell,
+      ballR: CONFIG.BALL_DIAMETER_CELLS * cell * 0.5,
+      pickupR: CONFIG.PICKUP_DIAMETER_CELLS * cell * 0.5,
+      roseY: CONFIG.ROSE_Y * cell,
+      roseH: CONFIG.ROSE_H * cell,
+      safetyH: CONFIG.SAFETY_H_CELLS * cell
+    };
+  }
+
+  return {
+    CELL: CELL,
+    CONFIG: CONFIG,
+    layout: layout
+  };
+});
+
+/*
+ * PRISMBURST — Pixel Tunnel level 1.
+ * One olive field and the gray starting pocket from the video rebuild.
+ * Field colour, pocket, and targets are data so later levels can be added
+ * without inventing them here.
+ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root && root.window === root) {
+    root.PB = root.PB || {};
+    root.PB.PTLevels = api;
+  }
+})(typeof window !== 'undefined' ? window : globalThis, function () {
+  'use strict';
+
+  var cfgApi = null;
+  if (typeof require === 'function') {
+    try { cfgApi = require('./config.js'); } catch (e) { cfgApi = null; }
+  }
+  if (!cfgApi && typeof window !== 'undefined' && window.PB) cfgApi = window.PB.PTConfig;
+  var CELL = cfgApi.CELL;
+  var CONFIG = cfgApi.CONFIG;
+  var COLS = CONFIG.COLS;
+  var ROWS = CONFIG.ROWS;
+
+  /* Field cell coordinates. 0,0 is the top-left wall cell. */
+  var LEVELS = [
+    {
+      id: 1,
+      name: 'Level 1',
+      field: CONFIG.COLORS.field,
+      pocket: {
+        topCap: { row: 39, c0: 12, c1: 16 },
+        leftWall: { col: 12, r0: 39, r1: 48 },
+        rightWall: { col: 16, r0: 39, r1: 48 },
+        divider: { col: 14, r0: 41, r1: 48 },
+        join: { row: 40, c0: 13, c1: 15 },
+        leftPassage: { col: 13, r0: 41, r1: 48 },
+        rightPassage: { col: 15, r0: 41, r1: 48 },
+        entrance: { col: 13, row: 49 }
+      },
+      targets: [
+        { c: 16, r: 43, type: CELL.YELLOW, drop: 'safety' },
+        { c: 16, r: 44, type: CELL.YELLOW, drop: 'plus3' },
+        { c: 16, r: 45, type: CELL.YELLOW, drop: 'times3' },
+        { c: 17, r: 44, type: CELL.RED, drop: 'heart' }
+      ]
+    }
+  ];
+
+  function isOuterRing(c, r) {
+    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
+    if (r === 0) return true;
+    if (c === 0 || c === COLS - 1) return true;
+    return false;
+  }
+
+  function canBreak(grid, index) {
+    var type = grid[index];
+    if (type === CELL.GRAY) return false;
+    if (type === CELL.OLIVE || type === CELL.YELLOW || type === CELL.RED) return true;
+    return false;
+  }
+
+  function paintRow(grid, row, c0, c1, type) {
+    var c;
+    for (c = c0; c <= c1; c++) grid[row * COLS + c] = type;
+  }
+
+  function paintCol(grid, col, r0, r1, type) {
+    var r;
+    for (r = r0; r <= r1; r++) grid[r * COLS + col] = type;
+  }
+
+  function hexMix(hex) {
+    var n = parseInt(hex.slice(1), 16);
+    var r = (n >> 16) & 255;
+    var g = (n >> 8) & 255;
+    var b = n & 255;
+    function ch(v) {
+      var x = (v * 0.28 + 196 * 0.72) | 0;
+      var s = x.toString(16);
+      return s.length < 2 ? '0' + s : s;
+    }
+    return '#' + ch(r) + ch(g) + ch(b);
+  }
+
+  function openAt(grid, c, r) {
+    if (r === ROWS - 1) {
+      if (c > 0 && c < COLS - 1) grid[r * COLS + c] = CELL.OPEN;
+      return;
+    }
+    if (c <= 0 || r <= 0 || c >= COLS - 1 || r >= ROWS - 1) return;
+    grid[r * COLS + c] = CELL.OPEN;
+  }
+
+  function mark(grid, drops, c, r, type, drop) {
+    if (c <= 0 || r <= 0 || c >= COLS - 1 || r >= ROWS - 1) return;
+    grid[r * COLS + c] = type;
+    drops[r * COLS + c] = drop;
+  }
+
+  function span(grid, c, r0, r1) {
+    var r, a = Math.min(r0, r1), b = Math.max(r0, r1);
+    for (r = a; r <= b; r++) openAt(grid, c, r);
+  }
+
+  function box(grid, c0, c1, r0, r1) {
+    var c, r, ca = Math.min(c0, c1), cb = Math.max(c0, c1);
+    var ra = Math.min(r0, r1), rb = Math.max(r0, r1);
+    for (r = ra; r <= rb; r++) for (c = ca; c <= cb; c++) openAt(grid, c, r);
+  }
+
+  function fit(col, width) {
+    if (col < 2) col = 2;
+    if (col + width >= COLS - 1) col = COLS - 2 - width;
+    if (col < 2) col = 2;
+    return col;
+  }
+
+  var STYLE_NAMES = [
+    'Pine', 'Tide', 'Ember', 'Plum', 'Sand', 'Glacier', 'Moss', 'Copper', 'Iris', 'Cocoa',
+    'Lagoon', 'Amber', 'Fern', 'Wine', 'Pebble', 'Coral', 'Kelp', 'Honey', 'Violet', 'Brick',
+    'Oasis', 'Saffron', 'Spruce', 'Magenta', 'Flint', 'Aqua', 'Marigold', 'Ivy', 'Rose', 'Ash',
+    'Teal', 'Gold', 'Clover', 'Berry', 'Mist', 'Sky', 'Apricot', 'Laurel', 'Grape', 'Rust',
+    'Sea', 'Wheat', 'Jade', 'Crimson', 'Dune', 'Ink', 'Lilac', 'Cedar', 'Navy', 'Ochre'
+  ];
+  var STYLE_FIELDS = [
+    '#1F7A4D', '#1C6B8A', '#C4512A', '#7A3E8C', '#C4A15A', '#4E88B5', '#3E7A32', '#B86A3A', '#5C4EAD', '#8A5A3A',
+    '#1A8A78', '#D0892A', '#2F8A55', '#8E2E4A', '#6E7C86', '#E06A5C', '#2C6B52', '#E0B03A', '#6A4A9A', '#A34B3A',
+    '#2A9A8A', '#E0A020', '#245C3A', '#C43A78', '#5C656C', '#2AA0B8', '#E09A28', '#3A7A28', '#D45A78', '#7A746C',
+    '#1A7A7A', '#D4A017', '#4A9A3A', '#A33A58', '#8AA0A8', '#3A78C4', '#E08A48', '#4A7A32', '#7A4A88', '#B85A28',
+    '#2A6A9A', '#D4C06A', '#2A8A62', '#C43838', '#C4A878', '#3A4A6A', '#B07AC4', '#6A4A2A', '#2A3A7A', '#C48A28'
+  ];
+
+  function carveStyle(grid, drops, n) {
+    var i = n - 2;
+    var kind = i % 10;
+    var h = 6 + (i % 9);
+    var w = 1 + ((i * 3) % 5);
+    var bend = 2 + ((i * 5) % 7);
+    var neck = 2 + (i % 6);
+    var col = fit(3 + ((i * 4) % 28), Math.max(w, bend) + 4);
+    var spur = 1 + (i % 8);
+    var top = 48 - h;
+    if (top < 2) top = 2;
+    var k, c, r, arm;
+
+    if (kind === 0) {
+      span(grid, col, top, 49);
+      for (k = 0; k < 2 + (i % 3); k++) mark(grid, drops, col + 1, top + 2 + k, CELL.YELLOW, k === 0 ? 'safety' : 'plus3');
+      mark(grid, drops, col + 2, top + 2, CELL.RED, 'heart');
+      box(grid, col + 1, col + spur, top + h - 2, top + h - 2);
+    } else if (kind === 1) {
+      span(grid, col, top, 49);
+      span(grid, col + 2, top, 48);
+      box(grid, col, col + 2, top, top);
+      mark(grid, drops, col + 3, top + 2, CELL.YELLOW, 'safety');
+      mark(grid, drops, col + 3, top + 3, CELL.YELLOW, 'plus3');
+      mark(grid, drops, col + 3, top + 4, CELL.RED, 'heart');
+      if (i % 2) box(grid, col - spur, col - 1, top + 1, top + 1);
+      else box(grid, col + 3, col + 2 + spur, 48 - (i % 3), 48 - (i % 3));
+    } else if (kind === 2) {
+      box(grid, col, col + w + 1, top, 48);
+      openAt(grid, col + ((i % 2) ? w : 0), 49);
+      for (k = 0; k < w; k++) mark(grid, drops, col + k, top - 1, k === w - 1 ? CELL.RED : CELL.YELLOW, k === 0 ? 'safety' : 'plus3');
+    } else if (kind === 3) {
+      span(grid, col, 48 - neck, 49);
+      box(grid, col, col + bend, 48 - neck, 48 - neck);
+      span(grid, col + bend, 48 - neck - (2 + (i % 3)), 48 - neck);
+      mark(grid, drops, col + bend + 1, 48 - neck - 1, CELL.YELLOW, 'safety');
+      mark(grid, drops, col + bend + 1, 48 - neck, CELL.RED, 'heart');
+      box(grid, col, col, 47, 47 - (i % 4));
+    } else if (kind === 4) {
+      span(grid, col, top + 3, 49);
+      span(grid, col - bend, top, top + 3);
+      span(grid, col + bend + 1, top + (i % 3), top + 3);
+      box(grid, col - bend, col + bend + 1, top + 3, top + 3);
+      mark(grid, drops, col - bend - 1, top + 1, CELL.YELLOW, 'plus3');
+      mark(grid, drops, col + bend + 2, top + 1 + (i % 2), CELL.RED, 'heart');
+    } else if (kind === 5) {
+      c = col;
+      r = 48;
+      openAt(grid, c, 49);
+      for (k = 0; k < 3 + (i % 4); k++) {
+        box(grid, c, c + 1, r - 1, r);
+        c += 2;
+        r -= 2;
+      }
+      mark(grid, drops, c, r + 2, CELL.YELLOW, 'safety');
+      mark(grid, drops, c, r + 3, CELL.RED, 'times3');
+    } else if (kind === 6) {
+      span(grid, col, 48 - neck, 49);
+      box(grid, col - 1, col + w, top, 48 - neck);
+      mark(grid, drops, col + w + 1, top + 1, CELL.YELLOW, 'safety');
+      mark(grid, drops, col + w + 1, top + 2, CELL.YELLOW, 'plus3');
+      mark(grid, drops, col - 2, top + 1 + (i % 2), CELL.RED, 'heart');
+    } else if (kind === 7) {
+      span(grid, col, top, 49);
+      span(grid, col + bend, top + 2, 49);
+      box(grid, col, col + bend, top, top);
+      mark(grid, drops, col + 1, top - 1, CELL.YELLOW, 'safety');
+      mark(grid, drops, col + bend - 1, top - 1, CELL.YELLOW, 'plus3');
+      mark(grid, drops, col + bend + 1, top + 3, CELL.RED, 'heart');
+    } else if (kind === 8) {
+      arm = 2 + (i % 3);
+      for (k = 0; k < arm; k++) span(grid, col + k * 2, top, 48);
+      openAt(grid, col, 49);
+      box(grid, col, col + (arm - 1) * 2, top, top);
+      mark(grid, drops, col + 1, top + 2, CELL.YELLOW, 'safety');
+      mark(grid, drops, col + 1, top + 3 + (i % 2), CELL.RED, 'heart');
+    } else {
+      span(grid, col, 48 - neck, 49);
+      box(grid, col - w, col + w, top, 48 - neck - 1);
+      wallSafe(grid, col, 48 - neck);
+      mark(grid, drops, col + w + 1, top + 1, CELL.YELLOW, 'plus3');
+      mark(grid, drops, col - w - 1, top + 2, CELL.YELLOW, 'safety');
+      mark(grid, drops, col, top - 1, CELL.RED, 'heart');
+      box(grid, col + 1, col + spur, 47, 47);
+    }
+    var armA = 1 + (i % 17);
+    var armB = 1 + (i % 7);
+    box(grid, col + 1, col + armA, 46, 46);
+    box(grid, col + 1, col + armB, 44, 44);
+  }
+
+  function wallSafe(grid, c, r) {
+    if (c <= 0 || r <= 0 || c >= COLS - 1 || r >= ROWS - 1) return;
+    grid[r * COLS + c] = CELL.GRAY;
+  }
+
+  (function addStyles() {
+    var n;
+    for (n = 0; n < STYLE_NAMES.length; n++) {
+      (function (index) {
+        var field = STYLE_FIELDS[index];
+        LEVELS.push({
+          id: index + 2,
+          name: STYLE_NAMES[index],
+          field: field,
+          wall: hexMix(field),
+          carve: function (grid, drops) { carveStyle(grid, drops, index + 2); }
+        });
+      })(n);
+    }
+  })();
+
+  function buildLevel(id) {
+    var def = null;
+    var i;
+    for (i = 0; i < LEVELS.length; i++) if (LEVELS[i].id === id) def = LEVELS[i];
+    if (!def) def = LEVELS[0];
+    var grid = new Uint8Array(COLS * ROWS);
+    grid.fill(CELL.OLIVE);
+    var c, r;
+    for (c = 0; c < COLS; c++) {
+      grid[c] = CELL.GRAY;
+      grid[(ROWS - 1) * COLS + c] = CELL.GRAY;
+    }
+    for (r = 0; r < ROWS; r++) {
+      grid[r * COLS] = CELL.GRAY;
+      grid[r * COLS + COLS - 1] = CELL.GRAY;
+    }
+    var pocket = def.pocket;
+    if (pocket) {
+      paintRow(grid, pocket.topCap.row, pocket.topCap.c0, pocket.topCap.c1, CELL.GRAY);
+      paintCol(grid, pocket.leftWall.col, pocket.leftWall.r0, pocket.leftWall.r1, CELL.GRAY);
+      paintCol(grid, pocket.rightWall.col, pocket.rightWall.r0, pocket.rightWall.r1, CELL.GRAY);
+      paintCol(grid, pocket.divider.col, pocket.divider.r0, pocket.divider.r1, CELL.GRAY);
+      paintRow(grid, pocket.join.row, pocket.join.c0, pocket.join.c1, CELL.OPEN);
+      paintCol(grid, pocket.leftPassage.col, pocket.leftPassage.r0, pocket.leftPassage.r1, CELL.OPEN);
+      paintCol(grid, pocket.rightPassage.col, pocket.rightPassage.r0, pocket.rightPassage.r1, CELL.OPEN);
+      grid[pocket.entrance.row * COLS + pocket.entrance.col] = CELL.OPEN;
+    }
+
+    var drops = new Array(COLS * ROWS);
+    if (def.carve) def.carve(grid, drops);
+    if (def.targets) {
+      for (i = 0; i < def.targets.length; i++) {
+        var t = def.targets[i];
+        var index = t.r * COLS + t.c;
+        grid[index] = t.type;
+        drops[index] = t.drop;
+      }
+    }
+    var destructible = 0;
+    var entrance = pocket ? pocket.entrance.col : 13;
+    for (i = 0; i < grid.length; i++) if (canBreak(grid, i)) destructible++;
+    if (!pocket) {
+      for (c = 1; c < COLS - 1; c++) {
+        if (grid[(ROWS - 1) * COLS + c] === CELL.OPEN) { entrance = c; break; }
+      }
+    }
+    return {
+      id: def.id,
+      name: def.name,
+      field: def.field,
+      wall: def.wall || '#7B7B7B',
+      entrance: entrance,
+      pocket: pocket,
+      targets: def.targets || [],
+      grid: grid,
+      drops: drops,
+      destructible: destructible
+    };
+  }
+
+  return {
+    LEVELS: LEVELS,
+    buildLevel: buildLevel,
+    isOuterRing: isOuterRing,
+    canBreak: canBreak,
+    count: function () { return LEVELS.length; },
+    list: function () {
+      var out = [];
+      var i;
+      for (i = 0; i < LEVELS.length; i++) {
+        out.push({
+          id: LEVELS[i].id,
+          name: LEVELS[i].name,
+          field: LEVELS[i].field,
+          wall: LEVELS[i].wall || '#7B7B7B'
+        });
+      }
+      return out;
+    }
+  };
+});
+
+/*
+ * PRISMBURST — Pixel Tunnel physics.
+ * Fixed 60 fps steps, two sub-steps, no ball–ball collisions.
+ * Balls live in Float32Array columns. A hit destroys one cell and reflects.
+ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root && root.window === root) {
+    root.PB = root.PB || {};
+    root.PB.PTPhysics = api;
+  }
+})(typeof window !== 'undefined' ? window : globalThis, function () {
+  'use strict';
+
+  var cfgApi = null;
+  var levelsApi = null;
+  if (typeof require === 'function') {
+    try { cfgApi = require('./config.js'); } catch (e) { cfgApi = null; }
+    try { levelsApi = require('./levels.js'); } catch (e2) { levelsApi = null; }
+  }
+  if (!cfgApi && typeof window !== 'undefined' && window.PB) cfgApi = window.PB.PTConfig;
+  if (!levelsApi && typeof window !== 'undefined' && window.PB) levelsApi = window.PB.PTLevels;
+  var CELL = cfgApi.CELL;
+  var CONFIG = cfgApi.CONFIG;
+  var canBreak = levelsApi.canBreak;
+  var COLS = CONFIG.COLS;
+  var ROWS = CONFIG.ROWS;
+
+  function createBalls(max) {
+    return {
+      x: new Float32Array(max),
+      y: new Float32Array(max),
+      vx: new Float32Array(max),
+      vy: new Float32Array(max),
+      py: new Float32Array(max),
+      alive: new Uint8Array(max),
+      stamp: new Uint16Array(max)
+    };
+  }
+
+  function allocBall(state) {
+    if (state.live >= CONFIG.MAX_BALLS) return -1;
+    var alive = state.balls.alive;
+    var i;
+    for (i = 0; i < CONFIG.MAX_BALLS; i++) {
+      if (alive[i]) continue;
+      alive[i] = 1;
+      state.live++;
+      return i;
+    }
+    return -1;
+  }
+
+  function killBall(state, i) {
+    if (!state.balls.alive[i]) return;
+    state.balls.alive[i] = 0;
+    state.live--;
+  }
+
+  function placeBall(state, i, x, y, vx, vy) {
+    var b = state.balls;
+    b.x[i] = x;
+    b.y[i] = y;
+    b.vx[i] = vx;
+    b.vy[i] = vy;
+    b.py[i] = y;
+  }
+
+  function weightedDrop() {
+    var w = CONFIG.DROP_WEIGHTS;
+    var x = Math.random();
+    var a = w.plus3;
+    var b = a + w.safety;
+    var c = b + w.times3;
+    if (x < a) return 'plus3';
+    if (x < b) return 'safety';
+    if (x < c) return 'times3';
+    return 'heart';
+  }
+
+  function spawnPickup(state, kind, x, y) {
+    var list = state.pickups;
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (list[i].on) continue;
+      var p = list[i];
+      p.on = 1;
+      p.kind = kind;
+      p.x = x;
+      p.y = y;
+      p.caught = 0;
+      p.scale = 1;
+      return true;
+    }
+    return false;
+  }
+
+  function destroyCell(state, index) {
+    var type = state.grid[index];
+    if (!canBreak(state.grid, index)) return false;
+    state.grid[index] = CELL.OPEN;
+    if (state.dirtyN < state.dirty.length) state.dirty[state.dirtyN++] = index;
+    else state.fullPaint = true;
+    state.destroyed++;
+    state.hit = 1;
+    if (type === CELL.YELLOW || type === CELL.RED) state.score += CONFIG.SCORE_TARGET;
+    else state.score += CONFIG.SCORE_CELL;
+    var c = index % COLS;
+    var r = (index / COLS) | 0;
+    var L = state.L;
+    var x = L.fieldX + (c + 0.5) * L.cell;
+    var y = L.fieldY + (r + 0.5) * L.cell;
+    var kind = state.drops && state.drops[index];
+    if (kind) spawnPickup(state, kind, x, y);
+    else if (Math.random() < CONFIG.DROP_CHANCE) spawnPickup(state, weightedDrop(), x, y);
+    if (!state.won && state.destroyed >= state.destructible) {
+      state.won = true;
+      state.stars = CONFIG.WIN_STARS;
+    }
+    return true;
+  }
+
+  function circleHitsCell(nx, ny, rad, c, r, L) {
+    var x0 = L.fieldX + c * L.cell;
+    var y0 = L.fieldY + r * L.cell;
+    var nearestX = nx < x0 ? x0 : (nx > x0 + L.cell ? x0 + L.cell : nx);
+    var nearestY = ny < y0 ? y0 : (ny > y0 + L.cell ? y0 + L.cell : ny);
+    var dx = nx - nearestX;
+    var dy = ny - nearestY;
+    return dx * dx + dy * dy <= rad * rad;
+  }
+
+  function firstSolid(state, nx, ny, vx, vy) {
+    var L = state.L;
+    var rad = state.ballR;
+    var c0 = ((nx - rad - L.fieldX) / L.cell) | 0;
+    var c1 = ((nx + rad - L.fieldX) / L.cell) | 0;
+    var r0 = ((ny - rad - L.fieldY) / L.cell) | 0;
+    var r1 = ((ny + rad - L.fieldY) / L.cell) | 0;
+    if (c0 < 0) c0 = 0;
+    if (r0 < 0) r0 = 0;
+    if (c1 >= COLS) c1 = COLS - 1;
+    if (r1 >= ROWS) r1 = ROWS - 1;
+    if (c1 < c0 || r1 < r0) return -1;
+    var best = -1;
+    var bestDot = -1e9;
+    var sp = Math.sqrt(vx * vx + vy * vy) || 1;
+    var r, c, index, type, cx, cy, dot;
+    for (r = r0; r <= r1; r++) {
+      for (c = c0; c <= c1; c++) {
+        index = r * COLS + c;
+        type = state.grid[index];
+        if (type === CELL.OPEN) continue;
+        if (!circleHitsCell(nx, ny, rad, c, r, L)) continue;
+        cx = L.fieldX + (c + 0.5) * L.cell - nx;
+        cy = L.fieldY + (r + 0.5) * L.cell - ny;
+        dot = (cx * vx + cy * vy) / sp;
+        if (dot < 0) continue;
+        if (dot > bestDot) {
+          bestDot = dot;
+          best = index;
+        }
+      }
+    }
+    return best;
+  }
+
+  function substepBall(state, i, dt) {
+    var b = state.balls;
+    var L = state.L;
+    var x = b.x[i];
+    var y = b.y[i];
+    var vx = b.vx[i];
+    var vy = b.vy[i];
+    b.py[i] = y;
+    var nx = x + vx * dt;
+    var ny = y + vy * dt;
+    var rad = state.ballR;
+    var left = L.fieldX + rad;
+    var right = L.fieldX + L.fieldW - rad;
+    if (nx < left) { nx = left; vx = Math.abs(vx); }
+    else if (nx > right) { nx = right; vx = -Math.abs(vx); }
+    if (ny < rad) { ny = rad; vy = Math.abs(vy); }
+    var floor = L.blackBottom - rad;
+    if (state.safety > 0) floor -= L.safetyH;
+    if (ny > floor) {
+      if (state.safety > 0) {
+        ny = floor;
+        vy = -Math.abs(vy);
+      } else {
+        killBall(state, i);
+        return;
+      }
+    }
+    var hit = firstSolid(state, nx, ny, vx, vy);
+    if (hit >= 0) {
+      var broke = destroyCell(state, hit);
+      var c = hit % COLS;
+      var r = (hit / COLS) | 0;
+      var cx = L.fieldX + (c + 0.5) * L.cell;
+      var cy = L.fieldY + (r + 0.5) * L.cell;
+      var half = L.cell * 0.5;
+      if (!broke) {
+        var side = Math.abs(x - cx) > Math.abs(y - cy);
+        if (side) {
+          vx = x < cx ? -Math.abs(vx) : Math.abs(vx);
+          nx = x < cx ? cx - half - rad - 0.2 : cx + half + rad + 0.2;
+          ny = y + vy * dt;
+        } else {
+          vy = y < cy ? -Math.abs(vy) : Math.abs(vy);
+          ny = y < cy ? cy - half - rad - 0.2 : cy + half + rad + 0.2;
+          nx = x + vx * dt;
+        }
+      } else {
+        var glance = state.speed * 0.22;
+        if (Math.abs(nx - cx) > Math.abs(ny - cy)) {
+          vx = -vx;
+          vy += ((ny - cy) / half) * glance;
+        } else {
+          vy = -vy;
+          vx += ((nx - cx) / half) * glance;
+        }
+        nx = x;
+        ny = y;
+      }
+    }
+    var sp = Math.sqrt(vx * vx + vy * vy) || 1;
+    var keep = state.speed;
+    b.vx[i] = vx / sp * keep;
+    b.vy[i] = vy / sp * keep;
+    b.x[i] = nx;
+    b.y[i] = ny;
+  }
+
+  function bouncePaddle(state, i) {
+    var b = state.balls;
+    if (!b.alive[i] || b.vy[i] <= 0) return;
+    var top = state.paddleTop;
+    var prev = b.py[i];
+    var y = b.y[i];
+    var rad = state.ballR;
+    if (prev > top) return;
+    if (y < top - rad) return;
+    var half = state.paddleW / 2;
+    if (Math.abs(b.x[i] - state.paddleX) > half + rad) return;
+    var offset = (b.x[i] - state.paddleX) / half;
+    if (offset < -1) offset = -1;
+    else if (offset > 1) offset = 1;
+    var max = CONFIG.PADDLE_MAX_ANGLE * Math.PI / 180;
+    var ang = -Math.PI / 2 + offset * max;
+    b.vx[i] = Math.cos(ang) * state.speed;
+    b.vy[i] = Math.sin(ang) * state.speed;
+    b.y[i] = top - rad - 0.25;
+  }
+
+  function stepBalls(state, dt) {
+    var n = CONFIG.SUBSTEPS;
+    var sub = dt / n;
+    var s, i;
+    var alive = state.balls.alive;
+    for (s = 0; s < n; s++) {
+      for (i = 0; i < CONFIG.MAX_BALLS; i++) {
+        if (!alive[i]) continue;
+        substepBall(state, i, sub);
+        if (alive[i]) bouncePaddle(state, i);
+      }
+    }
+  }
+
+  return {
+    createBalls: createBalls,
+    allocBall: allocBall,
+    killBall: killBall,
+    placeBall: placeBall,
+    destroyCell: destroyCell,
+    stepBalls: stepBalls,
+    spawnPickup: spawnPickup,
+    weightedDrop: weightedDrop
+  };
+});
+
+/*
+ * PRISMBURST — Pixel Tunnel match.
+ * The ball is already moving. It digs one olive cell per hit.
+ * Pickups fall. The field is clear when every destructible cell is gone.
+ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root && root.window === root) {
+    root.PB = root.PB || {};
+    root.PB.PTGame = api;
+  }
+})(typeof window !== 'undefined' ? window : globalThis, function () {
+  'use strict';
+
+  var cfgApi = null;
+  var levelsApi = null;
+  var physics = null;
+  if (typeof require === 'function') {
+    try { cfgApi = require('./config.js'); } catch (e) { cfgApi = null; }
+    try { levelsApi = require('./levels.js'); } catch (e2) { levelsApi = null; }
+    try { physics = require('./physics.js'); } catch (e3) { physics = null; }
+  }
+  if (typeof window !== 'undefined' && window.PB) {
+    cfgApi = cfgApi || window.PB.PTConfig;
+    levelsApi = levelsApi || window.PB.PTLevels;
+    physics = physics || window.PB.PTPhysics;
+  }
+  var CONFIG = cfgApi.CONFIG;
+  var CELL = cfgApi.CELL;
+
+  function emptyPickups() {
+    var list = [];
+    var i;
+    for (i = 0; i < 48; i++) {
+      list.push({ on: 0, kind: '', x: 0, y: 0, caught: 0, scale: 1 });
+    }
+    return list;
+  }
+
+  function createMatch(level, opts) {
+    opts = opts || {};
+    var L = cfgApi.layout();
+    var grid = new Uint8Array(level.grid);
+    var drops = level.drops;
+    var state = {
+      level: level,
+      grid: grid,
+      drops: drops,
+      destructible: level.destructible,
+      destroyed: 0,
+      L: L,
+      balls: physics.createBalls(CONFIG.MAX_BALLS),
+      live: 0,
+      gen: 1,
+      pickups: emptyPickups(),
+      paddleX: L.fieldX + L.fieldW / 2,
+      paddleTop: L.paddleTop,
+      paddleW: L.paddleW,
+      paddleH: L.paddleH,
+      ballR: L.ballR,
+      speed: L.speed,
+      lives: CONFIG.LIVES,
+      maxLives: CONFIG.LIVES,
+      safety: 0,
+      score: 0,
+      stars: 0,
+      won: false,
+      lost: false,
+      demo: !!opts.demo,
+      t: 0,
+      audio: opts.audio || null,
+      dirty: new Int16Array(grid.length),
+      dirtyN: 0,
+      fullPaint: true,
+      hit: 0,
+      soundWait: 0
+    };
+    serveOpening(state);
+    return {
+      state: state,
+      step: function (dt) { step(state, dt); },
+      movePaddle: function (x) { movePaddle(state, x); },
+      setDemo: function (on) { state.demo = !!on; },
+      snapshot: function () { return snapshot(state); }
+    };
+  }
+
+  function serveOpening(state) {
+    var L = state.L;
+    var pocket = state.level.pocket;
+    var mouth = state.level.entrance != null ? state.level.entrance : (pocket && pocket.entrance ? pocket.entrance.col : 13);
+    var x = L.fieldX + (mouth + 0.5) * L.cell;
+    var y = L.blackTop + 1.2 * L.cell;
+    var vx = state.speed * 0.12;
+    var vy = -Math.sqrt(state.speed * state.speed - vx * vx);
+    var i = physics.allocBall(state);
+    physics.placeBall(state, i, x, y, vx, vy);
+  }
+
+  function serveOnPaddle(state) {
+    var i = physics.allocBall(state);
+    if (i < 0) return;
+    var L = state.L;
+    var mouthCol = state.level.entrance != null ? state.level.entrance : 13;
+    var mouth = L.fieldX + (mouthCol + 0.5) * L.cell;
+    var ang = Math.atan2(L.blackTop - state.paddleTop, mouth - state.paddleX);
+    var max = CONFIG.PADDLE_MAX_ANGLE * Math.PI / 180;
+    var delta = ang + Math.PI / 2;
+    if (delta > max) delta = max;
+    else if (delta < -max) delta = -max;
+    ang = -Math.PI / 2 + delta;
+    physics.placeBall(state, i, state.paddleX, state.paddleTop - state.ballR - 1, Math.cos(ang) * state.speed, Math.sin(ang) * state.speed);
+  }
+
+  function movePaddle(state, x) {
+    if (state.lost) return;
+    var half = state.paddleW / 2;
+    var L = state.L;
+    var min = L.fieldX + half;
+    var max = L.fieldX + L.fieldW - half;
+    if (x < min) x = min;
+    else if (x > max) x = max;
+    state.paddleX = x;
+  }
+
+  function addBalls(state, count) {
+    var i, k, t, ang;
+    var made = 0;
+    for (k = 0; k < count; k++) {
+      i = physics.allocBall(state);
+      if (i < 0) return made;
+      t = count === 1 ? 0 : (k / (count - 1) - 0.5);
+      ang = -Math.PI / 2 + t * 0.7;
+      physics.placeBall(
+        state,
+        i,
+        state.paddleX,
+        state.paddleTop - state.ballR - 1,
+        Math.cos(ang) * state.speed,
+        Math.sin(ang) * state.speed
+      );
+      made++;
+    }
+    return made;
+  }
+
+  function multiplyBalls(state) {
+    var b = state.balls;
+    var factor = CONFIG.MULTIPLY;
+    if (factor < 2) return 0;
+    state.gen = (state.gen + 1) & 65535;
+    if (state.gen === 0) state.gen = 1;
+    var mark = state.gen;
+    var i, k, born, j, ang;
+    var originals = 0;
+    for (i = 0; i < CONFIG.MAX_BALLS; i++) {
+      if (!b.alive[i]) continue;
+      b.stamp[i] = mark;
+      originals++;
+    }
+    born = 0;
+    var want = originals * (factor - 1);
+    for (i = 0; i < CONFIG.MAX_BALLS && born < want; i++) {
+      if (b.stamp[i] !== mark || !b.alive[i]) continue;
+      for (k = 1; k < factor && born < want; k++) {
+        j = physics.allocBall(state);
+        if (j < 0) return born;
+        ang = Math.atan2(b.vy[i], b.vx[i]) + (k === 1 ? 0.4 : -0.4);
+        physics.placeBall(state, j, b.x[i], b.y[i], Math.cos(ang) * state.speed, Math.sin(ang) * state.speed);
+        born++;
+      }
+    }
+    return born;
+  }
+
+  function applyPickup(state, kind) {
+    if (kind === 'plus3') addBalls(state, CONFIG.PLUS_BALLS);
+    else if (kind === 'times3') multiplyBalls(state);
+    else if (kind === 'safety') state.safety = CONFIG.SAFETY_BAR_SEC;
+    else if (kind === 'heart') {
+      if (state.lives < state.maxLives) state.lives++;
+    }
+    if (state.audio) state.audio.reward();
+  }
+
+  function stepPickups(state, dt) {
+    var fall = CONFIG.PICKUP_FALL_CELLS * state.L.cell * dt;
+    var rad = state.L.pickupR;
+    var list = state.pickups;
+    var i, p, mid;
+    mid = state.paddleTop + state.paddleH / 2;
+    for (i = 0; i < list.length; i++) {
+      p = list[i];
+      if (!p.on) continue;
+      if (p.caught) {
+        p.scale -= dt / CONFIG.CATCH_SEC;
+        p.y += (mid - p.y) * 0.35;
+        p.x += (state.paddleX - p.x) * 0.35;
+        if (p.scale <= 0) {
+          p.on = 0;
+          applyPickup(state, p.kind);
+        }
+        continue;
+      }
+      p.y += fall;
+      if (Math.abs(p.x - state.paddleX) <= state.paddleW / 2 + rad && Math.abs(p.y - mid) <= state.paddleH / 2 + rad) {
+        p.caught = 1;
+      } else if (p.y > state.L.canvasH + rad) p.on = 0;
+    }
+  }
+
+  function driveDemo(state) {
+    var list = state.pickups;
+    var best = 1e9;
+    var x = null;
+    var i, p, dist, b, low;
+    for (i = 0; i < list.length; i++) {
+      p = list[i];
+      if (!p.on || p.caught) continue;
+      dist = Math.abs(p.x - state.paddleX) + Math.abs(p.y - state.paddleTop);
+      if (dist < best) { best = dist; x = p.x; }
+    }
+    if (x == null) {
+      low = -1;
+      b = state.balls;
+      for (i = 0; i < CONFIG.MAX_BALLS; i++) {
+        if (!b.alive[i] || b.y[i] < low) continue;
+        low = b.y[i];
+        x = b.x[i];
+      }
+    }
+    if (x != null) movePaddle(state, x);
+  }
+
+  function step(state, dt) {
+    if (state.won || state.lost) return;
+    state.t += dt;
+    state.hit = 0;
+    if (state.safety > 0) state.safety = Math.max(0, state.safety - dt);
+    if (state.demo) driveDemo(state);
+    physics.stepBalls(state, dt);
+    stepPickups(state, dt);
+    if (state.live <= 0 && !state.won) {
+      if (CONFIG.ROSE_BAR_MODE === 'ball-loss') state.lives--;
+      if (state.audio) state.audio.hurt();
+      if (state.lives <= 0) {
+        state.lost = true;
+        if (state.audio) state.audio.lose();
+      } else serveOnPaddle(state);
+    }
+    if (state.won && state.audio) state.audio.win();
+    if (state.hit && state.audio) {
+      state.soundWait -= dt;
+      if (state.soundWait <= 0) {
+        state.audio.brick();
+        state.soundWait = 0.05;
+      }
+    }
+  }
+
+  function countPickups(state) {
+    var n = 0;
+    var i;
+    for (i = 0; i < state.pickups.length; i++) if (state.pickups[i].on) n++;
+    return n;
+  }
+
+  function snapshot(state) {
+    var total = state.destructible || 1;
+    return {
+      id: state.level.id,
+      name: state.level.name,
+      won: state.won,
+      lost: state.lost,
+      score: state.score,
+      lives: state.lives,
+      stars: state.stars,
+      balls: state.live,
+      safety: state.safety,
+      destroyed: state.destroyed,
+      total: state.destructible,
+      percent: Math.round(state.destroyed / total * 100),
+      pickups: countPickups(state),
+      demo: state.demo
+    };
+  }
+
+  return {
+    createMatch: createMatch,
+    addBalls: addBalls,
+    multiplyBalls: multiplyBalls,
+    applyPickup: applyPickup,
+    CELL: CELL
+  };
+});
+
+/*
+ * PRISMBURST — Pixel Tunnel renderer.
+ * The field is an offscreen image. Only cells that changed are rewritten.
+ * Dug cells are flat #181818 with no new gray edge.
+ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root && root.window === root) {
+    root.PB = root.PB || {};
+    root.PB.PTRenderer = api;
+  }
+})(typeof window !== 'undefined' ? window : globalThis, function () {
+  'use strict';
+
+  var cfgApi = null;
+  if (typeof require === 'function') {
+    try { cfgApi = require('./config.js'); } catch (e) { cfgApi = null; }
+  }
+  if (!cfgApi && typeof window !== 'undefined' && window.PB) cfgApi = window.PB.PTConfig;
+  var CELL = cfgApi.CELL;
+  var CONFIG = cfgApi.CONFIG;
+
+  function create(canvas) {
+    var L = cfgApi.layout();
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    canvas.width = L.canvasW;
+    canvas.height = L.canvasH;
+    var field = document.createElement('canvas');
+    field.width = L.fieldW;
+    field.height = L.fieldH;
+    var fctx = field.getContext('2d');
+    var img = fctx.createImageData(field.width, field.height);
+    var pix = img.data;
+    var colors = CONFIG.COLORS;
+    var ready = false;
+    var paintKey = '';
+    var fieldRGB = [93, 96, 24];
+    var fieldGap = [51, 53, 13];
+    var wallRGB = [123, 123, 123];
+    var wallGap = [78, 78, 78];
+
+    function parseHex(hex) {
+      var n = parseInt(String(hex || '').slice(1), 16);
+      if (!isFinite(n)) n = 0;
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+
+    function shade(rgb, scale) {
+      return [(rgb[0] * scale) | 0, (rgb[1] * scale) | 0, (rgb[2] * scale) | 0];
+    }
+
+    function useTheme(level) {
+      var field = (level && level.field) || CONFIG.COLORS.field;
+      var wall = (level && level.wall) || '#7B7B7B';
+      var key = field + '|' + wall;
+      if (key === paintKey) return false;
+      paintKey = key;
+      if (field === '#5D6018') {
+        fieldRGB = [93, 96, 24];
+        fieldGap = [51, 53, 13];
+      } else {
+        fieldRGB = parseHex(field);
+        fieldGap = shade(fieldRGB, 0.55);
+      }
+      if (wall === '#7B7B7B') {
+        wallRGB = [123, 123, 123];
+        wallGap = [78, 78, 78];
+      } else {
+        wallRGB = parseHex(wall);
+        wallGap = shade(wallRGB, 0.63);
+      }
+      return true;
+    }
+
+    function writeCell(grid, index) {
+      var cols = CONFIG.COLS;
+      var size = CONFIG.CELL;
+      var r = (index / cols) | 0;
+      var c = index % cols;
+      var type = grid[index];
+      var R = 24, G = 24, B = 24;
+      var gap = false;
+      var gR = 0, gG = 0, gB = 0;
+      if (type === CELL.OLIVE) { R = fieldRGB[0]; G = fieldRGB[1]; B = fieldRGB[2]; gap = true; gR = fieldGap[0]; gG = fieldGap[1]; gB = fieldGap[2]; }
+      else if (type === CELL.GRAY) { R = wallRGB[0]; G = wallRGB[1]; B = wallRGB[2]; gap = true; gR = wallGap[0]; gG = wallGap[1]; gB = wallGap[2]; }
+      else if (type === CELL.YELLOW) { R = 234; G = 207; B = 24; gap = true; gR = 138; gG = 118; gB = 16; }
+      else if (type === CELL.RED) { R = 225; G = 30; B = 36; gap = true; gR = 122; gG = 16; gB = 20; }
+      var y0 = r * size;
+      var x0 = c * size;
+      var yy, xx, row, p, er, eg, eb;
+      for (yy = 0; yy < size; yy++) {
+        row = ((y0 + yy) * field.width + x0) * 4;
+        for (xx = 0; xx < size; xx++) {
+          p = row + xx * 4;
+          er = R; eg = G; eb = B;
+          if (gap && (xx === size - 1 || yy === size - 1)) { er = gR; eg = gG; eb = gB; }
+          pix[p] = er;
+          pix[p + 1] = eg;
+          pix[p + 2] = eb;
+          pix[p + 3] = 255;
+        }
+      }
+    }
+
+    function flush(state) {
+      var i;
+      if (useTheme(state.level)) state.fullPaint = true;
+      if (!ready || state.fullPaint) {
+        for (i = 0; i < state.grid.length; i++) writeCell(state.grid, i);
+        ready = true;
+        state.fullPaint = false;
+        state.dirtyN = 0;
+        fctx.putImageData(img, 0, 0);
+        return;
+      }
+      if (!state.dirtyN) return;
+      for (i = 0; i < state.dirtyN; i++) writeCell(state.grid, state.dirty[i]);
+      state.dirtyN = 0;
+      fctx.putImageData(img, 0, 0);
+    }
+
+    function star(x, y, rad) {
+      ctx.beginPath();
+      var i, a, m, px, py;
+      for (i = 0; i < 10; i++) {
+        a = -Math.PI / 2 + i * Math.PI / 5;
+        m = i % 2 ? rad * 0.42 : rad;
+        px = x + Math.cos(a) * m;
+        py = y + Math.sin(a) * m;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawPickup(p) {
+      var kind = p.kind;
+      var col = colors.plus3;
+      var label = '+3';
+      if (kind === 'times3') { col = colors.times3; label = '×3'; }
+      else if (kind === 'safety') { col = colors.safetyOrb; label = '–'; }
+      else if (kind === 'heart') { col = colors.heart; label = '♥'; }
+      var rad = L.pickupR * (p.scale || 1);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.scale || 1);
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold ' + Math.max(8, (rad * 0.9) | 0) + 'px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, p.x, p.y + 0.5);
+      ctx.restore();
+    }
+
+    function draw(state) {
+      flush(state);
+      ctx.fillStyle = colors.frame;
+      ctx.fillRect(0, 0, L.canvasW, L.canvasH);
+      ctx.fillStyle = colors.black;
+      ctx.fillRect(L.fieldX, L.blackTop, L.fieldW, L.blackBottom - L.blackTop);
+      ctx.drawImage(field, L.fieldX, L.fieldY);
+
+      var share = state.destructible ? state.destroyed / state.destructible : 0;
+      var roseW = L.fieldW * (state.maxLives ? state.lives / state.maxLives : 0);
+      if (roseW < 0) roseW = 0;
+      ctx.fillStyle = colors.rose;
+      ctx.fillRect(L.fieldX, L.roseY, roseW, L.roseH);
+      ctx.fillStyle = CONFIG.PROGRESS_COLOR;
+      ctx.fillRect(L.fieldX, L.roseY + L.roseH + 1, L.fieldW * share, 3);
+
+      ctx.fillStyle = colors.paddle;
+      ctx.fillRect(state.paddleX - state.paddleW / 2, state.paddleTop, state.paddleW, state.paddleH);
+      if (state.safety > 0) {
+        ctx.fillStyle = colors.paddle;
+        ctx.fillRect(L.fieldX, L.blackBottom - L.safetyH, L.fieldW, L.safetyH);
+      }
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      var b = state.balls;
+      var i, rad;
+      rad = state.ballR;
+      for (i = 0; i < CONFIG.MAX_BALLS; i++) {
+        if (!b.alive[i]) continue;
+        ctx.moveTo(b.x[i] + rad, b.y[i]);
+        ctx.arc(b.x[i], b.y[i], rad, 0, Math.PI * 2);
+      }
+      ctx.fill();
+
+      for (i = 0; i < state.pickups.length; i++) {
+        if (state.pickups[i].on) drawPickup(state.pickups[i]);
+      }
+
+      if (state.won) drawWin();
+    }
+
+    function roundRect(x, y, w, h, rad) {
+      ctx.beginPath();
+      ctx.moveTo(x + rad, y);
+      ctx.arcTo(x + w, y, x + w, y + h, rad);
+      ctx.arcTo(x + w, y + h, x, y + h, rad);
+      ctx.arcTo(x, y + h, x, y, rad);
+      ctx.arcTo(x, y, x + w, y, rad);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawWin() {
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(L.fieldX, L.fieldY, L.fieldW, L.fieldH);
+      var w = 280;
+      var h = 168;
+      var x = L.fieldX + (L.fieldW - w) / 2;
+      var y = L.fieldY + (L.fieldH - h) / 2;
+      ctx.fillStyle = CONFIG.PANEL_COLOR;
+      roundRect(x, y, w, h, 16);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText('Congratulations', x + w / 2, y + 42);
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillText('You win!', x + w / 2, y + 78);
+      ctx.fillStyle = CONFIG.STAR_COLOR;
+      var i;
+      for (i = 0; i < CONFIG.WIN_STARS; i++) star(x + w / 2 + (i - 1) * 36, y + 122, 14);
+    }
+
+    return { draw: draw, layout: L };
+  }
+
+  return { create: create };
+});
+
+var canvas = document.getElementById('c');
+var view = PB.PTRenderer.create(canvas);
+var match = PB.PTGame.createMatch(PB.PTLevels.buildLevel(1), { demo: true });
+function frame(){ match.step(1/60); view.draw(match.state); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+function move(ev){
+  var box = canvas.getBoundingClientRect();
+  var x = (ev.clientX - box.left) * canvas.width / (box.width || canvas.width);
+  match.setDemo(false);
+  match.movePaddle(x);
+}
+canvas.addEventListener('pointerdown', move);
+canvas.addEventListener('pointermove', function(ev){ if (ev.buttons) move(ev); });
+window.addEventListener('keydown', function(ev){
+  if (ev.key === 'ArrowLeft') { match.setDemo(false); match.movePaddle(match.state.paddleX - 28); }
+  if (ev.key === 'ArrowRight') { match.setDemo(false); match.movePaddle(match.state.paddleX + 28); }
+});
+</script>
+</body>
+</html>

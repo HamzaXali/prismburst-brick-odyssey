@@ -186,7 +186,7 @@ try {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const shippedVersion = require('../package.json').version;
   record('service worker cache version matches the semver and precaches the game',
-    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/firebase-app-compat.js') && sw.includes('./lib/firebase-auth-compat.js') && sw.includes('./lib/firebase-firestore-compat.js') && sw.includes('./js/firebase-config.js') && sw.includes('isAuthBridge') && sw.includes('prismburst-v1.5.0-bridge3') && !sw.includes("'./auth-bridge.html'") && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.5') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0'));
+    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/firebase-app-compat.js') && sw.includes('./lib/firebase-auth-compat.js') && sw.includes('./lib/firebase-firestore-compat.js') && sw.includes('./js/firebase-config.js') && sw.includes('isAuthBridge') && sw.includes('prismburst-v1.6.0') && !sw.includes("'./auth-bridge.html'") && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.5') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
   record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '" + shippedVersion + "'") && sw.includes('prismburst-v' + shippedVersion));
   record('service worker keeps Firebase/Google APIs network-only and skips OAuth returns', (sw.includes('googleapis') || sw.includes('firebaseio') || sw.includes('identitytoolkit')) && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
@@ -369,7 +369,7 @@ try {
     emptyFailed);
   fs.rmSync(decodedPath, { force: true });
   record('release version, R8, and signing env come from package.json without printing secrets',
-    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 8 &&
+    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 9 &&
     appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&
     appGradle.includes('debuggable false') &&
     appGradle.includes('minifyEnabled true') &&
@@ -413,7 +413,7 @@ try {
     cloudJs.indexOf('bag[name]') < cloudJs.indexOf('registerPlugin(name)'));
   record('native open uses OpenUrl Intent fallback and diagnostic step codes',
     cloudJs.includes("nativePlugin('OpenUrl')") && cloudJs.includes('browserDiag') &&
-    cloudJs.includes("APP_VERSION = '1.5.0'") && cloudJs.includes('purgeNativeServiceWorker') &&
+    cloudJs.includes("APP_VERSION = '1.6.0'") && cloudJs.includes('purgeNativeServiceWorker') &&
     !cloudJs.includes('The system browser is unavailable'));
   record('nonce/state is checked on deep-link return and tokens are never logged',
     cloudJs.includes('readBridgeState') && cloudJs.includes('parsed.state !== expected.state') &&

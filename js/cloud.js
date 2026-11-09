@@ -18,7 +18,7 @@
   var SAVE_KEY = Sync.SAVE_KEY;
   var META_KEY = 'prismburst.cloud.meta.v1';
   var AUTH_STATE_KEY = 'prismburst.auth.bridge.v1';
-  var APP_VERSION = '1.5.0';
+  var APP_VERSION = '1.6.0';
   var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth';
   var PUBLIC_SITE = 'https://hamzaxali.github.io/prismburst-brick-odyssey/';
   var DELETED_TEXT = 'Your account and its cloud save were deleted. Progress on this device was kept.';

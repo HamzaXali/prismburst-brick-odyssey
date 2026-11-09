@@ -45,7 +45,12 @@
       '.pt-mask{position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}',
       '.pt-card{width:min(320px,100%);background:#3A3A3A;border-radius:16px;padding:16px;text-align:center}',
       '.pt-card h2{margin:0 0 6px;font-size:22px}',
-      '.pt-row{display:flex;gap:6px;justify-content:center;margin-top:10px;flex-wrap:wrap}'
+      '.pt-row{display:flex;gap:6px;justify-content:center;margin-top:10px;flex-wrap:wrap}',
+      '.pt-styles{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-height:62vh;overflow:auto;margin-top:8px;touch-action:pan-y}',
+      '.pt-style{min-height:48px;border-radius:8px;border:1px solid rgba(255,255,255,.35);color:#fff;font-size:11px;font-weight:700;padding:6px;text-align:left;text-shadow:0 1px 1px #000}',
+      '.pt-style.lock{opacity:.4}',
+      '.pt-style.clear{box-shadow:inset 0 0 0 2px #F0C84A}',
+      '.pt-swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle;border:1px solid #fff}'
     ].join('');
     document.head.appendChild(style);
 
@@ -71,9 +76,17 @@
     var demoBtn = button('demo', 'Auto Demo');
     demoBtn.id = 'pt-demo';
     actions.appendChild(demoBtn);
+    actions.appendChild(button('styles', 'Styles'));
     actions.appendChild(button('menu', 'Menu'));
     hud.appendChild(stats);
     hud.appendChild(actions);
+
+    var styles = mask('Choose a style');
+    var styleGrid = el('div', 'pt-styles');
+    styles.card.appendChild(el('p', '', 'Clear a style to unlock the next one.'));
+    styles.card.appendChild(styleGrid);
+    var styleBack = button('close-styles', 'Back');
+    styles.card.appendChild(styleBack);
 
     var pause = mask('Paused');
     var pauseRow = el('div', 'pt-row');
@@ -100,22 +113,45 @@
 
     root.appendChild(stage);
     root.appendChild(hud);
+    root.appendChild(styles.mask);
     root.appendChild(pause.mask);
     root.appendChild(win.mask);
     root.appendChild(lose.mask);
 
     root.addEventListener('click', function (event) {
-      var node = event.target.closest('[data-pt]');
-      if (!node) return;
-      handlers.action(node.getAttribute('data-pt'));
+      var node = event.target.closest('[data-pt], [data-level]');
+      if (!node || node.disabled) return;
+      if (node.getAttribute('data-level')) handlers.level(+node.getAttribute('data-level'));
+      else handlers.action(node.getAttribute('data-pt'));
     });
 
     document.body.appendChild(root);
 
     function show(which) {
+      styles.mask.hidden = which !== 'styles';
       pause.mask.hidden = which !== 'pause';
       win.mask.hidden = which !== 'win';
       lose.mask.hidden = which !== 'lose';
+    }
+
+    function fillStyles(progress, list) {
+      styleGrid.textContent = '';
+      var i;
+      for (i = 0; i < list.length; i++) {
+        var item = list[i];
+        var locked = item.id > progress.unlocked;
+        var rec = progress.levels[String(item.id)];
+        var btn = el('button', 'pt-style' + (locked ? ' lock' : '') + (rec && rec.cleared ? ' clear' : ''));
+        btn.type = 'button';
+        btn.setAttribute('data-level', String(item.id));
+        btn.style.background = item.field;
+        btn.disabled = locked;
+        var sw = el('i', 'pt-swatch');
+        sw.style.background = item.wall || '#7B7B7B';
+        btn.appendChild(sw);
+        btn.appendChild(document.createTextNode(item.id + '  ' + item.name));
+        styleGrid.appendChild(btn);
+      }
     }
 
     function hearts(n) {
@@ -143,6 +179,7 @@
       root: root,
       canvas: canvas,
       show: show,
+      fillStyles: fillStyles,
       sync: sync,
       setWin: setWin,
       open: function () { root.classList.add('pt-open'); },

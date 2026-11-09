@@ -88,15 +88,21 @@ function startServer() {
     record('PIXEL TUNNEL is on the main menu', !!found, found);
     if (found) await page.touchscreen.tap(found.x, found.y);
     await page.waitForSelector('#pt-root.pt-open');
-    await page.screenshot({ path: path.join(SHOTS, 'level-01-start.png') });
+    await page.screenshot({ path: path.join(SHOTS, 'style-select.png') });
     const select = await page.evaluate(() => ({
       levels: document.querySelectorAll('#pt-root [data-level]').length,
-      launch: Array.from(document.querySelectorAll('#pt-root button')).some(b => /launch/i.test(b.textContent)),
-      demo: !!document.getElementById('pt-demo')
+      locked: document.querySelectorAll('#pt-root [data-level][disabled]').length,
+      first: !document.querySelector('#pt-root [data-level="1"][disabled]'),
+      secondLocked: !!document.querySelector('#pt-root [data-level="2"][disabled]'),
+      launch: Array.from(document.querySelectorAll('#pt-root button')).some(b => /launch/i.test(b.textContent))
     }));
+    record('style select lists 50 or more, style 1 is open, and there is no launch button',
+      select.levels >= 50 && select.locked === select.levels - 1 && select.first && select.secondLocked && select.launch === false, select);
+    await page.click('#pt-root [data-level="1"]');
+    await sleep(200);
     const start = await page.evaluate(() => PB.PixelTunnel.snapshot());
-    record('level 1 is already running, with no launch button and no level grid',
-      select.levels === 0 && select.launch === false && select.demo === true && start && start.id === 1 && start.balls >= 1, { select, start });
+    record('choosing style 1 starts the olive pocket with the ball already moving',
+      start && start.id === 1 && start.name === 'Level 1' && start.balls >= 1, start);
 
     const moved = await page.evaluate(() => {
       const before = PB.PixelTunnel.snapshot();
@@ -111,10 +117,13 @@ function startServer() {
 
     await page.screenshot({ path: path.join(SHOTS, 'level-01.png') });
     const dug = await page.evaluate(() => {
+      PB.PixelTunnel.holdSim = true;
+      PB.PixelTunnel.startLevel(1);
       PB.PixelTunnel.setDemo(true);
+      PB.PTGame.addBalls(PB.PixelTunnel.debugState(), 8);
       return PB.PixelTunnel.fastForward(6);
     });
-    record('auto demo digs the olive field', dug && dug.demo === true && dug.destroyed > 0 && dug.lost === false, dug);
+    record('a short swarm digs the olive field', dug && dug.demo === true && dug.destroyed > 0 && dug.lost === false, dug);
     await page.screenshot({ path: path.join(SHOTS, 'level-01-dig.png') });
 
     const saves = await page.evaluate(() => ({

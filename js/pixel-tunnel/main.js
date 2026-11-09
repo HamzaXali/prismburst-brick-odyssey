@@ -30,7 +30,10 @@
 
   function ensure() {
     if (ui) return;
-    ui = PB.PTUI.mount({ action: onAction });
+    ui = PB.PTUI.mount({
+      action: onAction,
+      level: function (n) { startLevel(n, false); }
+    });
     unbind = PB.PTInput.bind(ui.canvas, {
       move: function (x) { if (match && !paused && !match.state.demo) match.movePaddle(x); }
     });
@@ -50,8 +53,25 @@
     if (name === 'menu' || name === 'classic') { close(); return; }
     if (name === 'pause') { paused = true; ui.show('pause'); return; }
     if (name === 'resume') { paused = false; ui.show(''); return; }
-    if (name === 'reset' || name === 'replay' || name === 'retry' || name === 'next') {
-      startLevel(1, true);
+    if (name === 'styles' || name === 'close-styles') {
+      if (name === 'styles') {
+        ui.fillStyles(progress, levels.list());
+        ui.show('styles');
+        paused = true;
+      } else if (match) {
+        ui.show('');
+        paused = false;
+      }
+      return;
+    }
+    if (name === 'next' && match) {
+      var nextId = match.state.level.id + 1;
+      if (nextId <= levels.count() && progress.unlocked >= nextId) startLevel(nextId, false);
+      else startLevel(match.state.level.id, true);
+      return;
+    }
+    if (name === 'reset' || name === 'replay' || name === 'retry') {
+      startLevel(match && match.state.level.id || 1, true);
       return;
     }
     if (name === 'demo' && match) {
@@ -61,13 +81,15 @@
   }
 
   function startLevel(id, force) {
-    var level = levels.buildLevel(id || 1);
+    id = id || 1;
+    if (!force && id > progress.unlocked) return;
+    var level = levels.buildLevel(id);
     match = gameApi.createMatch(level, { audio: audioApi.create(soundOn), demo: false });
     progress.current = level.id;
     progress = store.save(progress);
     paused = false;
     ui.show('');
-    PB.PTView.draw(match.state);
+    if (PB.PTView) PB.PTView.draw(match.state);
   }
 
   function frame(now) {
@@ -105,7 +127,9 @@
     ensure();
     progress = store.load();
     ui.open();
-    startLevel(1, true);
+    ui.fillStyles(progress, levels.list());
+    ui.show('styles');
+    paused = true;
     if (!running) {
       running = true;
       last = 0;

@@ -6,6 +6,7 @@ The shipped app stays plain JavaScript under `js/pixel-tunnel/`. It does not add
 
 | Topic | Value used | Why |
 | --- | --- | --- |
+| Styles | 51 layouts | Style 1 is the olive pocket. Styles 2–51 each have a different pocket shape and field color. Clearing style N unlocks N+1. |
 | Gray cells | `GRAY_BREAKABLE = false` | Ali overrode the video note. The outer ring, pocket walls, divider, and every gray cell on row 49 never break. A hit bounces. |
 | Outer ring | Indestructible | Same rule as the pocket. Top row, both side columns, and the bottom gray row stay. |
 | Win | Every olive, yellow, and red cell is open | Gray walls are not part of the clear. Dug cells are still flat `#181818`. |

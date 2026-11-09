@@ -15,7 +15,7 @@
 
   var KEY = 'prismburst.pixel-tunnel.v1';
   var CLASSIC_KEY = 'prismburst.save.v1';
-  var LEVELS = 40;
+  var LEVELS = 51;
 
   function isObj(v) {
     return !!v && typeof v === 'object' && !Array.isArray(v);

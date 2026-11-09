@@ -89,7 +89,8 @@
   function serveOpening(state) {
     var L = state.L;
     var pocket = state.level.pocket;
-    var x = L.fieldX + (pocket.entrance.col + 0.5) * L.cell;
+    var mouth = state.level.entrance != null ? state.level.entrance : (pocket && pocket.entrance ? pocket.entrance.col : 13);
+    var x = L.fieldX + (mouth + 0.5) * L.cell;
     var y = L.blackTop + 1.2 * L.cell;
     var vx = state.speed * 0.12;
     var vy = -Math.sqrt(state.speed * state.speed - vx * vx);
@@ -101,7 +102,8 @@
     var i = physics.allocBall(state);
     if (i < 0) return;
     var L = state.L;
-    var mouth = L.fieldX + (state.level.pocket.entrance.col + 0.5) * L.cell;
+    var mouthCol = state.level.entrance != null ? state.level.entrance : 13;
+    var mouth = L.fieldX + (mouthCol + 0.5) * L.cell;
     var ang = Math.atan2(L.blackTop - state.paddleTop, mouth - state.paddleX);
     var max = CONFIG.PADDLE_MAX_ANGLE * Math.PI / 180;
     var delta = ang + Math.PI / 2;

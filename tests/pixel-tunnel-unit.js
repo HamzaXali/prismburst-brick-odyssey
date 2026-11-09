@@ -21,7 +21,8 @@ const level = levels.buildLevel(1);
 const grid = level.grid;
 function at(c, r) { return grid[r * COLS + c]; }
 
-record('only level 1 is built', levels.count() === 1 && level.id === 1 && level.grid.length === 2500);
+record('at least 50 styles exist and style 1 is the olive pocket',
+  levels.count() >= 50 && level.id === 1 && level.field === '#5D6018' && level.wall === '#7B7B7B' && level.grid.length === 2500);
 record('field is olive inside the ring', at(25, 10) === CELL.OLIVE && at(25, 25) === CELL.OLIVE);
 record('outer ring is gray', at(0, 10) === CELL.GRAY && at(49, 10) === CELL.GRAY && at(25, 0) === CELL.GRAY && at(25, 49) === CELL.GRAY);
 record('top cap is gray', [12, 13, 14, 15, 16].every(c => at(c, 39) === CELL.GRAY));
@@ -34,6 +35,74 @@ record('entrance is only column 13 on the bottom row',
   at(13, 49) === CELL.OPEN && at(12, 49) === CELL.GRAY && at(14, 49) === CELL.GRAY && at(15, 49) === CELL.GRAY);
 record('three yellow cells and one red target',
   at(16, 43) === CELL.YELLOW && at(16, 44) === CELL.YELLOW && at(16, 45) === CELL.YELLOW && at(17, 44) === CELL.RED);
+
+function shapeKey(g) {
+  const marks = [];
+  for (let r = 1; r < 49; r++) for (let c = 1; c < 49; c++) {
+    const t = g[r * COLS + c];
+    if (t === CELL.OLIVE) continue;
+    marks.push([c, r, t]);
+  }
+  let minC = 99, minR = 99;
+  marks.forEach(m => { if (m[0] < minC) minC = m[0]; if (m[1] < minR) minR = m[1]; });
+  return marks.map(m => (m[0] - minC) + ',' + (m[1] - minR) + ':' + m[2]).join('|');
+}
+function canReachField(g) {
+  const seen = new Uint8Array(g.length);
+  const q = [];
+  for (let c = 1; c < 49; c++) {
+    const i = 49 * COLS + c;
+    if (g[i] === CELL.OPEN) { seen[i] = 1; q.push(i); }
+  }
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (let qi = 0; qi < q.length; qi++) {
+    const i = q[qi];
+    const r = (i / COLS) | 0;
+    const c = i % COLS;
+    for (let d = 0; d < 4; d++) {
+      const rr = r + dirs[d][1];
+      const cc = c + dirs[d][0];
+      if (rr < 0 || cc < 0 || rr >= 50 || cc >= 50) continue;
+      const j = rr * COLS + cc;
+      if (!seen[j] && g[j] === CELL.OPEN) { seen[j] = 1; q.push(j); }
+    }
+  }
+  for (let qi = 0; qi < q.length; qi++) {
+    const i = q[qi];
+    const r = (i / COLS) | 0;
+    const c = i % COLS;
+    for (let d = 0; d < 4; d++) {
+      const rr = r + dirs[d][1];
+      const cc = c + dirs[d][0];
+      if (rr <= 0 || cc <= 0 || rr >= 49 || cc >= 49) continue;
+      const t = g[rr * COLS + cc];
+      if (t === CELL.OLIVE || t === CELL.YELLOW || t === CELL.RED) return true;
+    }
+  }
+  return false;
+}
+const built = [];
+for (let id = 1; id <= levels.count(); id++) built.push(levels.buildLevel(id));
+const shapeSeen = {};
+const colorSeen = {};
+let shapeDup = '';
+let colorDup = '';
+let unsolved = '';
+let grayBroke = '';
+built.forEach(L => {
+  const key = shapeKey(L.grid);
+  if (shapeSeen[key]) shapeDup += L.id + '=' + shapeSeen[key] + ' ';
+  else shapeSeen[key] = L.id;
+  if (colorSeen[L.field]) colorDup += L.id + ' ';
+  else colorSeen[L.field] = L.id;
+  if (!canReachField(L.grid)) unsolved += L.id + ' ';
+  for (let i = 0; i < L.grid.length; i++) {
+    if (L.grid[i] === CELL.GRAY && levels.canBreak(L.grid, i)) grayBroke += L.id + ' ';
+  }
+});
+record('every style is a distinct solvable layout with its own field color',
+  !shapeDup && !colorDup && !unsolved && built.length >= 50, (shapeDup || colorDup || unsolved || 'count ' + built.length));
+record('gray walls cannot break on any style', !grayBroke, grayBroke.slice(0, 80));
 
 record('GRAY_BREAKABLE is false', cfg.CONFIG.GRAY_BREAKABLE === false);
 record('ring, pocket, divider, and the bottom wall cannot break',
@@ -75,6 +144,23 @@ function aim(match, c, r, vx, vy) {
   );
   return i;
 }
+
+const sampleIds = [1, 2, 8, 19, 33, 51].filter(id => id <= levels.count());
+let sampleHeld = true;
+sampleIds.forEach(id => {
+  const sampled = levels.buildLevel(id);
+  let grayIndex = -1;
+  for (let i = 0; i < sampled.grid.length; i++) if (sampled.grid[i] === CELL.GRAY) { grayIndex = i; break; }
+  const match = game.createMatch(sampled);
+  match.state.grid.fill(CELL.OPEN);
+  match.state.grid[grayIndex] = CELL.GRAY;
+  const gc = grayIndex % COLS;
+  const gr = (grayIndex / COLS) | 0;
+  aim(match, gc, Math.min(48, gr + 1), 0, -400);
+  for (let s = 0; s < 12; s++) match.step(1 / 60);
+  if (match.state.grid[grayIndex] !== CELL.GRAY) sampleHeld = false;
+});
+record('a shot into a gray cell stays put on sampled styles', sampleHeld);
 
 const dig = game.createMatch(levels.buildLevel(1));
 const digTarget = 20 * COLS + 25;
@@ -240,6 +326,9 @@ record('cloud merge keeps the better tunnel score and classic coins',
 
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
 record('version stays 1.6.0 / versionCode 9', pkg.version === '1.6.0' && pkg.androidVersionCode === 9);
+const unlock = store.record(store.defaults(), 1, 20, 3, true);
+record('clearing style 1 unlocks style 2 and keeps later styles locked',
+  unlock.unlocked === 2 && unlock.levels['1'].cleared === true && unlock.levels['3'] == null);
 
 const passed = results.filter(r => r.pass).length;
 console.log('\n' + passed + '/' + results.length + ' passed');

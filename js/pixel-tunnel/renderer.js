@@ -35,6 +35,44 @@
     var pix = img.data;
     var colors = CONFIG.COLORS;
     var ready = false;
+    var paintKey = '';
+    var fieldRGB = [93, 96, 24];
+    var fieldGap = [51, 53, 13];
+    var wallRGB = [123, 123, 123];
+    var wallGap = [78, 78, 78];
+
+    function parseHex(hex) {
+      var n = parseInt(String(hex || '').slice(1), 16);
+      if (!isFinite(n)) n = 0;
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+
+    function shade(rgb, scale) {
+      return [(rgb[0] * scale) | 0, (rgb[1] * scale) | 0, (rgb[2] * scale) | 0];
+    }
+
+    function useTheme(level) {
+      var field = (level && level.field) || CONFIG.COLORS.field;
+      var wall = (level && level.wall) || '#7B7B7B';
+      var key = field + '|' + wall;
+      if (key === paintKey) return false;
+      paintKey = key;
+      if (field === '#5D6018') {
+        fieldRGB = [93, 96, 24];
+        fieldGap = [51, 53, 13];
+      } else {
+        fieldRGB = parseHex(field);
+        fieldGap = shade(fieldRGB, 0.55);
+      }
+      if (wall === '#7B7B7B') {
+        wallRGB = [123, 123, 123];
+        wallGap = [78, 78, 78];
+      } else {
+        wallRGB = parseHex(wall);
+        wallGap = shade(wallRGB, 0.63);
+      }
+      return true;
+    }
 
     function writeCell(grid, index) {
       var cols = CONFIG.COLS;
@@ -45,8 +83,8 @@
       var R = 24, G = 24, B = 24;
       var gap = false;
       var gR = 0, gG = 0, gB = 0;
-      if (type === CELL.OLIVE) { R = 93; G = 96; B = 24; gap = true; gR = 51; gG = 53; gB = 13; }
-      else if (type === CELL.GRAY) { R = 123; G = 123; B = 123; gap = true; gR = 78; gG = 78; gB = 78; }
+      if (type === CELL.OLIVE) { R = fieldRGB[0]; G = fieldRGB[1]; B = fieldRGB[2]; gap = true; gR = fieldGap[0]; gG = fieldGap[1]; gB = fieldGap[2]; }
+      else if (type === CELL.GRAY) { R = wallRGB[0]; G = wallRGB[1]; B = wallRGB[2]; gap = true; gR = wallGap[0]; gG = wallGap[1]; gB = wallGap[2]; }
       else if (type === CELL.YELLOW) { R = 234; G = 207; B = 24; gap = true; gR = 138; gG = 118; gB = 16; }
       else if (type === CELL.RED) { R = 225; G = 30; B = 36; gap = true; gR = 122; gG = 16; gB = 20; }
       var y0 = r * size;
@@ -68,6 +106,7 @@
 
     function flush(state) {
       var i;
+      if (useTheme(state.level)) state.fullPaint = true;
       if (!ready || state.fullPaint) {
         for (i = 0; i < state.grid.length; i++) writeCell(state.grid, i);
         ready = true;

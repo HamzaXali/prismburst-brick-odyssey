@@ -153,8 +153,41 @@
   PB.PixelTunnel = {
     open: open,
     close: close,
-    startLevel: function (id) { ensure(); progress = progress || store.load(); ui.open(); startLevel(id, true); },
+    startLevel: function (id) {
+      ensure();
+      progress = progress || store.load();
+      ui.open();
+      startLevel(id, true);
+      if (!running) {
+        running = true;
+        last = 0;
+        raf = window.requestAnimationFrame(frame);
+      }
+    },
     snapshot: function () { return match ? match.snapshot() : null; },
+    stream: function () { if (match) match.stream(); },
+    tick: function () {
+      if (match && !paused && !match.state.won && !match.state.lost) match.step(1 / 60);
+      if (match && PB.PTView) PB.PTView.draw(match.state);
+      return match ? match.snapshot() : null;
+    },
+    bench: function (seconds) {
+      return new Promise(function (resolve) {
+        if (!match) return resolve(null);
+        match.stream();
+        var start = 0;
+        var frames = 0;
+        function tick(now) {
+          if (!start) start = now;
+          frames++;
+          if (now - start >= seconds * 1000) {
+            var snap = match.snapshot();
+            resolve({ fps: frames / ((now - start) / 1000), balls: snap.balls, score: snap.score, won: snap.won });
+          } else window.requestAnimationFrame(tick);
+        }
+        window.requestAnimationFrame(tick);
+      });
+    },
     fastForward: function (seconds) {
       if (!match) return null;
       var steps = Math.max(1, Math.round(seconds * 60));

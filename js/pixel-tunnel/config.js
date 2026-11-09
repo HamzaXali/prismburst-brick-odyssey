@@ -27,24 +27,23 @@
    * spawn row, fall speed, scores, lives, launch angle, win rule). */
   var CONFIG = {
     CANVAS_W: 400,
-    CANVAS_H: 616,
+    CANVAS_H: 880,
     CELL: 8,
     COLS: 50,
     FIELD_ROWS: 50,
 
-    /* Footage v07: paddle ~10 x 0.8 cells, about 16 cells under the field.
-     * Written spec was 9.5 x 0.75 at row ~67.5. */
-    PADDLE_W_CELLS: 10,
-    PADDLE_H_CELLS: 0.8,
-    PADDLE_CELLS_BELOW_FIELD: 16,
-    PADDLE_COLOR: '#FF4B45',
-    PADDLE_MAX_ANGLE: 60,
+    /* Thin flat orange bar. It sits in the lower band, just above the floor line. */
+    PADDLE_W_CELLS: 11,
+    PADDLE_H_CELLS: 0.38,
+    PADDLE_FROM_BOTTOM: 28,
+    PADDLE_COLOR: '#FF6A3A',
+    PADDLE_MAX_ANGLE: 55,
 
-    /* Footage: white dot about 0.6–0.8 cell. Midpoint. */
-    BALL_DIAMETER_CELLS: 0.7,
+    /* Tiny white dots, closer to the clips than a 0.7-cell marble. */
+    BALL_DIAMETER_CELLS: 0.42,
     BALL_COLOR: '#FFFFFF',
-    /* Speed was not measurable in the 1 fps review. Owner value. */
-    BALL_SPEED: 210,
+    /* Phone test: 210 felt floaty. Clips are snappy. */
+    BALL_SPEED: 680,
     /* Aim cone. Sign is chosen so the first shot points at a mouth. */
     LAUNCH_ANGLE: -65,
     LAUNCH_MOVE_PX: 4,
@@ -63,31 +62,29 @@
     /* Spawn row, fall speed, and the 12s interval were not tracked.
      * Owner defaults. The +3 disc itself is visible in v07. */
     BADGE_ROW: 2,
-    BADGE_FALL_CELLS: 3.5,
-    BADGE_SPAWN_INTERVAL: 12,
-    BADGE_DIAMETER_CELLS: 2.4,
+    BADGE_FALL_CELLS: 6,
+    BADGE_SPAWN_INTERVAL: 7,
+    BADGE_DIAMETER_CELLS: 1.15,
 
     TAP_COOLDOWN: 0.15,
     TAP_RANGE_CELLS: 1,
 
-    /* Footage shows far more than 12 balls, released near the paddle.
-     * 64 is high enough to swarm and still cheap with a fixed pool. */
-    MAX_BALLS: 64,
-    MULTIBALL_ADD: 3,
-    MULTIBALL_SPREAD_DEG: 28,
+    /* Clips fill the screen with hundreds of dots. One catch fires a stream. */
+    MAX_BALLS: 420,
+    MULTIBALL_ADD: 64,
+    MULTIBALL_SPREAD_DEG: 11,
 
     /* Footage: temporary red/orange bar, nearly the full lower width.
      * Duration was not readable; 10s is the owner's reward length. */
     SAFETY_SECONDS: 10,
-    SAFETY_COLOR: '#FF5A32',
-    SAFETY_WIDTH_RATIO: 0.96,
-    SAFETY_H_CELLS: 0.45,
-    SAFETY_CELLS_FROM_BOTTOM: 3.2,
+    SAFETY_COLOR: '#FF5C33',
+    SAFETY_WIDTH_RATIO: 1,
+    SAFETY_H_CELLS: 0.4,
+    SAFETY_FROM_BOTTOM: 6,
 
-    /* Grey lining shrugs off one hit (owner GRAY_BREAKABLE false) but
-     * repeated contacts chew it, which is what the clips show. */
-    GRAY_BREAKABLE: false,
-    BORDER_HITS: 3,
+    /* Lining is drawn, not a wall that kicks the ball back outside. */
+    GRAY_BREAKABLE: true,
+    BORDER_HITS: 1,
 
     /* Clips never state the win rule. Owner: clear every yellow target. */
     WIN_MODE: 'yellow',
@@ -106,9 +103,11 @@
     OUTER_BORDER: '#333333',
     PLAYFIELD: '#101010',
     BG: '#080808',
-    GAP_PX: 1,
-    PARTICLE_POOL: 80,
-    SUBSTEP_PX: 2.5,
+    GAP_PX: 0,
+    PARTICLE_POOL: 48,
+    POPUP_LIFE: 0.42,
+    POPUP_CAP: 3,
+    SUBSTEP_PX: 4,
 
     /* Wide-paddle seconds for the pink drop. Effect is an assumption. */
     WIDE_SECONDS: 8,
@@ -119,11 +118,11 @@
   };
 
   function paddleY() {
-    return (CONFIG.FIELD_ROWS + CONFIG.PADDLE_CELLS_BELOW_FIELD) * CONFIG.CELL;
+    return CONFIG.CANVAS_H - CONFIG.PADDLE_FROM_BOTTOM;
   }
 
   function safetyY() {
-    return CONFIG.CANVAS_H - CONFIG.SAFETY_CELLS_FROM_BOTTOM * CONFIG.CELL;
+    return CONFIG.CANVAS_H - CONFIG.SAFETY_FROM_BOTTOM;
   }
 
   return {

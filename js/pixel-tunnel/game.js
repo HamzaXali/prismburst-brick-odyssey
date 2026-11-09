@@ -50,7 +50,7 @@
   function makeBalls() {
     var list = [];
     for (var i = 0; i < CONFIG.MAX_BALLS; i++) {
-      list.push({ active: false, launched: false, x: 0, y: 0, vx: 0, vy: 0, r: 0 });
+      list.push({ active: false, launched: false, x: 0, y: 0, vx: 0, vy: 0, r: 0, kink: 0 });
     }
     return list;
   }
@@ -77,6 +77,7 @@
       borderStamp: stamp,
       grayBreakable: !!CONFIG.GRAY_BREAKABLE,
       dirty: [],
+      fullPaint: false,
       mouths: mouths,
       balls: makeBalls(),
       paddle: { x: CONFIG.CANVAS_W / 2, y: cfgApi.paddleY(), w: paddleW, h: paddleH, baseW: paddleW },
@@ -101,9 +102,15 @@
       safety: 0,
       wide: 0,
       rewards: [],
-      rewardWait: CONFIG.BADGE_SPAWN_INTERVAL,
+      rewardWait: 2.2,
+      lastDrop: -1,
+      liveBalls: 1,
       particles: [],
-      popups: [],
+      popups: [
+        { on: 0, x: 0, y: 0, t: 0, text: '' },
+        { on: 0, x: 0, y: 0, t: 0, text: '' },
+        { on: 0, x: 0, y: 0, t: 0, text: '' }
+      ],
       message: '',
       messageT: 0,
       hint: false,
@@ -111,10 +118,16 @@
       audio: opts.audio || null
     };
     state.onBreak = function (index, kind) { broke(state, index, kind); };
+    state.mark = function (index) {
+      if (state.fullPaint) return;
+      if (state.dirty.length > 240) state.fullPaint = true;
+      else state.dirty.push(index);
+    };
     seat(state);
     return {
       state: state,
       step: function (dt) { step(state, dt); },
+      stream: function () { addBalls(state, CONFIG.MULTIBALL_ADD); },
       snapshot: function () { return snapshot(state); },
       launch: function () { return launch(state); },
       movePaddle: function (x, fromPlayer) { movePaddle(state, x, fromPlayer); },
@@ -146,17 +159,12 @@
 
   function launchX(state) {
     var mouth = state.mouths[0] || CONFIG.CANVAS_W / 2;
-    var mouthY = (CONFIG.FIELD_ROWS - 0.5) * CONFIG.CELL;
-    var ballY = stickY(state);
-    var mag = Math.abs(CONFIG.LAUNCH_ANGLE) * Math.PI / 180;
-    var dir = mouth < CONFIG.CANVAS_W / 2 ? -1 : 1;
-    if (Math.abs(mouth - CONFIG.CANVAS_W / 2) < 20) dir = 1;
-    var theta = dir > 0 ? -mag : (-Math.PI + mag);
-    var vx = Math.cos(theta);
-    var vy = Math.sin(theta);
-    var t = (mouthY - ballY) / vy;
-    var x = mouth - vx * t;
     var half = state.paddle.baseW / 2;
+    var dy = Math.abs(((CONFIG.FIELD_ROWS - 0.5) * CONFIG.CELL) - stickY(state));
+    var maxDx = dy * Math.tan(Math.abs(CONFIG.LAUNCH_ANGLE) * Math.PI / 180);
+    var x = mouth;
+    if (mouth < CONFIG.CANVAS_W / 2) x = Math.min(mouth + maxDx * 0.35, CONFIG.CANVAS_W - half);
+    else x = Math.max(mouth - maxDx * 0.35, half);
     return clamp(x, half, CONFIG.CANVAS_W - half);
   }
 
@@ -227,20 +235,22 @@
     if (state.t - state.lastBreak > CONFIG.COMBO_WINDOW) state.combo = 0;
     state.combo = Math.min(CONFIG.COMBO_MAX, state.combo + 1);
     state.lastBreak = state.t;
-    state.score += base * state.combo;
-    var label = 'x' + state.combo;
+    state.score += base * Math.max(1, state.combo);
     if (state.combo >= CONFIG.COMBO_MAX) {
-      label = 'x3! +3 DROP!';
-      spawnReward(state, 'cyan');
       state.combo = 0;
+      if (state.t - state.lastDrop > 0.55) {
+        state.lastDrop = state.t;
+        spawnReward(state, 'cyan');
+      }
     }
-    popup(state, (index % CONFIG.COLS) * CONFIG.CELL, ((index / CONFIG.COLS) | 0) * CONFIG.CELL, label);
-    burst(state, (index % CONFIG.COLS) * CONFIG.CELL + 4, ((index / CONFIG.COLS) | 0) * CONFIG.CELL + 4, kind === 'yellow' ? CONFIG.TARGET_COLOR : '#ffffff');
+    if (state.liveBalls < 10) {
+      burst(state, (index % CONFIG.COLS) * CONFIG.CELL + 4, ((index / CONFIG.COLS) | 0) * CONFIG.CELL + 4, kind === 'yellow' ? CONFIG.TARGET_COLOR : '#ffffff');
+    }
     if (kind === 'yellow') {
       state.yellowLeft = countYellow(state.grid);
-      if (state.audio) state.audio.yellow();
+      if (state.audio && state.liveBalls < 8) state.audio.yellow();
       if (CONFIG.WIN_MODE === 'yellow' && state.yellowLeft <= 0) win(state);
-    } else if (state.audio) state.audio.brick();
+    } else if (state.audio && state.liveBalls < 6) state.audio.brick();
   }
 
   function win(state) {
@@ -251,17 +261,21 @@
   }
 
   function popup(state, x, y, text) {
-    state.popups.push({ x: x, y: y, text: text, t: 0.8 });
-    if (state.popups.length > 8) state.popups.shift();
+    var slot = state.popups[0];
+    for (var i = 1; i < state.popups.length; i++) {
+      if (state.popups[i].t < slot.t) slot = state.popups[i];
+    }
+    slot.on = 1;
+    slot.x = x;
+    slot.y = y;
+    slot.t = CONFIG.POPUP_LIFE;
+    slot.text = text;
   }
 
   function burst(state, x, y, color) {
-    for (var i = 0; i < 6; i++) {
-      if (state.particles.length >= CONFIG.PARTICLE_POOL) state.particles.shift();
-      var a = Math.random() * Math.PI * 2;
-      var s = 20 + Math.random() * 50;
-      state.particles.push({ x: x, y: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0.35, color: color });
-    }
+    if (state.particles.length >= CONFIG.PARTICLE_POOL) return;
+    var a = Math.random() * Math.PI * 2;
+    state.particles.push({ x: x, y: y, vx: Math.cos(a) * 40, vy: Math.sin(a) * 40, t: 0.22, color: color });
   }
 
   function spawnReward(state, kind) {
@@ -281,7 +295,7 @@
       state.score += CONFIG.SCORE_BADGE;
       addBalls(state, CONFIG.MULTIBALL_ADD);
       state.safety = CONFIG.SAFETY_SECONDS;
-      popup(state, state.paddle.x, state.paddle.y - 30, 'x3!');
+      popup(state, state.paddle.x, state.paddle.y - 16, 'x3');
     } else if (reward.kind === 'green') {
       if (state.lives < CONFIG.MAX_LIVES) state.lives++;
       popup(state, reward.x, reward.y, '+1');
@@ -293,9 +307,9 @@
       popup(state, reward.x, reward.y, 'WIDE');
     } else if (reward.kind === 'star') {
       state.score += CONFIG.STAR_SCORE;
-      addBalls(state, CONFIG.STAR_BALLS);
+      addBalls(state, 36);
       state.safety = CONFIG.SAFETY_SECONDS;
-      popup(state, reward.x, reward.y, 'STAR');
+      popup(state, reward.x, reward.y, '*');
     }
   }
 
@@ -306,11 +320,12 @@
       var ball = state.balls[i];
       if (ball.active) continue;
       var t = count === 1 ? 0 : (made / (count - 1) - 0.5);
-      var ang = -Math.PI / 2 + t * CONFIG.MULTIBALL_SPREAD_DEG * Math.PI / 180 * 2;
+      var ang = -Math.PI / 2 + t * CONFIG.MULTIBALL_SPREAD_DEG * Math.PI / 180;
       ball.active = true;
       ball.launched = true;
       ball.r = state.ballR;
-      ball.x = origin.x;
+      ball.kink = made & 7;
+      ball.x = origin.x + t * 10;
       ball.y = origin.y;
       ball.vx = Math.cos(ang) * state.speed;
       ball.vy = Math.sin(ang) * state.speed;
@@ -392,7 +407,9 @@
   function step(state, dt) {
     if (state.won || state.lost) return;
     state.t += dt;
+    state.liveBalls = activeBalls(state);
     state.dirty.length = 0;
+    state.fullPaint = false;
     if (state.safety > 0) state.safety = Math.max(0, state.safety - dt);
     if (state.wide > 0) state.wide = Math.max(0, state.wide - dt);
     state.paddle.w = state.wide > 0 ? state.paddle.baseW * CONFIG.WIDE_SCALE : state.paddle.baseW;
@@ -408,18 +425,24 @@
     } else state.hint = false;
     if (state.demo) driveDemo(state, dt);
 
+    var bar = safetyBar(state);
     for (var i = 0; i < state.balls.length; i++) {
       var ball = state.balls[i];
       if (!ball.active || !ball.launched) continue;
+      ball._py = ball.y;
       physics.integrateBall(ball, state, dt);
       physics.bouncePaddle(ball, state.paddle);
-      var bar = safetyBar(state);
       physics.bounceSafety(ball, bar);
       if (ball.y < CONFIG.FIELD_ROWS * CONFIG.CELL) {
         var row = ball.y / CONFIG.CELL;
         if (row < state.bestRow) state.bestRow = row;
       }
-      if (ball.y > CONFIG.CANVAS_H + ball.r) ball.active = false;
+      if (ball.y > CONFIG.CANVAS_H - ball.r) {
+        if (state.liveBalls > 1) {
+          ball.y = CONFIG.CANVAS_H - ball.r;
+          ball.vy = -Math.abs(ball.vy) * 0.98;
+        } else ball.active = false;
+      }
     }
 
     if (state.launched && activeBalls(state) === 0 && !state.won) {
@@ -455,10 +478,12 @@
       bit.y += bit.vy * dt;
       if (bit.t <= 0) state.particles.splice(p, 1);
     }
-    for (var u = state.popups.length - 1; u >= 0; u--) {
-      state.popups[u].t -= dt;
-      state.popups[u].y -= 18 * dt;
-      if (state.popups[u].t <= 0) state.popups.splice(u, 1);
+    for (var u = 0; u < state.popups.length; u++) {
+      var pop = state.popups[u];
+      if (!pop.on) continue;
+      pop.t -= dt;
+      pop.y -= 22 * dt;
+      if (pop.t <= 0) pop.on = 0;
     }
     if (state.combo > 0 && state.t - state.lastBreak > CONFIG.COMBO_WINDOW) state.combo = 0;
   }
@@ -477,7 +502,8 @@
 
   function driveDemo(state) {
     if (!state.launched) {
-      movePaddle(state, state.paddle.x + CONFIG.LAUNCH_MOVE_PX + 1, true);
+      var nudge = state.paddle.x > CONFIG.CANVAS_W * 0.8 ? -1 : 1;
+      movePaddle(state, state.paddle.x + nudge * (CONFIG.LAUNCH_MOVE_PX + 2), true);
       return;
     }
     var ball = null;
@@ -486,10 +512,24 @@
       if (!b.active || !b.launched) continue;
       if (!ball || b.y > ball.y) ball = b;
     }
+    var fieldBottom = CONFIG.FIELD_ROWS * CONFIG.CELL;
+    if (ball && ball.y > fieldBottom) {
+      movePaddle(state, ball.x, false);
+      return;
+    }
+    var reward = null;
+    for (var r = 0; r < state.rewards.length; r++) {
+      var drop = state.rewards[r];
+      if (!reward || drop.y > reward.y) reward = drop;
+    }
+    if (reward && reward.y > fieldBottom * 0.35) {
+      movePaddle(state, reward.x, false);
+      return;
+    }
     if (!ball) return;
     var mouth = nearestMouth(state, ball.x);
     var half = state.paddle.w / 2;
-    if (ball.y > CONFIG.FIELD_ROWS * CONFIG.CELL) {
+    if (ball.y > fieldBottom) {
       var desired = Math.atan2((CONFIG.FIELD_ROWS - 0.5) * CONFIG.CELL - ball.y, mouth - ball.x);
       var fromUp = desired - (-Math.PI / 2);
       var max = CONFIG.PADDLE_MAX_ANGLE * Math.PI / 180;

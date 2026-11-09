@@ -32,37 +32,28 @@
     root.id = 'pt-root';
     var style = document.createElement('style');
     style.textContent = [
-      '#pt-root{display:none;position:fixed;inset:0;z-index:40;background:#080808;color:#f3f3f3;flex-direction:column;font-family:Trebuchet MS,Segoe UI,sans-serif;touch-action:none}',
+      '#pt-root{display:none;position:fixed;inset:0;z-index:40;background:#080808;color:#f3f3f3;font-family:Trebuchet MS,Segoe UI,sans-serif;touch-action:none}',
       '#pt-root [hidden]{display:none !important}',
-      '#pt-root.pt-open{display:flex}',
+      '#pt-root.pt-open{display:block}',
       '#pt-root *{box-sizing:border-box}',
-      '.pt-top{display:flex;gap:8px;padding:8px 10px 0}',
-      '.pt-tab{flex:1;border:1px solid #444;background:#161616;color:#ddd;border-radius:8px;padding:8px 6px;font-weight:700}',
-      '.pt-tab small{display:block;font-weight:500;color:#9a9a9a}',
-      '.pt-tab.on{border-color:#21C6DB;color:#fff}',
-      '.pt-tab:disabled{opacity:1}',
-      '.pt-hud{display:flex;flex-wrap:wrap;gap:6px 10px;padding:6px 10px;font-size:12px;letter-spacing:.04em}',
-      '.pt-hud b{color:#fff}',
-      '.pt-stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}',
-      '#pt-canvas{width:min(100%,calc((100dvh - 196px) * 400 / 616));height:auto;background:#080808;touch-action:none}',
-      '.pt-hint{min-height:18px;text-align:center;color:#d7d7d7;font-size:13px;padding:0 8px}',
-      '.pt-hint.on{animation:ptpulse 1s ease-in-out infinite}',
-      '@keyframes ptpulse{50%{opacity:.35}}',
-      '.pt-bar{height:4px;background:#222;border-radius:2px;overflow:hidden;flex:1 1 80px;align-self:center}',
-      '.pt-bar span{display:block;height:100%;background:#21C6DB;width:0}',
-      '.pt-controls{display:flex;gap:6px;padding:6px;flex-wrap:wrap}',
-      '.pt-btn{flex:1;min-width:64px;background:#1a1a1a;color:#fff;border:1px solid #555;border-radius:8px;padding:8px 4px;font-size:11px;font-weight:700}',
-      '.pt-scroll{overflow:auto;touch-action:pan-y;-webkit-overflow-scrolling:touch}',
-      '.pt-mask{position:absolute;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px}',
+      '.pt-stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#080808}',
+      '#pt-canvas{height:100%;width:auto;max-width:100%;background:#080808;touch-action:none;display:block}',
+      '.pt-hud{position:absolute;top:4px;left:6px;right:40px;display:flex;gap:8px;font-size:11px;line-height:16px;color:#e8e8e8;text-shadow:0 1px 0 #000;pointer-events:none}',
+      '.pt-pause{position:absolute;top:2px;right:4px;width:32px;height:22px;padding:0;font-size:12px}',
+      '.pt-hint{position:absolute;left:0;right:0;bottom:18px;text-align:center;color:#cfcfcf;font-size:11px;pointer-events:none;text-shadow:0 1px 0 #000}',
+      '.pt-controls{position:absolute;left:4px;right:4px;bottom:2px;display:none;gap:4px}',
+      '#pt-root.pt-debug .pt-controls{display:flex}',
+      '.pt-btn{background:#1a1a1a;color:#fff;border:1px solid #555;border-radius:6px;padding:4px;font-size:10px;font-weight:700}',
+      '.pt-scroll{overflow:auto;touch-action:pan-y}',
+      '.pt-mask{position:absolute;inset:0;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:12px}',
       '.pt-card{width:min(360px,100%);background:#121212;border:1px solid #555;border-radius:12px;padding:14px;text-align:center}',
       '.pt-card h2{margin:0 0 8px;font-size:22px}',
       '.pt-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-top:8px}',
       '.pt-lv{aspect-ratio:1;border-radius:6px;border:1px solid #444;background:#1b1b1b;color:#fff;font-weight:700}',
       '.pt-lv.lock{opacity:.35}',
       '.pt-lv.clear{border-color:#FFD900;color:#FFE98A}',
-      '.pt-help{padding:0 10px 8px;font-size:12px;color:#c8c8c8}',
-      '.pt-help summary{cursor:pointer;color:#9fd}',
-      '.pt-row{display:flex;gap:6px;justify-content:center;margin-top:10px}'
+      '.pt-row{display:flex;gap:6px;justify-content:center;margin-top:10px;flex-wrap:wrap}',
+      '.pt-help{display:none}'
     ].join('');
     document.head.appendChild(style);
 
@@ -79,38 +70,28 @@
     top.appendChild(here);
 
     var hud = el('div', 'pt-hud');
-    function stat(id, label) {
-      var node = el('span', '', label + ' ');
-      var strong = el('b', '');
-      strong.id = id;
-      node.appendChild(strong);
-      hud.appendChild(node);
-      return strong;
-    }
-    var levelEl = stat('pt-level', 'Level');
-    var scoreEl = stat('pt-score', 'Score');
-    var livesEl = stat('pt-lives', 'Lives');
-    var comboEl = stat('pt-combo', 'Combo');
-    var tunnelEl = stat('pt-tunnel', 'Tunnel');
-    var ballsEl = stat('pt-balls', 'Balls');
-    var safetyEl = stat('pt-safety', 'Safety');
-    var entranceEl = stat('pt-entrance', 'Entrance');
-    var bar = el('div', 'pt-bar');
-    var barSpan = el('span', '');
-    bar.appendChild(barSpan);
-    hud.appendChild(bar);
+    var levelEl = el('b', '');
+    levelEl.id = 'pt-level';
+    var scoreEl = el('b', '');
+    scoreEl.id = 'pt-score';
+    var livesEl = el('b', '');
+    livesEl.id = 'pt-lives';
+    hud.appendChild(levelEl);
+    hud.appendChild(scoreEl);
+    hud.appendChild(livesEl);
+    var pauseBtn = button('pause', 'II');
+    pauseBtn.classList.add('pt-pause');
 
     var stage = el('div', 'pt-stage');
     var canvas = el('canvas', '');
     canvas.id = 'pt-canvas';
     stage.appendChild(canvas);
-    var hint = el('div', 'pt-hint', 'Move Stick to Auto Launch');
+    var hint = el('div', 'pt-hint', '');
 
     var controls = el('div', 'pt-controls');
-    ['pause', 'reset', 'entrance', 'demo', 'levels'].forEach(function (name, i) {
-      var labels = ['PAUSE', 'RESET', 'FIND ENTRANCE', 'AUTO DEMO', 'LEVELS'];
-      controls.appendChild(button(name, labels[i]));
-    });
+    controls.appendChild(button('entrance', 'FIND'));
+    controls.appendChild(button('demo', 'DEMO'));
+    if (window.PB && window.PB.BUILD && window.PB.BUILD.debugUnlock === true) root.classList.add('pt-debug');
 
     var help = el('div', 'pt-help');
     var details = el('details', '');
@@ -123,12 +104,11 @@
     help.appendChild(details);
     help.appendChild(ref);
 
-    root.appendChild(top);
-    root.appendChild(hud);
     root.appendChild(stage);
+    root.appendChild(hud);
+    root.appendChild(pauseBtn);
     root.appendChild(hint);
     root.appendChild(controls);
-    root.appendChild(help);
 
     var levels = mask('Choose a level');
     var grid = el('div', 'pt-grid');
@@ -139,8 +119,12 @@
     root.appendChild(levels.mask);
 
     var pause = mask('Paused');
-    pause.card.appendChild(button('resume', 'Resume'));
-    pause.card.appendChild(button('levels', 'Levels'));
+    var pauseRow = el('div', 'pt-row');
+    pauseRow.appendChild(button('resume', 'Resume'));
+    pauseRow.appendChild(button('reset', 'Reset'));
+    pauseRow.appendChild(button('levels', 'Levels'));
+    pauseRow.appendChild(button('classic', 'Classic'));
+    pause.card.appendChild(pauseRow);
     root.appendChild(pause.mask);
 
     var win = mask('Level Clear');
@@ -221,22 +205,11 @@
       var dots = '';
       var shown = Math.min(3, snap.lives);
       for (var i = 0; i < shown; i++) dots += '\u25CF';
-      if (snap.lives > 3) dots += ' +' + (snap.lives - 3);
+      if (snap.lives > 3) dots += '+' + (snap.lives - 3);
       livesEl.textContent = dots || '\u25CB';
-      comboEl.textContent = 'x' + snap.combo;
-      tunnelEl.textContent = snap.tunnel + '%';
-      ballsEl.textContent = String(snap.balls);
-      safetyEl.textContent = snap.safety > 0 ? snap.safety + 's' : 'off';
-      var mouths = snap.mouths || [];
-      var text = mouths.map(function (m) { return m.c0 + '-' + m.c1; }).join(', ');
-      entranceEl.textContent = 'cols ' + text;
-      barSpan.style.width = Math.min(100, snap.combo / 3 * 100) + '%';
-      hint.classList.toggle('on', !!snap.hint);
-      hint.textContent = snap.message || (snap.hint ? 'Move Stick to Auto Launch' : '');
+      hint.textContent = snap.message || (snap.hint ? 'Move' : '');
       var demoBtn = root.querySelector('[data-pt="demo"]');
-      if (demoBtn) demoBtn.textContent = flags.demo ? 'AUTO DEMO ON' : 'AUTO DEMO';
-      var findBtn = root.querySelector('[data-pt="entrance"]');
-      if (findBtn) findBtn.textContent = flags.find ? 'ENTRANCE ON' : 'FIND ENTRANCE';
+      if (demoBtn) demoBtn.textContent = flags.demo ? 'DEMO ON' : 'DEMO';
     }
 
     function setWin(snap) {

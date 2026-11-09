@@ -1,6 +1,8 @@
 /*
  * PRISMBURST — Pixel Tunnel collision.
- * Fixed substeps so a ball cannot skip a one-cell wall.
+ * A ball that breaks a cell stays inside that cell and keeps most of its
+ * speed, so swarms burrow and rattle inside the cavity instead of skating
+ * along the outside. No per-step allocations.
  */
 (function (root, factory) {
   var api = factory();
@@ -12,133 +14,136 @@
 })(typeof window !== 'undefined' ? window : globalThis, function () {
   'use strict';
 
-  function dep() {
-    if (typeof require === 'function') {
-      try { return require('./config.js'); } catch (e) { /* browser */ }
-    }
-    return (typeof window !== 'undefined' && window.PB && window.PB.PTConfig) || null;
+  var api = null;
+  if (typeof require === 'function') {
+    try { api = require('./config.js'); } catch (e) { api = null; }
   }
-
-  var api = dep();
+  if (!api && typeof window !== 'undefined' && window.PB) api = window.PB.PTConfig;
   var CELL = api.CELL;
   var CONFIG = api.CONFIG;
 
-  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
-
-  function overlaps(ball, c, r) {
+  function cellIndex(px, py) {
     var size = CONFIG.CELL;
-    var x0 = c * size;
-    var y0 = r * size;
-    var nx = clamp(ball.x, x0, x0 + size);
-    var ny = clamp(ball.y, y0, y0 + size);
-    var dx = ball.x - nx;
-    var dy = ball.y - ny;
-    return dx * dx + dy * dy <= ball.r * ball.r + 0.01;
+    var c = (px / size) | 0;
+    var r = (py / size) | 0;
+    if (c < 0 || r < 0 || c >= CONFIG.COLS || r >= CONFIG.FIELD_ROWS) return -1;
+    return r * CONFIG.COLS + c;
   }
 
-  function touching(ball, state) {
-    var size = CONFIG.CELL;
-    var cols = CONFIG.COLS;
-    var rows = CONFIG.FIELD_ROWS;
-    var c0 = Math.floor(ball.x / size);
-    var r0 = Math.floor(ball.y / size);
-    var out = [];
-    for (var r = r0 - 1; r <= r0 + 1; r++) {
-      for (var c = c0 - 1; c <= c0 + 1; c++) {
-        if (r < 0 || c < 0 || r >= rows || c >= cols) continue;
-        if (overlaps(ball, c, r)) out.push(r * cols + c);
-      }
-    }
-    return out;
-  }
-
-  /* Returns 'bounce' if the ball should reverse this axis. */
-  function strike(index, state, ball) {
+  function eat(state, index, ball) {
     var type = state.grid[index];
-    if (type === CELL.OPEN || type === 0) return 'free';
-    if (type === CELL.ACCENT) return 'bounce';
-    if (type === CELL.BRICK || type === CELL.YELLOW || type === CELL.BORDER) {
-      if (type === CELL.BORDER && !state.grayBreakable) {
-        var ready = state.t - (state.borderStamp[index] || 0) >= 0.2;
-        if (ready && state.hp[index] > 0) {
-          state.hp[index]--;
-          state.borderStamp[index] = state.t;
-        }
-        if (state.hp[index] > 0) return 'bounce';
-        state.grid[index] = CELL.OPEN;
-        state.dirty.push(index);
-        if (state.onBreak) state.onBreak(index, 'border');
-        return 'free';
-      }
+    if (type === CELL.BRICK || type === CELL.BORDER || type === CELL.YELLOW) {
       state.grid[index] = CELL.OPEN;
       state.hp[index] = 0;
-      state.dirty.push(index);
+      if (state.mark) state.mark(index);
       if (state.onBreak) state.onBreak(index, type === CELL.YELLOW ? 'yellow' : 'brick');
-      return 'bounce';
+      ball.kink = (ball.kink + 1) | 0;
+      if ((ball.kink & 3) === 0) {
+        var vx = ball.vx * 0.82 - ball.vy * 0.42;
+        var vy = ball.vy * 0.82 + ball.vx * 0.42;
+        var sp = Math.sqrt(vx * vx + vy * vy) || 1;
+        var keep = state.speed || CONFIG.BALL_SPEED;
+        ball.vx = vx / sp * keep;
+        ball.vy = vy / sp * keep;
+      }
+      return true;
     }
-    return 'free';
+    return false;
   }
 
-  function moveAxis(ball, axis, delta, state) {
-    if (!delta) return;
-    ball[axis] += delta;
-    var hits = touching(ball, state);
-    var bounce = false;
-    for (var i = 0; i < hits.length; i++) {
-      if (strike(hits[i], state, ball) === 'bounce') bounce = true;
-    }
-    if (bounce) {
-      ball[axis] -= delta;
-      var key = axis === 'x' ? 'vx' : 'vy';
-      ball[key] = -ball[key];
-    }
+  function bounceSolid(ball, nx, ny) {
+    var size = CONFIG.CELL;
+    var c = (nx / size) | 0;
+    var r = (ny / size) | 0;
+    var cx = (c + 0.5) * size;
+    var cy = (r + 0.5) * size;
+    if (Math.abs(nx - cx) > Math.abs(ny - cy)) ball.vx = -ball.vx;
+    else ball.vy = -ball.vy;
+    ball.x = ball.x;
+    ball.y = ball.y;
   }
 
   function integrateBall(ball, state, dt) {
-    var speed = Math.hypot(ball.vx, ball.vy);
-    var dist = speed * dt;
-    var steps = Math.max(1, Math.ceil(dist / CONFIG.SUBSTEP_PX));
+    var dist = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) * dt;
+    var steps = (dist / CONFIG.SUBSTEP_PX) | 0;
+    if (steps < 1) steps = 1;
+    if (steps > 8) steps = 8;
     var h = dt / steps;
+    var size = CONFIG.CELL;
+    var i;
     for (var s = 0; s < steps; s++) {
-      moveAxis(ball, 'x', ball.vx * h, state);
-      moveAxis(ball, 'y', ball.vy * h, state);
-      var r = ball.r;
-      if (ball.x < r) { ball.x = r; ball.vx = Math.abs(ball.vx); }
-      if (ball.x > CONFIG.CANVAS_W - r) { ball.x = CONFIG.CANVAS_W - r; ball.vx = -Math.abs(ball.vx); }
-      if (ball.y < r) { ball.y = r; ball.vy = Math.abs(ball.vy); }
+      var nx = ball.x + ball.vx * h;
+      var ny = ball.y + ball.vy * h;
+      if (ny >= 0 && ny < CONFIG.FIELD_ROWS * size) {
+        var id = cellIndex(nx, ny);
+        if (id >= 0) {
+          var type = state.grid[id];
+          if (type === CELL.ACCENT) {
+            bounceSolid(ball, nx, ny);
+            nx = ball.x;
+            ny = ball.y + ball.vy * h;
+          } else if (type === CELL.BRICK || type === CELL.BORDER || type === CELL.YELLOW) {
+            eat(state, id, ball);
+            var c = id % CONFIG.COLS;
+            var r = (id / CONFIG.COLS) | 0;
+            nx = (c + 0.5) * size;
+            ny = (r + 0.5) * size;
+          }
+        }
+        var rad = ball.r;
+        var probes = 4;
+        for (i = 0; i < probes; i++) {
+          var ox = i === 0 ? rad : i === 1 ? -rad : 0;
+          var oy = i === 2 ? rad : i === 3 ? -rad : 0;
+          if (!ox && !oy) continue;
+          var pid = cellIndex(nx + ox, ny + oy);
+          if (pid >= 0 && pid !== id) eat(state, pid, ball);
+        }
+      }
+      ball.x = nx;
+      ball.y = ny;
+      if (ball.x < ball.r) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
+      if (ball.x > CONFIG.CANVAS_W - ball.r) { ball.x = CONFIG.CANVAS_W - ball.r; ball.vx = -Math.abs(ball.vx); }
+      if (ball.y < ball.r) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
     }
   }
 
   function bouncePaddle(ball, paddle) {
     var top = paddle.y - paddle.h / 2;
     if (ball.vy <= 0) return false;
-    if (ball.y < top - ball.r || ball.y > top + paddle.h + ball.r) return false;
+    var prev = ball._py == null ? ball.y : ball._py;
+    var crossed = prev <= top && ball.y >= top - ball.r;
+    var overlap = ball.y >= top - ball.r && ball.y <= top + paddle.h + ball.r;
+    if (!crossed && !overlap) return false;
     if (Math.abs(ball.x - paddle.x) > paddle.w / 2 + ball.r) return false;
     var offset = (ball.x - paddle.x) / (paddle.w / 2 || 1);
-    offset = clamp(offset, -1, 1);
+    if (offset < -1) offset = -1;
+    else if (offset > 1) offset = 1;
     var max = CONFIG.PADDLE_MAX_ANGLE * Math.PI / 180;
     var ang = -Math.PI / 2 + offset * max;
-    var sp = Math.hypot(ball.vx, ball.vy) || CONFIG.BALL_SPEED;
+    var sp = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) || CONFIG.BALL_SPEED;
     ball.vx = Math.cos(ang) * sp;
     ball.vy = Math.sin(ang) * sp;
-    ball.y = top - ball.r - 0.25;
+    ball.y = top - ball.r - 0.2;
     return true;
   }
 
   function bounceSafety(ball, bar) {
     if (!bar.on || ball.vy <= 0) return false;
     var top = bar.y - bar.h / 2;
-    if (ball.y < top - ball.r || ball.y > bar.y + bar.h) return false;
+    var prev = ball._py == null ? ball.y : ball._py;
+    var crossed = prev <= top && ball.y >= top - ball.r;
+    var overlap = ball.y >= top - ball.r && ball.y <= bar.y + bar.h;
+    if (!crossed && !overlap) return false;
     if (ball.x < bar.x0 || ball.x > bar.x1) return false;
     ball.vy = -Math.abs(ball.vy);
-    ball.y = top - ball.r - 0.25;
+    ball.y = top - ball.r - 0.2;
     return true;
   }
 
   return {
     integrateBall: integrateBall,
     bouncePaddle: bouncePaddle,
-    bounceSafety: bounceSafety,
-    touching: touching
+    bounceSafety: bounceSafety
   };
 });

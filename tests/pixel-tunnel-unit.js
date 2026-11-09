@@ -21,8 +21,8 @@ record('every level is solvable and has a mouth', report.ok, JSON.stringify(repo
 record('no duplicate layouts', report.duplicates.length === 0, report.duplicates.join(','));
 record('single green entrance is not required', report.reports.filter(r => r.mouths.length > 1).length >= 2);
 record('speed runs from 1 to 1.6', all[0].speed === 1 && all[39].speed === 1.6);
-record('ball cap and paddle follow the footage notes',
-  cfg.CONFIG.MAX_BALLS >= 50 && cfg.CONFIG.PADDLE_W_CELLS === 10 && cfg.CONFIG.BALL_DIAMETER_CELLS >= 0.6 && cfg.CONFIG.BALL_DIAMETER_CELLS <= 0.8);
+record('ball pool is large and the paddle is a thin bar',
+  cfg.CONFIG.MAX_BALLS >= 300 && cfg.CONFIG.PADDLE_H_CELLS < 0.5 && cfg.CONFIG.BALL_DIAMETER_CELLS <= 0.5 && cfg.CONFIG.BADGE_DIAMETER_CELLS < 1.6 && cfg.CONFIG.GAP_PX === 0);
 record('safety bar is wide and red, border is grey',
   cfg.CONFIG.SAFETY_WIDTH_RATIO >= 0.9 && cfg.CONFIG.BORDER_COLOR !== '#FF2D2D' && cfg.CONFIG.SAFETY_COLOR[1] === 'F');
 

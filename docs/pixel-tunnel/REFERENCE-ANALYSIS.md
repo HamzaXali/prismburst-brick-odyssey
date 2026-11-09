@@ -8,14 +8,14 @@ Where a clip clearly shows something that differs from the written Part 6 rules,
 
 | Topic | Written Part 6 | What the clips show | What this build does |
 |---|---|---|---|
-| Tunnel border | Red blocked wall | Light grey outline about one cell thick | Grey lining (`BORDER_COLOR`). One hit does not remove it (`GRAY_BREAKABLE` false). Repeated contacts do (`BORDER_HITS`), which is how the cavities grow. |
+| Tunnel border | Red blocked wall | Light grey outline about one cell thick | Solid field color with a 1px grey lip on the open edge. Breaking a cell does not kick the ball back out. |
 | Entrance | Exactly one green 2-cell mouth, rest of the bottom row red | No green mouth. Some layouts have two lower openings | Open mouths, no green fill. Several themes use more than one mouth. The validator only checks that every yellow target can be reached from a mouth. |
-| Multiball | Every moving ball becomes 3 where it is, cap 12 | Extra balls fan out next to the paddle after the cyan +3; late clips show far more than 12 | New balls spawn at the paddle. Cap is `MAX_BALLS` (64) with a fixed pool. |
-| Safety | Green stick 1.8× the paddle, 6 cells below it, 10s | Temporary red/orange bar, almost the full lower width | `SAFETY_COLOR` bar at `SAFETY_WIDTH_RATIO` 0.96. Duration stays 10s because the clips never show a timer. |
+| Multiball | Every moving ball becomes 3 where it is, cap 12 | A catch releases a tight upward stream; late clips show hundreds of dots | Catch fires `MULTIBALL_ADD` (64) balls from the paddle in a narrow cone. Pool is 420. |
+| Safety | Green stick 1.8× the paddle, 6 cells below it, 10s | Thin red/orange line across the bottom of the playfield, just under the paddle | Full-width bar at the bottom of the canvas, paddle just above it. Duration stays 10s. |
 | Other rewards | Only the cyan +3 | Green, orange, pink, and a yellow star also fall | Those four extra drops are in CONFIG. Cyan still means +3 balls from the paddle, +50 points, and the safety bar. The other effects (life, score, widen, star) are assumptions. |
-| Paddle | 9.5 × 0.75 cells near row 67.5 | About 10 × 0.8 cells, roughly 16 cells under the field | `PADDLE_W_CELLS` 10, `PADDLE_H_CELLS` 0.8, `PADDLE_CELLS_BELOW_FIELD` 16. |
-| Ball | Diameter 0.75 cell, speed 210 | About 0.6–0.8 cell. Speed was not measurable | Diameter 0.7. Speed stays 210. |
-| Field damage | Ordinary cells break on contact | Jagged black cavities grow from repeated hits | Field bricks break on contact and bounce, so the hole stays jagged. The designed tunnel stays open. |
+| Paddle | 9.5 × 0.75 cells near row 67.5 | Thin flat orange rectangle, no knob | `PADDLE_W_CELLS` 11, `PADDLE_H_CELLS` 0.38, flat rect, no rounded pill. |
+| Ball | Diameter 0.75 cell, speed 210 | Tiny fast white dots | Diameter 0.42 cell. Speed 680. Phone test showed 210 was too slow. |
+| Field damage | Ordinary cells break on contact and the ball bounces off | Balls get inside the mass and leave jagged cavities | A broken cell is entered. The ball keeps its speed and kinks every few cells, so it rattles inside the hole. |
 | Combo, spawn, fall, win | x1/x2/x3 in 2.5s, badge at row 2, 3.5 cells/s, win by clearing yellow | Not established. A yellow cap can disappear long before the win panel | Those written values stay the defaults. Win is still every yellow target. Star count on the clear screen is 3 / 2 / 1 from lives lost, which the clips do not explain. |
 | Launch and tap | Move the stick to launch, tap breaks one adjacent brick | Clips start with the ball already moving. No taps are visible | Kept. There is no launch button. |
 

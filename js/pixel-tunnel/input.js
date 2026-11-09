@@ -1,7 +1,6 @@
 /*
- * PRISMBURST — Pixel Tunnel pointer and key input.
- * A drag moves the stick. The first move past the threshold launches.
- * A small tap is not a launch unless it hits a mouth or a neighbouring brick.
+ * PRISMBURST — Pixel Tunnel pointer input.
+ * A drag or touch moves the paddle. There is no launch button and no tap-to-break.
  */
 (function (root, factory) {
   var api = factory();
@@ -25,33 +24,33 @@
   }
 
   function bind(canvas, handlers) {
-    var down = null;
-    var moved = 0;
-    function start(event) {
-      down = point(canvas, event);
-      moved = 0;
-    }
-    function drag(event) {
-      if (!down) return;
+    var active = false;
+    function go(event) {
       var p = point(canvas, event);
-      moved = Math.max(moved, Math.abs(p.x - down.x));
       if (handlers.move) handlers.move(p.x);
       if (event.cancelable) event.preventDefault();
     }
-    function end(event) {
-      if (!down) return;
-      var p = point(canvas, event);
-      if (moved < 6 && handlers.tap) handlers.tap(p.x, p.y);
-      down = null;
+    function start(event) {
+      active = true;
+      if (canvas.setPointerCapture) {
+        try { canvas.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+      }
+      go(event);
     }
+    function drag(event) {
+      if (!active) return;
+      go(event);
+    }
+    function end() { active = false; }
     canvas.addEventListener('pointerdown', start);
     canvas.addEventListener('pointermove', drag);
     canvas.addEventListener('pointerup', end);
-    canvas.addEventListener('pointercancel', function () { down = null; });
+    canvas.addEventListener('pointercancel', end);
     return function () {
       canvas.removeEventListener('pointerdown', start);
       canvas.removeEventListener('pointermove', drag);
       canvas.removeEventListener('pointerup', end);
+      canvas.removeEventListener('pointercancel', end);
     };
   }
 

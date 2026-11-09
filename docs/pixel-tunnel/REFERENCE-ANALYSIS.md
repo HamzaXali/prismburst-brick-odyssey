@@ -1,5 +1,9 @@
 # Pixel Tunnel — reference notes and implementation choices
 
+Superseded by the video rebuild prompt. The mode now follows `docs/pixel-tunnel/ASSUMPTIONS.md` and Level 1 in `js/pixel-tunnel/levels.js`. This file is the older clip study and is not the current ruleset.
+
+
+
 The ten public clips were reviewed for look and motion only. They are not stored in this repo, and the game does not copy their art, names, logos, on-screen text, or level geometry. The 40 levels use the owner's theme list with original layouts.
 
 Where a clip clearly shows something that differs from the written Part 6 rules, the footage is what ships. Where a clip does not show the rule (combo clock, spawn cell, fall speed, score, lives, launch angle, win condition), the written value stays the CONFIG default. Nothing here is claimed to match a frame exactly. Colors below are compressed samples, not source pixels.

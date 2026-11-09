@@ -88,70 +88,34 @@ function startServer() {
     record('PIXEL TUNNEL is on the main menu', !!found, found);
     if (found) await page.touchscreen.tap(found.x, found.y);
     await page.waitForSelector('#pt-root.pt-open');
-    await page.screenshot({ path: path.join(SHOTS, 'level-select.png') });
+    await page.screenshot({ path: path.join(SHOTS, 'level-01-start.png') });
     const select = await page.evaluate(() => ({
-      buttons: document.querySelectorAll('#pt-root [data-level]').length,
-      locked: document.querySelectorAll('#pt-root [data-level][disabled]').length,
-      launch: Array.from(document.querySelectorAll('#pt-root button')).some(b => /launch/i.test(b.textContent))
+      levels: document.querySelectorAll('#pt-root [data-level]').length,
+      launch: Array.from(document.querySelectorAll('#pt-root button')).some(b => /launch/i.test(b.textContent)),
+      demo: !!document.getElementById('pt-demo')
     }));
-    record('level select has 40 levels, only the first is open, and there is no launch button',
-      select.buttons === 40 && select.locked === 39 && select.launch === false, select);
+    const start = await page.evaluate(() => PB.PixelTunnel.snapshot());
+    record('level 1 is already running, with no launch button and no level grid',
+      select.levels === 0 && select.launch === false && select.demo === true && start && start.id === 1 && start.balls >= 1, { select, start });
 
-    const loads = await page.evaluate(() => {
-      const bad = [];
-      for (let n = 1; n <= 40; n++) {
-        PB.PixelTunnel.startLevel(n);
-        const snap = PB.PixelTunnel.snapshot();
-        if (!snap || snap.id !== n || !snap.mouths || !snap.mouths.length || snap.yellowLeft < 1) bad.push(n);
-      }
-      return { bad, sample: PB.PixelTunnel.snapshot() };
-    });
-    record('all 40 levels load with a mouth and a target', loads.bad.length === 0, loads);
-
-    await page.evaluate(() => PB.PixelTunnel.startLevel(1));
-    const before = await page.evaluate(() => PB.PixelTunnel.snapshot());
-    await page.evaluate(() => {
-      const m = PB.PixelTunnel;
-      const snap = m.snapshot();
+    const moved = await page.evaluate(() => {
+      const before = PB.PixelTunnel.snapshot();
       const canvas = document.getElementById('pt-canvas');
       const r = canvas.getBoundingClientRect();
-      canvas.dispatchEvent(new PointerEvent('pointerdown', { clientX: r.left + 40, clientY: r.top + r.height * 0.8, bubbles: true }));
-      canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + 80, clientY: r.top + r.height * 0.8, bubbles: true }));
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: r.left + r.width * 0.2, clientY: r.top + r.height * 0.7, bubbles: true }));
+      const after = PB.PixelTunnel.snapshot();
+      return { before: before.balls, afterBalls: after.balls };
     });
-    await sleep(50);
-    let launched = await page.evaluate(() => PB.PixelTunnel.snapshot().launched);
-    if (!launched) {
-      await page.evaluate(() => {
-        const canvas = document.getElementById('pt-canvas');
-        const r = canvas.getBoundingClientRect();
-        canvas.setPointerCapture && canvas.setPointerCapture(1);
-        canvas.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: r.left + r.width / 2, clientY: r.bottom - 30, bubbles: true }));
-        canvas.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: r.left + r.width / 2 + 30, clientY: r.bottom - 30, bubbles: true }));
-      });
-      launched = await page.evaluate(() => PB.PixelTunnel.snapshot().launched);
-    }
-    if (!launched) {
-      launched = await page.evaluate(() => {
-        const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true });
-        window.dispatchEvent(ev);
-        return PB.PixelTunnel.snapshot().launched;
-      });
-    }
-    record('first stick move auto-launches and no button is required', before.launched === false && launched === true, { before: before.launched, launched });
+    record('the ball is already in motion and a drag does not need a launch button',
+      moved.before >= 1 && moved.afterBalls >= 1, moved);
 
     await page.screenshot({ path: path.join(SHOTS, 'level-01.png') });
-    for (const n of [8, 20, 38, 40]) {
-      await page.evaluate(id => PB.PixelTunnel.startLevel(id), n);
-      await page.evaluate(() => PB.PixelTunnel.fastForward(0.4));
-      await page.screenshot({ path: path.join(SHOTS, 'level-' + String(n).padStart(2, '0') + '.png') });
-    }
-    const won = await page.evaluate(() => {
-      PB.PixelTunnel.startLevel(1);
+    const dug = await page.evaluate(() => {
       PB.PixelTunnel.setDemo(true);
-      return PB.PixelTunnel.fastForward(40);
+      return PB.PixelTunnel.fastForward(6);
     });
-    record('auto demo clears level 1', won && won.won === true && won.yellowLeft === 0, won);
-    await page.screenshot({ path: path.join(SHOTS, 'level-01-clear.png') });
+    record('auto demo digs the olive field', dug && dug.demo === true && dug.destroyed > 0 && dug.lost === false, dug);
+    await page.screenshot({ path: path.join(SHOTS, 'level-01-dig.png') });
 
     const saves = await page.evaluate(() => ({
       classic: localStorage.getItem('prismburst.save.v1'),

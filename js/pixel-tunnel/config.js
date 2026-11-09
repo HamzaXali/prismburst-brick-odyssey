@@ -1,8 +1,8 @@
 /*
  * PRISMBURST — Pixel Tunnel config.
- * Plain JS (this repo is Phaser + script tags, not TypeScript/Vite).
- * Every tunable is here so footage and the written spec can be adjusted
- * without hunting through the mode. See docs/pixel-tunnel/REFERENCE-ANALYSIS.md.
+ * Values marked [?] in the video rebuild prompt live here and in
+ * docs/pixel-tunnel/ASSUMPTIONS.md. Nothing in this file is a measured
+ * fact unless the prompt marked it [C].
  */
 (function (root, factory) {
   var api = factory();
@@ -15,122 +15,118 @@
   'use strict';
 
   var CELL = {
-    BRICK: 1,
-    OPEN: 2,
-    YELLOW: 3,
-    BORDER: 4,
-    ACCENT: 5
+    OPEN: 0,
+    OLIVE: 1,
+    YELLOW: 2,
+    RED: 3,
+    GRAY: 4
   };
 
-  /* Footage wins where it was actually visible. Written Part 6 stays the
-   * default only for values the clips never established (combo timing,
-   * spawn row, fall speed, scores, lives, launch angle, win rule). */
   var CONFIG = {
-    CANVAS_W: 400,
-    /* 50*8 field is 400px, so 588px canvas puts the field at 68% of the height. */
-    CANVAS_H: 588,
     CELL: 8,
     COLS: 50,
-    FIELD_ROWS: 50,
+    ROWS: 50,
+    /* Canvas is 52×86 cells: 1 cell margin, the field, 25 black rows, 9 band rows. */
+    CANVAS_COLS: 52,
+    CANVAS_ROWS: 86,
+    FIELD_TOP: 1.5,
+    BLACK_ROWS: 25,
+    BOTTOM_ROWS: 9,
+    MARGIN_COLS: 1,
 
-    /* Thin flat orange bar. It sits in the lower band, just above the floor line. */
-    PADDLE_W_CELLS: 11,
-    PADDLE_H_CELLS: 0.42,
-    /* Sits in the short band under the field, just above the safety line. */
-    PADDLE_FROM_BOTTOM: 22,
-    PADDLE_COLOR: '#FF6A3A',
-    PADDLE_MAX_ANGLE: 55,
+    BALL_SPEED_CELLS: 37.3,
+    BALL_DIAMETER_CELLS: 0.77,
+    PADDLE_W_CELLS: 10,
+    PADDLE_H_CELLS: 1,
+    PADDLE_MAX_ANGLE: 60,
+    PADDLE_BELOW_FIELD: 15.2,
 
-    /* Clips read as white dots about 0.6–0.8 of a cell. */
-    BALL_DIAMETER_CELLS: 0.7,
-    BALL_COLOR: '#FFFFFF',
-    /* Phone test: 210 felt floaty. Clips are snappy. */
-    BALL_SPEED: 680,
-    /* Aim cone. Sign is chosen so the first shot points at a mouth. */
-    LAUNCH_ANGLE: -65,
-    LAUNCH_MOVE_PX: 4,
-    HINT_DELAY: 3,
+    PICKUP_FALL_CELLS: 7.5,
+    PICKUP_DIAMETER_CELLS: 2.4,
+    SAFETY_BAR_SEC: 3.8,
+    SAFETY_H_CELLS: 0.5,
+    PLUS_BALLS: 3,
+    MULTIPLY: 3,
+    MAX_BALLS: 1000,
+    SUBSTEPS: 2,
 
-    LIVES: 3,
-    MAX_LIVES: 6,
+    /* [?] Chance an ordinary olive cell drops a pickup. */
+    DROP_CHANCE: 0.02,
+    /* [?] +3 is the most common. The rest share the remainder. */
+    DROP_WEIGHTS: { plus3: 0.5, safety: 0.2, times3: 0.2, heart: 0.1 },
+
+    /* pocket walls and the bottom row can break. The outer ring cannot. */
+    GRAY_BREAKABLE: 'pocket+bottom',
+    ROSE_BAR_MODE: 'ball-loss',
+    /* [?] Hearts, and the rose bar, shrink when the last ball is lost. */
+    LIVES: 5,
+    /* [?] Clearing the destructible field always awards this many stars. */
+    WIN_STARS: 3,
+    /* [?] Score is not on screen in the prompt. */
     SCORE_CELL: 10,
-    SCORE_YELLOW: 100,
-    SCORE_BADGE: 50,
+    SCORE_TARGET: 100,
 
-    /* Combo timing was not on screen. Owner clock. */
-    COMBO_WINDOW: 2.5,
-    COMBO_MAX: 3,
+    ROSE_Y: 0.6,
+    ROSE_H: 0.5,
+    /* [?] Light gray under the rose bar. The video colour was not sampled. */
+    PROGRESS_COLOR: '#C8C8C8',
+    /* [?] 1px gap. No video file was attached, so this is a darker sample. */
+    GAP_OLIVE: '#33350D',
+    GAP_GRAY: '#4E4E4E',
+    GAP_YELLOW: '#8A7610',
+    GAP_RED: '#7A1014',
+    STAR_COLOR: '#F0C84A',
+    PANEL_COLOR: '#3A3A3A',
+    CATCH_SEC: 0.18,
 
-    /* Spawn row, fall speed, and the 12s interval were not tracked.
-     * Owner defaults. The +3 disc itself is visible in v07. */
-    BADGE_ROW: 2,
-    BADGE_FALL_CELLS: 6,
-    BADGE_SPAWN_INTERVAL: 4.5,
-    BADGE_DIAMETER_CELLS: 2,
-
-    TAP_COOLDOWN: 0.15,
-    TAP_RANGE_CELLS: 1,
-
-    /* Clips fill the screen with hundreds of dots. One catch fires a stream. */
-    MAX_BALLS: 420,
-    MULTIBALL_ADD: 80,
-    MULTIBALL_SPREAD_DEG: 26,
-
-    /* Footage: temporary red/orange bar, nearly the full lower width.
-     * Duration was not readable; 10s is the owner's reward length. */
-    SAFETY_SECONDS: 10,
-    SAFETY_COLOR: '#FF5C33',
-    SAFETY_WIDTH_RATIO: 1,
-    SAFETY_H_CELLS: 0.4,
-    SAFETY_FROM_BOTTOM: 8,
-
-    /* Grey lining, the field frame, and accent solids never break. */
-    GRAY_BREAKABLE: false,
-    BORDER_HITS: 1,
-
-    /* Clips never state the win rule. Owner: clear every yellow target. */
-    WIN_MODE: 'yellow',
-
-    BORDER_COLOR: '#B5B5B5',
-    BORDER_EDGE: '#6E6E6E',
-    INTERIOR: '#141414',
-    CAVITY: '#0C0C0C',
-    TARGET_COLOR: '#FFD900',
-    TARGET_PIP: '#FFF4A8',
-    ACCENT_COLOR: '#ED2937',
-    /* Hint pulse is neutral. Footage has no green mouth. */
-    ENTRANCE_HINT_COLOR: '#F2F2F2',
-    ROSE_ENABLED: true,
-    ROSE_COLOR: '#944E56',
-    OUTER_BORDER: '#333333',
-    PLAYFIELD: '#101010',
-    BG: '#080808',
-    GAP_PX: 0,
-    PARTICLE_POOL: 48,
-    POPUP_LIFE: 0.42,
-    POPUP_CAP: 3,
-    SUBSTEP_PX: 4,
-
-    /* Wide-paddle seconds for the pink drop. Effect is an assumption. */
-    WIDE_SECONDS: 8,
-    WIDE_SCALE: 1.35,
-    STAR_SCORE: 80,
-    STAR_BALLS: 4,
-    ORANGE_SCORE: 30
+    COLORS: {
+      field: '#5D6018',
+      wall: '#7B7B7B',
+      black: '#181818',
+      frame: '#363636',
+      paddle: '#F06366',
+      rose: '#964B54',
+      yellow: '#EACF18',
+      red: '#E11E24',
+      plus3: '#21C6DB',
+      times3: '#B4D243',
+      heart: '#F2A0B5',
+      safetyOrb: '#EE9B45'
+    }
   };
 
-  function paddleY() {
-    return CONFIG.CANVAS_H - CONFIG.PADDLE_FROM_BOTTOM;
-  }
-
-  function safetyY() {
-    return CONFIG.CANVAS_H - CONFIG.SAFETY_FROM_BOTTOM;
+  function layout() {
+    var cell = CONFIG.CELL;
+    var fieldX = CONFIG.MARGIN_COLS * cell;
+    var fieldY = CONFIG.FIELD_TOP * cell;
+    var fieldW = CONFIG.COLS * cell;
+    var fieldH = CONFIG.ROWS * cell;
+    var blackTop = fieldY + fieldH;
+    return {
+      cell: cell,
+      fieldX: fieldX,
+      fieldY: fieldY,
+      fieldW: fieldW,
+      fieldH: fieldH,
+      blackTop: blackTop,
+      blackBottom: blackTop + CONFIG.BLACK_ROWS * cell,
+      canvasW: CONFIG.CANVAS_COLS * cell,
+      canvasH: CONFIG.CANVAS_ROWS * cell,
+      paddleTop: blackTop + CONFIG.PADDLE_BELOW_FIELD * cell,
+      paddleW: CONFIG.PADDLE_W_CELLS * cell,
+      paddleH: CONFIG.PADDLE_H_CELLS * cell,
+      speed: CONFIG.BALL_SPEED_CELLS * cell,
+      ballR: CONFIG.BALL_DIAMETER_CELLS * cell * 0.5,
+      pickupR: CONFIG.PICKUP_DIAMETER_CELLS * cell * 0.5,
+      roseY: CONFIG.ROSE_Y * cell,
+      roseH: CONFIG.ROSE_H * cell,
+      safetyH: CONFIG.SAFETY_H_CELLS * cell
+    };
   }
 
   return {
     CELL: CELL,
     CONFIG: CONFIG,
-    paddleY: paddleY,
-    safetyY: safetyY
+    layout: layout
   };
 });

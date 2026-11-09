@@ -1,8 +1,7 @@
 /*
- * PRISMBURST — Pixel Tunnel collision.
- * A ball that breaks a cell stays inside that cell and keeps most of its
- * speed, so swarms burrow and rattle inside the cavity instead of skating
- * along the outside. No per-step allocations.
+ * PRISMBURST — Pixel Tunnel physics.
+ * Fixed 60 fps steps, two sub-steps, no ball–ball collisions.
+ * Balls live in Float32Array columns. A hit destroys one cell and reflects.
  */
 (function (root, factory) {
   var api = factory();
@@ -14,143 +13,255 @@
 })(typeof window !== 'undefined' ? window : globalThis, function () {
   'use strict';
 
-  var api = null;
+  var cfgApi = null;
+  var levelsApi = null;
   if (typeof require === 'function') {
-    try { api = require('./config.js'); } catch (e) { api = null; }
+    try { cfgApi = require('./config.js'); } catch (e) { cfgApi = null; }
+    try { levelsApi = require('./levels.js'); } catch (e2) { levelsApi = null; }
   }
-  if (!api && typeof window !== 'undefined' && window.PB) api = window.PB.PTConfig;
-  var CELL = api.CELL;
-  var CONFIG = api.CONFIG;
+  if (!cfgApi && typeof window !== 'undefined' && window.PB) cfgApi = window.PB.PTConfig;
+  if (!levelsApi && typeof window !== 'undefined' && window.PB) levelsApi = window.PB.PTLevels;
+  var CELL = cfgApi.CELL;
+  var CONFIG = cfgApi.CONFIG;
+  var canBreak = levelsApi.canBreak;
+  var COLS = CONFIG.COLS;
+  var ROWS = CONFIG.ROWS;
 
-  function cellIndex(px, py) {
-    var size = CONFIG.CELL;
-    var c = (px / size) | 0;
-    var r = (py / size) | 0;
-    if (c < 0 || r < 0 || c >= CONFIG.COLS || r >= CONFIG.FIELD_ROWS) return -1;
-    return r * CONFIG.COLS + c;
+  function createBalls(max) {
+    return {
+      x: new Float32Array(max),
+      y: new Float32Array(max),
+      vx: new Float32Array(max),
+      vy: new Float32Array(max),
+      py: new Float32Array(max),
+      alive: new Uint8Array(max),
+      stamp: new Uint16Array(max)
+    };
   }
 
-  function eat(state, index, ball) {
+  function allocBall(state) {
+    if (state.live >= CONFIG.MAX_BALLS) return -1;
+    var alive = state.balls.alive;
+    var i;
+    for (i = 0; i < CONFIG.MAX_BALLS; i++) {
+      if (alive[i]) continue;
+      alive[i] = 1;
+      state.live++;
+      return i;
+    }
+    return -1;
+  }
+
+  function killBall(state, i) {
+    if (!state.balls.alive[i]) return;
+    state.balls.alive[i] = 0;
+    state.live--;
+  }
+
+  function placeBall(state, i, x, y, vx, vy) {
+    var b = state.balls;
+    b.x[i] = x;
+    b.y[i] = y;
+    b.vx[i] = vx;
+    b.vy[i] = vy;
+    b.py[i] = y;
+  }
+
+  function weightedDrop() {
+    var w = CONFIG.DROP_WEIGHTS;
+    var x = Math.random();
+    var a = w.plus3;
+    var b = a + w.safety;
+    var c = b + w.times3;
+    if (x < a) return 'plus3';
+    if (x < b) return 'safety';
+    if (x < c) return 'times3';
+    return 'heart';
+  }
+
+  function spawnPickup(state, kind, x, y) {
+    var list = state.pickups;
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (list[i].on) continue;
+      var p = list[i];
+      p.on = 1;
+      p.kind = kind;
+      p.x = x;
+      p.y = y;
+      p.caught = 0;
+      p.scale = 1;
+      return true;
+    }
+    return false;
+  }
+
+  function destroyCell(state, index) {
     var type = state.grid[index];
-    if (type !== CELL.BRICK && type !== CELL.YELLOW) return false;
+    if (!canBreak(state.grid, index)) return false;
     state.grid[index] = CELL.OPEN;
-    state.hp[index] = 0;
-    if (state.mark) state.mark(index);
-    if (state.onBreak) state.onBreak(index, type === CELL.YELLOW ? 'yellow' : 'brick');
-    ball.kink = (ball.kink + 1) | 0;
-    var row = (index / CONFIG.COLS) | 0;
-    if (row >= CONFIG.FIELD_ROWS - 6) ball.vy = Math.abs(ball.vy);
-    if ((ball.kink & 3) === 0) {
-      var vx = ball.vx * 0.82 - ball.vy * 0.42;
-      var vy = ball.vy * 0.82 + ball.vx * 0.42;
-      var sp = Math.sqrt(vx * vx + vy * vy) || 1;
-      var keep = state.speed || CONFIG.BALL_SPEED;
-      ball.vx = vx / sp * keep;
-      ball.vy = vy / sp * keep;
+    if (state.dirtyN < state.dirty.length) state.dirty[state.dirtyN++] = index;
+    else state.fullPaint = true;
+    state.destroyed++;
+    state.hit = 1;
+    if (type === CELL.YELLOW || type === CELL.RED) state.score += CONFIG.SCORE_TARGET;
+    else state.score += CONFIG.SCORE_CELL;
+    var c = index % COLS;
+    var r = (index / COLS) | 0;
+    var L = state.L;
+    var x = L.fieldX + (c + 0.5) * L.cell;
+    var y = L.fieldY + (r + 0.5) * L.cell;
+    var kind = state.drops && state.drops[index];
+    if (kind) spawnPickup(state, kind, x, y);
+    else if (Math.random() < CONFIG.DROP_CHANCE) spawnPickup(state, weightedDrop(), x, y);
+    if (!state.won && state.destroyed >= state.destructible) {
+      state.won = true;
+      state.stars = CONFIG.WIN_STARS;
     }
     return true;
   }
 
-  function isWall(type) {
-    return type === CELL.BORDER || type === CELL.ACCENT;
+  function circleHitsCell(nx, ny, rad, c, r, L) {
+    var x0 = L.fieldX + c * L.cell;
+    var y0 = L.fieldY + r * L.cell;
+    var nearestX = nx < x0 ? x0 : (nx > x0 + L.cell ? x0 + L.cell : nx);
+    var nearestY = ny < y0 ? y0 : (ny > y0 + L.cell ? y0 + L.cell : ny);
+    var dx = nx - nearestX;
+    var dy = ny - nearestY;
+    return dx * dx + dy * dy <= rad * rad;
   }
 
-  function bounceSolid(ball, nx, ny) {
-    var size = CONFIG.CELL;
-    var c = (nx / size) | 0;
-    var r = (ny / size) | 0;
-    var cx = (c + 0.5) * size;
-    var cy = (r + 0.5) * size;
-    if (Math.abs(nx - cx) > Math.abs(ny - cy)) ball.vx = -ball.vx;
-    else ball.vy = -ball.vy;
-    ball.x = ball.x;
-    ball.y = ball.y;
-  }
-
-  function integrateBall(ball, state, dt) {
-    var dist = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) * dt;
-    var steps = (dist / CONFIG.SUBSTEP_PX) | 0;
-    if (steps < 1) steps = 1;
-    if (steps > 8) steps = 8;
-    var h = dt / steps;
-    var size = CONFIG.CELL;
-    var i;
-    for (var s = 0; s < steps; s++) {
-      var nx = ball.x + ball.vx * h;
-      var ny = ball.y + ball.vy * h;
-      if (ny >= 0 && ny < CONFIG.FIELD_ROWS * size) {
-        var id = cellIndex(nx, ny);
-        if (id >= 0) {
-          var type = state.grid[id];
-          if (isWall(type)) {
-            bounceSolid(ball, nx, ny);
-            nx = ball.x;
-            ny = ball.y + ball.vy * h;
-          } else if (type === CELL.BRICK || type === CELL.YELLOW) {
-            eat(state, id, ball);
-            var c = id % CONFIG.COLS;
-            var r = (id / CONFIG.COLS) | 0;
-            nx = (c + 0.5) * size;
-            ny = (r + 0.5) * size;
-          }
-        }
-        var rad = ball.r;
-        var probes = 4;
-        for (i = 0; i < probes; i++) {
-          var ox = i === 0 ? rad : i === 1 ? -rad : 0;
-          var oy = i === 2 ? rad : i === 3 ? -rad : 0;
-          if (!ox && !oy) continue;
-          var pid = cellIndex(nx + ox, ny + oy);
-          if (pid < 0 || pid === id) continue;
-          var probeType = state.grid[pid];
-          if (isWall(probeType)) bounceSolid(ball, nx + ox, ny + oy);
-          else eat(state, pid, ball);
+  function firstSolid(state, nx, ny, vx, vy) {
+    var L = state.L;
+    var rad = state.ballR;
+    var c0 = ((nx - rad - L.fieldX) / L.cell) | 0;
+    var c1 = ((nx + rad - L.fieldX) / L.cell) | 0;
+    var r0 = ((ny - rad - L.fieldY) / L.cell) | 0;
+    var r1 = ((ny + rad - L.fieldY) / L.cell) | 0;
+    if (c0 < 0) c0 = 0;
+    if (r0 < 0) r0 = 0;
+    if (c1 >= COLS) c1 = COLS - 1;
+    if (r1 >= ROWS) r1 = ROWS - 1;
+    if (c1 < c0 || r1 < r0) return -1;
+    var best = -1;
+    var bestDot = -1e9;
+    var sp = Math.sqrt(vx * vx + vy * vy) || 1;
+    var r, c, index, type, cx, cy, dot;
+    for (r = r0; r <= r1; r++) {
+      for (c = c0; c <= c1; c++) {
+        index = r * COLS + c;
+        type = state.grid[index];
+        if (type === CELL.OPEN) continue;
+        if (!circleHitsCell(nx, ny, rad, c, r, L)) continue;
+        cx = L.fieldX + (c + 0.5) * L.cell - nx;
+        cy = L.fieldY + (r + 0.5) * L.cell - ny;
+        dot = (cx * vx + cy * vy) / sp;
+        if (dot < 0) continue;
+        if (dot > bestDot) {
+          bestDot = dot;
+          best = index;
         }
       }
-      ball.x = nx;
-      ball.y = ny;
-      if (ball.x < ball.r) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
-      if (ball.x > CONFIG.CANVAS_W - ball.r) { ball.x = CONFIG.CANVAS_W - ball.r; ball.vx = -Math.abs(ball.vx); }
-      if (ball.y < ball.r) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
     }
+    return best;
   }
 
-  function bouncePaddle(ball, paddle) {
-    var top = paddle.y - paddle.h / 2;
-    if (ball.vy <= 0) return false;
-    var prev = ball._py == null ? ball.y : ball._py;
-    var crossed = prev <= top && ball.y >= top - ball.r;
-    var overlap = ball.y >= top - ball.r && ball.y <= top + paddle.h + ball.r;
-    if (!crossed && !overlap) return false;
-    if (Math.abs(ball.x - paddle.x) > paddle.w / 2 + ball.r) return false;
-    var offset = (ball.x - paddle.x) / (paddle.w / 2 || 1);
+  function substepBall(state, i, dt) {
+    var b = state.balls;
+    var L = state.L;
+    var x = b.x[i];
+    var y = b.y[i];
+    var vx = b.vx[i];
+    var vy = b.vy[i];
+    b.py[i] = y;
+    var nx = x + vx * dt;
+    var ny = y + vy * dt;
+    var rad = state.ballR;
+    var left = L.fieldX + rad;
+    var right = L.fieldX + L.fieldW - rad;
+    if (nx < left) { nx = left; vx = Math.abs(vx); }
+    else if (nx > right) { nx = right; vx = -Math.abs(vx); }
+    if (ny < rad) { ny = rad; vy = Math.abs(vy); }
+    var floor = L.blackBottom - rad;
+    if (state.safety > 0) floor -= L.safetyH;
+    if (ny > floor) {
+      if (state.safety > 0) {
+        ny = floor;
+        vy = -Math.abs(vy);
+      } else {
+        killBall(state, i);
+        return;
+      }
+    }
+    var hit = firstSolid(state, nx, ny, vx, vy);
+    if (hit >= 0) {
+      destroyCell(state, hit);
+      var c = hit % COLS;
+      var r = (hit / COLS) | 0;
+      var cx = L.fieldX + (c + 0.5) * L.cell;
+      var cy = L.fieldY + (r + 0.5) * L.cell;
+      var glance = state.speed * 0.22;
+      if (Math.abs(nx - cx) > Math.abs(ny - cy)) {
+        vx = -vx;
+        vy += ((ny - cy) / (L.cell * 0.5)) * glance;
+      } else {
+        vy = -vy;
+        vx += ((nx - cx) / (L.cell * 0.5)) * glance;
+      }
+      nx = x;
+      ny = y;
+    }
+    var sp = Math.sqrt(vx * vx + vy * vy) || 1;
+    var keep = state.speed;
+    b.vx[i] = vx / sp * keep;
+    b.vy[i] = vy / sp * keep;
+    b.x[i] = nx;
+    b.y[i] = ny;
+  }
+
+  function bouncePaddle(state, i) {
+    var b = state.balls;
+    if (!b.alive[i] || b.vy[i] <= 0) return;
+    var top = state.paddleTop;
+    var prev = b.py[i];
+    var y = b.y[i];
+    var rad = state.ballR;
+    if (prev > top) return;
+    if (y < top - rad) return;
+    var half = state.paddleW / 2;
+    if (Math.abs(b.x[i] - state.paddleX) > half + rad) return;
+    var offset = (b.x[i] - state.paddleX) / half;
     if (offset < -1) offset = -1;
     else if (offset > 1) offset = 1;
     var max = CONFIG.PADDLE_MAX_ANGLE * Math.PI / 180;
     var ang = -Math.PI / 2 + offset * max;
-    var sp = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) || CONFIG.BALL_SPEED;
-    ball.vx = Math.cos(ang) * sp;
-    ball.vy = Math.sin(ang) * sp;
-    ball.y = top - ball.r - 0.2;
-    return true;
+    b.vx[i] = Math.cos(ang) * state.speed;
+    b.vy[i] = Math.sin(ang) * state.speed;
+    b.y[i] = top - rad - 0.25;
   }
 
-  function bounceSafety(ball, bar) {
-    if (!bar.on || ball.vy <= 0) return false;
-    var top = bar.y - bar.h / 2;
-    var prev = ball._py == null ? ball.y : ball._py;
-    var crossed = prev <= top && ball.y >= top - ball.r;
-    var overlap = ball.y >= top - ball.r && ball.y <= bar.y + bar.h;
-    if (!crossed && !overlap) return false;
-    if (ball.x < bar.x0 || ball.x > bar.x1) return false;
-    ball.vy = -Math.abs(ball.vy);
-    ball.y = top - ball.r - 0.2;
-    return true;
+  function stepBalls(state, dt) {
+    var n = CONFIG.SUBSTEPS;
+    var sub = dt / n;
+    var s, i;
+    var alive = state.balls.alive;
+    for (s = 0; s < n; s++) {
+      for (i = 0; i < CONFIG.MAX_BALLS; i++) {
+        if (!alive[i]) continue;
+        substepBall(state, i, sub);
+        if (alive[i]) bouncePaddle(state, i);
+      }
+    }
   }
 
   return {
-    integrateBall: integrateBall,
-    bouncePaddle: bouncePaddle,
-    bounceSafety: bounceSafety
+    createBalls: createBalls,
+    allocBall: allocBall,
+    killBall: killBall,
+    placeBall: placeBall,
+    destroyCell: destroyCell,
+    stepBalls: stepBalls,
+    spawnPickup: spawnPickup,
+    weightedDrop: weightedDrop
   };
 });

@@ -90,10 +90,11 @@
     var L = state.L;
     var pocket = state.level.pocket;
     var x = L.fieldX + (pocket.entrance.col + 0.5) * L.cell;
-    var y = L.blackTop + 2.2 * L.cell;
-    var ang = -Math.PI / 2 + 0.16;
+    var y = L.blackTop + 1.2 * L.cell;
+    var vx = state.speed * 0.12;
+    var vy = -Math.sqrt(state.speed * state.speed - vx * vx);
     var i = physics.allocBall(state);
-    physics.placeBall(state, i, x, y, Math.cos(ang) * state.speed, Math.sin(ang) * state.speed);
+    physics.placeBall(state, i, x, y, vx, vy);
   }
 
   function serveOnPaddle(state) {

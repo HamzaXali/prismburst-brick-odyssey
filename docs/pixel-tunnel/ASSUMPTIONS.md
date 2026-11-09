@@ -6,9 +6,9 @@ The shipped app stays plain JavaScript under `js/pixel-tunnel/`. It does not add
 
 | Topic | Value used | Why |
 | --- | --- | --- |
-| Gray cells | `GRAY_BREAKABLE = "pocket+bottom"` | Prompt default. Pocket walls and the bottom row (except the left/right ring corners) break. |
-| Outer ring | Indestructible | Top row and both side columns never change. |
-| Win | Every destructible cell is open | The ring cannot be destroyed, so "the whole field" means every olive, target, pocket-gray, and bottom-gray cell. |
+| Gray cells | `GRAY_BREAKABLE = false` | Ali overrode the video note. The outer ring, pocket walls, divider, and every gray cell on row 49 never break. A hit bounces. |
+| Outer ring | Indestructible | Same rule as the pocket. Top row, both side columns, and the bottom gray row stay. |
+| Win | Every olive, yellow, and red cell is open | Gray walls are not part of the clear. Dug cells are still flat `#181818`. |
 | Dug cells | `#181818`, no new gray edge | Prompt. Open cells are drawn as a flat fill. |
 | 1 px gap colour | Olive `#33350D`, gray `#4E4E4E` | The video was not available to sample. Gaps are the right and bottom pixel of each solid cell. |
 | Ball already moving | Starts in the black zone, centred on entrance column 13, going straight up | The prompt does not give the start coordinate. There is no launch button. |

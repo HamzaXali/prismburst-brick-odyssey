@@ -55,8 +55,8 @@
     /* [?] +3 is the most common. The rest share the remainder. */
     DROP_WEIGHTS: { plus3: 0.5, safety: 0.2, times3: 0.2, heart: 0.1 },
 
-    /* pocket walls and the bottom row can break. The outer ring cannot. */
-    GRAY_BREAKABLE: 'pocket+bottom',
+    /* Ali: every gray wall is immortal. Not pocket+bottom. */
+    GRAY_BREAKABLE: false,
     ROSE_BAR_MODE: 'ball-loss',
     /* [?] Hearts, and the rose bar, shrink when the last ball is lost. */
     LIVES: 5,

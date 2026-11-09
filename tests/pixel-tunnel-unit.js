@@ -35,14 +35,16 @@ record('entrance is only column 13 on the bottom row',
 record('three yellow cells and one red target',
   at(16, 43) === CELL.YELLOW && at(16, 44) === CELL.YELLOW && at(16, 45) === CELL.YELLOW && at(17, 44) === CELL.RED);
 
-record('GRAY_BREAKABLE is pocket+bottom', cfg.CONFIG.GRAY_BREAKABLE === 'pocket+bottom');
-record('the outer ring never breaks',
+record('GRAY_BREAKABLE is false', cfg.CONFIG.GRAY_BREAKABLE === false);
+record('ring, pocket, divider, and the bottom wall cannot break',
   !levels.canBreak(grid, 0 * COLS + 25) &&
   !levels.canBreak(grid, 10 * COLS + 0) &&
   !levels.canBreak(grid, 10 * COLS + 49) &&
-  !levels.canBreak(grid, 49 * COLS + 0));
-record('pocket gray and the bottom row do break',
-  levels.canBreak(grid, 44 * COLS + 14) && levels.canBreak(grid, 49 * COLS + 20) && levels.canBreak(grid, 39 * COLS + 13));
+  !levels.canBreak(grid, 49 * COLS + 0) &&
+  !levels.canBreak(grid, 49 * COLS + 20) &&
+  !levels.canBreak(grid, 44 * COLS + 12) &&
+  !levels.canBreak(grid, 44 * COLS + 14) &&
+  !levels.canBreak(grid, 39 * COLS + 13));
 
 const L = cfg.layout();
 record('canvas is 416×688 and the paddle is 15.2 cells under the field',
@@ -107,11 +109,55 @@ aim(side, 1, 10, -side.state.speed, 0);
 for (let s = 0; s < 12; s++) side.step(1 / 60);
 record('the left ring stays gray after a hit', side.state.grid[10 * COLS] === CELL.GRAY);
 
+function shootLone(type, fromC, fromR, vx, vy) {
+  const match = game.createMatch(levels.buildLevel(1));
+  match.state.grid.fill(CELL.OPEN);
+  const index = 20 * COLS + 20;
+  match.state.grid[index] = type;
+  match.state.destructible = 1;
+  match.state.destroyed = 0;
+  match.state.won = false;
+  aim(match, fromC, fromR, vx, vy);
+  for (let s = 0; s < 24; s++) match.step(1 / 60);
+  return match.state.grid[index];
+}
+record('a shot into a lone gray wall leaves it unchanged',
+  shootLone(CELL.GRAY, 20, 21, 0, -400) === CELL.GRAY);
+record('a shot still breaks a lone olive, yellow, or red cell',
+  shootLone(CELL.OLIVE, 20, 21, 0, -400) === CELL.OPEN &&
+  shootLone(CELL.YELLOW, 20, 21, 0, -400) === CELL.OPEN &&
+  shootLone(CELL.RED, 20, 21, 0, -400) === CELL.OPEN);
+
+function holdGray(match, c, r, vx, vy) {
+  const index = r * COLS + c;
+  aim(match, c, r + (vy < 0 ? 1 : -1), vx, vy);
+  for (let s = 0; s < 16; s++) match.step(1 / 60);
+  return match.state.grid[index] === CELL.GRAY;
+}
+const pocket = game.createMatch(levels.buildLevel(1));
+record('shots leave the ring, pocket wall, divider, and bottom wall unchanged',
+  holdGray(pocket, 25, 0, 0, -pocket.state.speed) &&
+  holdGray(game.createMatch(levels.buildLevel(1)), 12, 44, 0, -400) &&
+  holdGray(game.createMatch(levels.buildLevel(1)), 14, 44, 0, -400) &&
+  holdGray(game.createMatch(levels.buildLevel(1)), 20, 49, 0, 400));
+
 const bottom = game.createMatch(levels.buildLevel(1));
 bottom.state.grid[48 * COLS + 20] = CELL.OPEN;
 aim(bottom, 20, 48, 0, bottom.state.speed);
 for (let s = 0; s < 12; s++) bottom.step(1 / 60);
-record('a bottom gray cell opens and stays black', bottom.state.grid[49 * COLS + 20] === CELL.OPEN);
+record('a bottom gray cell stays gray after a hit', bottom.state.grid[49 * COLS + 20] === CELL.GRAY);
+
+const swarm = game.createMatch(levels.buildLevel(1), { demo: true });
+const grayBefore = [];
+for (let i = 0; i < swarm.state.grid.length; i++) {
+  if (swarm.state.grid[i] === CELL.GRAY) grayBefore.push(i);
+}
+game.addBalls(swarm.state, 8);
+for (let s = 0; s < 240; s++) swarm.step(1 / 60);
+const grayOk = grayBefore.every(function (i) { return swarm.state.grid[i] === CELL.GRAY; });
+record('a swarm leaves every gray wall and still digs olive',
+  grayBefore.length > 0 && grayOk && swarm.state.destroyed > 0,
+  'destroyed ' + swarm.state.destroyed + ' gray ' + grayBefore.length);
 
 const yellow = game.createMatch(levels.buildLevel(1));
 yellow.state.grid[42 * COLS + 16] = CELL.OPEN;
@@ -147,15 +193,22 @@ const fin = game.createMatch(levels.buildLevel(1));
 for (let i = 0; i < fin.state.grid.length; i++) {
   if (levels.canBreak(fin.state.grid, i)) physics.destroyCell(fin.state, i);
 }
-record('clearing every destructible cell wins with 3 stars and leaves the ring',
-  fin.state.won === true && fin.state.stars === 3 && fin.state.grid[25] === CELL.GRAY && fin.state.grid[10 * COLS] === CELL.GRAY);
+const grayHeld = [];
+for (let i = 0; i < fin.state.grid.length; i++) {
+  if (levels.buildLevel(1).grid[i] === CELL.GRAY && fin.state.grid[i] !== CELL.GRAY) grayHeld.push(i);
+}
+record('clearing every destructible cell wins with 3 stars and leaves every gray wall',
+  fin.state.won === true && fin.state.stars === 3 && grayHeld.length === 0, 'opened ' + grayHeld.length);
 
 const crowd = game.createMatch(levels.buildLevel(1));
 while (crowd.state.live < 700) game.addBalls(crowd.state, 3);
+const spawned = crowd.state.live;
+crowd.state.safety = 5;
 const t0 = Date.now();
 for (let s = 0; s < 60; s++) crowd.step(1 / 60);
 record('700 balls step for one second without dropping',
-  crowd.state.live >= 700 && Date.now() - t0 < 2000, 'live ' + crowd.state.live + ' ms ' + (Date.now() - t0));
+  crowd.state.live === spawned && spawned >= 700 && Date.now() - t0 < 2000,
+  'live ' + crowd.state.live + ' ms ' + (Date.now() - t0));
 
 const mem = new Map();
 global.localStorage = {

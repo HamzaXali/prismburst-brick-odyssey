@@ -195,21 +195,35 @@
     }
     var hit = firstSolid(state, nx, ny, vx, vy);
     if (hit >= 0) {
-      destroyCell(state, hit);
+      var broke = destroyCell(state, hit);
       var c = hit % COLS;
       var r = (hit / COLS) | 0;
       var cx = L.fieldX + (c + 0.5) * L.cell;
       var cy = L.fieldY + (r + 0.5) * L.cell;
-      var glance = state.speed * 0.22;
-      if (Math.abs(nx - cx) > Math.abs(ny - cy)) {
-        vx = -vx;
-        vy += ((ny - cy) / (L.cell * 0.5)) * glance;
+      var half = L.cell * 0.5;
+      if (!broke) {
+        var side = Math.abs(x - cx) > Math.abs(y - cy);
+        if (side) {
+          vx = x < cx ? -Math.abs(vx) : Math.abs(vx);
+          nx = x < cx ? cx - half - rad - 0.2 : cx + half + rad + 0.2;
+          ny = y + vy * dt;
+        } else {
+          vy = y < cy ? -Math.abs(vy) : Math.abs(vy);
+          ny = y < cy ? cy - half - rad - 0.2 : cy + half + rad + 0.2;
+          nx = x + vx * dt;
+        }
       } else {
-        vy = -vy;
-        vx += ((nx - cx) / (L.cell * 0.5)) * glance;
+        var glance = state.speed * 0.22;
+        if (Math.abs(nx - cx) > Math.abs(ny - cy)) {
+          vx = -vx;
+          vy += ((ny - cy) / half) * glance;
+        } else {
+          vy = -vy;
+          vx += ((nx - cx) / half) * glance;
+        }
+        nx = x;
+        ny = y;
       }
-      nx = x;
-      ny = y;
     }
     var sp = Math.sqrt(vx * vx + vy * vy) || 1;
     var keep = state.speed;

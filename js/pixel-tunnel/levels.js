@@ -58,15 +58,8 @@
 
   function canBreak(grid, index) {
     var type = grid[index];
+    if (type === CELL.GRAY) return false;
     if (type === CELL.OLIVE || type === CELL.YELLOW || type === CELL.RED) return true;
-    if (type !== CELL.GRAY) return false;
-    var c = index % COLS;
-    var r = (index / COLS) | 0;
-    if (isOuterRing(c, r)) return false;
-    var mode = CONFIG.GRAY_BREAKABLE;
-    if (mode === 'none') return false;
-    if (mode === 'all') return true;
-    if (mode === 'pocket+bottom') return true;
     return false;
   }
 

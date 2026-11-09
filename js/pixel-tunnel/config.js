@@ -84,8 +84,8 @@
     SAFETY_H_CELLS: 0.4,
     SAFETY_FROM_BOTTOM: 8,
 
-    /* Lining is drawn, not a wall that kicks the ball back outside. */
-    GRAY_BREAKABLE: true,
+    /* Grey lining, the field frame, and accent solids never break. */
+    GRAY_BREAKABLE: false,
     BORDER_HITS: 1,
 
     /* Clips never state the win rule. Owner: clear every yellow target. */

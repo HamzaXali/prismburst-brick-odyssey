@@ -366,7 +366,7 @@
     var index = r * CONFIG.COLS + c;
     var type = state.grid[index];
     if (!state.launched && (isMouth(state, r, c) || isCapBrick(state, r, c))) {
-      if (type === CELL.BRICK || type === CELL.BORDER || type === CELL.YELLOW) {
+      if (type === CELL.BRICK || type === CELL.YELLOW) {
         state.grid[index] = CELL.OPEN;
         state.dirty.push(index);
         broke(state, index, type === CELL.YELLOW ? 'yellow' : 'brick');
@@ -375,7 +375,7 @@
       state.tapReady = state.t + CONFIG.TAP_COOLDOWN;
       return true;
     }
-    if (type !== CELL.BRICK && type !== CELL.BORDER) {
+    if (type !== CELL.BRICK) {
       say(state, 'Tap a brick next to tunnel!');
       return false;
     }
@@ -536,7 +536,14 @@
       return;
     }
     if (ball && ball.y > fieldBottom) {
-      movePaddle(state, ball.x, false);
+      var mouth = nearestMouth(state, ball.x);
+      var desired = Math.atan2(fieldBottom - 8 - ball.y, mouth - ball.x);
+      var fromUp = desired + Math.PI / 2;
+      var max = CONFIG.PADDLE_MAX_ANGLE * Math.PI / 180;
+      var offset = fromUp / max;
+      if (offset < -1) offset = -1;
+      if (offset > 1) offset = 1;
+      movePaddle(state, ball.x - offset * (state.paddle.w / 2), false);
       return;
     }
     if (reward) {

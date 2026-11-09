@@ -53,7 +53,8 @@
       var R = 12, G = 12, B = 12;
       if (type === CELL.YELLOW) { R = 255; G = 217; B = 0; }
       else if (type === CELL.ACCENT) { R = 237; G = 41; B = 55; }
-      else if (type === CELL.BRICK || type === CELL.BORDER) { R = fr; G = fg; B = fb; }
+      else if (type === CELL.BORDER) { R = 176; G = 176; B = 176; }
+      else if (type === CELL.BRICK) { R = fr; G = fg; B = fb; }
       var y0 = r * size;
       var x0 = c * size;
       var yy, xx, row, p;

@@ -5,6 +5,7 @@ const path = require('path');
 const levels = require('../js/pixel-tunnel/levels.js');
 const store = require('../js/pixel-tunnel/storage.js');
 const game = require('../js/pixel-tunnel/game.js');
+const physics = require('../js/pixel-tunnel/physics.js');
 const sync = require('../js/save-sync.js');
 const cfg = require('../js/pixel-tunnel/config.js');
 
@@ -59,6 +60,45 @@ const demo = game.simulate(1, 40);
 record('auto demo can clear level 1', demo.won === true && demo.yellowLeft === 0 && demo.lost === false, JSON.stringify(demo));
 const other = game.simulate(3, 20);
 record('a second level runs without throwing', other.launched === true && other.yellowLeft >= 0, JSON.stringify(other));
+
+function shootCell(type) {
+  const grid = new Uint8Array(cfg.CONFIG.COLS * cfg.CONFIG.FIELD_ROWS);
+  grid.fill(cfg.CELL.OPEN);
+  const index = 20 * cfg.CONFIG.COLS + 20;
+  grid[index] = type;
+  const size = cfg.CONFIG.CELL;
+  const ball = { x: (20 + 0.5) * size, y: (20 + 0.5) * size - 24, vx: 0, vy: 420, r: 2.8, kink: 0, _py: 0 };
+  const state = {
+    grid: grid,
+    hp: new Uint8Array(grid.length),
+    speed: 420,
+    mark: function () {},
+    onBreak: function () {}
+  };
+  for (let i = 0; i < 40; i++) physics.integrateBall(ball, state, 1 / 60);
+  return state.grid[index];
+}
+record('grey walls and accent solids never break',
+  cfg.CONFIG.GRAY_BREAKABLE === false &&
+  shootCell(cfg.CELL.BORDER) === cfg.CELL.BORDER &&
+  shootCell(cfg.CELL.ACCENT) === cfg.CELL.ACCENT);
+record('colored bricks and yellow targets still break',
+  shootCell(cfg.CELL.BRICK) === cfg.CELL.OPEN &&
+  shootCell(cfg.CELL.YELLOW) === cfg.CELL.OPEN);
+
+const walled = game.createMatch(levels.buildLevel(1), { demo: true });
+const borderBefore = [];
+const accentBefore = [];
+for (let i = 0; i < walled.state.grid.length; i++) {
+  if (walled.state.grid[i] === cfg.CELL.BORDER) borderBefore.push(i);
+  if (walled.state.grid[i] === cfg.CELL.ACCENT) accentBefore.push(i);
+}
+walled.stream();
+for (let s = 0; s < 240; s++) walled.step(1 / 60);
+const bordersHeld = borderBefore.every(function (i) { return walled.state.grid[i] === cfg.CELL.BORDER; });
+const accentsHeld = accentBefore.every(function (i) { return walled.state.grid[i] === cfg.CELL.ACCENT; });
+record('a swarm leaves every tunnel wall and accent cell in place',
+  borderBefore.length > 0 && bordersHeld && accentsHeld, 'borders ' + borderBefore.length + ' held ' + bordersHeld);
 
 const passed = results.filter(r => r.pass).length;
 console.log('\n' + passed + '/' + results.length + ' passed');

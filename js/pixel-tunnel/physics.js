@@ -32,25 +32,27 @@
 
   function eat(state, index, ball) {
     var type = state.grid[index];
-    if (type === CELL.BRICK || type === CELL.BORDER || type === CELL.YELLOW) {
-      state.grid[index] = CELL.OPEN;
-      state.hp[index] = 0;
-      if (state.mark) state.mark(index);
-      if (state.onBreak) state.onBreak(index, type === CELL.YELLOW ? 'yellow' : 'brick');
-      ball.kink = (ball.kink + 1) | 0;
-      var row = (index / CONFIG.COLS) | 0;
-      if (row >= CONFIG.FIELD_ROWS - 6) ball.vy = Math.abs(ball.vy);
-      if ((ball.kink & 3) === 0) {
-        var vx = ball.vx * 0.82 - ball.vy * 0.42;
-        var vy = ball.vy * 0.82 + ball.vx * 0.42;
-        var sp = Math.sqrt(vx * vx + vy * vy) || 1;
-        var keep = state.speed || CONFIG.BALL_SPEED;
-        ball.vx = vx / sp * keep;
-        ball.vy = vy / sp * keep;
-      }
-      return true;
+    if (type !== CELL.BRICK && type !== CELL.YELLOW) return false;
+    state.grid[index] = CELL.OPEN;
+    state.hp[index] = 0;
+    if (state.mark) state.mark(index);
+    if (state.onBreak) state.onBreak(index, type === CELL.YELLOW ? 'yellow' : 'brick');
+    ball.kink = (ball.kink + 1) | 0;
+    var row = (index / CONFIG.COLS) | 0;
+    if (row >= CONFIG.FIELD_ROWS - 6) ball.vy = Math.abs(ball.vy);
+    if ((ball.kink & 3) === 0) {
+      var vx = ball.vx * 0.82 - ball.vy * 0.42;
+      var vy = ball.vy * 0.82 + ball.vx * 0.42;
+      var sp = Math.sqrt(vx * vx + vy * vy) || 1;
+      var keep = state.speed || CONFIG.BALL_SPEED;
+      ball.vx = vx / sp * keep;
+      ball.vy = vy / sp * keep;
     }
-    return false;
+    return true;
+  }
+
+  function isWall(type) {
+    return type === CELL.BORDER || type === CELL.ACCENT;
   }
 
   function bounceSolid(ball, nx, ny) {
@@ -80,11 +82,11 @@
         var id = cellIndex(nx, ny);
         if (id >= 0) {
           var type = state.grid[id];
-          if (type === CELL.ACCENT) {
+          if (isWall(type)) {
             bounceSolid(ball, nx, ny);
             nx = ball.x;
             ny = ball.y + ball.vy * h;
-          } else if (type === CELL.BRICK || type === CELL.BORDER || type === CELL.YELLOW) {
+          } else if (type === CELL.BRICK || type === CELL.YELLOW) {
             eat(state, id, ball);
             var c = id % CONFIG.COLS;
             var r = (id / CONFIG.COLS) | 0;
@@ -99,7 +101,10 @@
           var oy = i === 2 ? rad : i === 3 ? -rad : 0;
           if (!ox && !oy) continue;
           var pid = cellIndex(nx + ox, ny + oy);
-          if (pid >= 0 && pid !== id) eat(state, pid, ball);
+          if (pid < 0 || pid === id) continue;
+          var probeType = state.grid[pid];
+          if (isWall(probeType)) bounceSolid(ball, nx + ox, ny + oy);
+          else eat(state, pid, ball);
         }
       }
       ball.x = nx;

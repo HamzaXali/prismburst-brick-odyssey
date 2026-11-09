@@ -105,14 +105,14 @@
     acc += dt;
     var guard = 0;
     while (acc >= 1 / 60 && guard++ < 4) {
-      if (match && !paused && !match.state.won && !match.state.lost) match.step(1 / 60);
+      if (match && !paused && !match.state.lost) match.step(1 / 60);
       acc -= 1 / 60;
     }
     if (match) {
       PB.PTView.draw(match.state);
       var snap = match.snapshot();
       ui.sync(snap, { demo: match.state.demo, find: !!match.state.findEntrance });
-      if (snap.won && !match.state._saved) {
+      if (snap.won && !match.state._saved && !PB.PixelTunnel.holdOverlay) {
         match.state._saved = true;
         progress = store.record(progress, snap.id, snap.score, snap.stars, true);
         ui.setWin(snap);
@@ -165,9 +165,18 @@
       }
     },
     snapshot: function () { return match ? match.snapshot() : null; },
+    debugState: function () {
+      if (!match) return null;
+      return {
+        demo: match.state.demo,
+        paddle: { x: match.state.paddle.x, y: match.state.paddle.y, w: match.state.paddle.w, h: match.state.paddle.h },
+        rewards: match.state.rewards.map(function (r) { return { k: r.kind, x: r.x, y: r.y }; }),
+        safety: match.state.safety
+      };
+    },
     stream: function () { if (match) match.stream(); },
     tick: function () {
-      if (match && !paused && !match.state.won && !match.state.lost) match.step(1 / 60);
+      if (match && !paused && !match.state.lost) match.step(1 / 60);
       if (match && PB.PTView) PB.PTView.draw(match.state);
       return match ? match.snapshot() : null;
     },

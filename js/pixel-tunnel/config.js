@@ -27,20 +27,22 @@
    * spawn row, fall speed, scores, lives, launch angle, win rule). */
   var CONFIG = {
     CANVAS_W: 400,
-    CANVAS_H: 880,
+    /* 50*8 field is 400px, so 588px canvas puts the field at 68% of the height. */
+    CANVAS_H: 588,
     CELL: 8,
     COLS: 50,
     FIELD_ROWS: 50,
 
     /* Thin flat orange bar. It sits in the lower band, just above the floor line. */
     PADDLE_W_CELLS: 11,
-    PADDLE_H_CELLS: 0.38,
-    PADDLE_FROM_BOTTOM: 28,
+    PADDLE_H_CELLS: 0.42,
+    /* Sits in the short band under the field, just above the safety line. */
+    PADDLE_FROM_BOTTOM: 22,
     PADDLE_COLOR: '#FF6A3A',
     PADDLE_MAX_ANGLE: 55,
 
-    /* Tiny white dots, closer to the clips than a 0.7-cell marble. */
-    BALL_DIAMETER_CELLS: 0.42,
+    /* Clips read as white dots about 0.6–0.8 of a cell. */
+    BALL_DIAMETER_CELLS: 0.7,
     BALL_COLOR: '#FFFFFF',
     /* Phone test: 210 felt floaty. Clips are snappy. */
     BALL_SPEED: 680,
@@ -63,16 +65,16 @@
      * Owner defaults. The +3 disc itself is visible in v07. */
     BADGE_ROW: 2,
     BADGE_FALL_CELLS: 6,
-    BADGE_SPAWN_INTERVAL: 7,
-    BADGE_DIAMETER_CELLS: 1.15,
+    BADGE_SPAWN_INTERVAL: 4.5,
+    BADGE_DIAMETER_CELLS: 2,
 
     TAP_COOLDOWN: 0.15,
     TAP_RANGE_CELLS: 1,
 
     /* Clips fill the screen with hundreds of dots. One catch fires a stream. */
     MAX_BALLS: 420,
-    MULTIBALL_ADD: 64,
-    MULTIBALL_SPREAD_DEG: 11,
+    MULTIBALL_ADD: 80,
+    MULTIBALL_SPREAD_DEG: 26,
 
     /* Footage: temporary red/orange bar, nearly the full lower width.
      * Duration was not readable; 10s is the owner's reward length. */
@@ -80,7 +82,7 @@
     SAFETY_COLOR: '#FF5C33',
     SAFETY_WIDTH_RATIO: 1,
     SAFETY_H_CELLS: 0.4,
-    SAFETY_FROM_BOTTOM: 6,
+    SAFETY_FROM_BOTTOM: 8,
 
     /* Lining is drawn, not a wall that kicks the ball back outside. */
     GRAY_BREAKABLE: true,

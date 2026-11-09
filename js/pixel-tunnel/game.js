@@ -102,7 +102,7 @@
       safety: 0,
       wide: 0,
       rewards: [],
-      rewardWait: 2.2,
+      rewardWait: 1.1,
       lastDrop: -1,
       liveBalls: 1,
       particles: [],
@@ -210,7 +210,7 @@
   }
 
   function movePaddle(state, x, fromPlayer) {
-    if (state.won || state.lost) return;
+    if (state.lost) return;
     var half = state.paddle.w / 2;
     var prev = state.paddle.x;
     state.paddle.x = clamp(x, half, CONFIG.CANVAS_W - half);
@@ -241,6 +241,7 @@
       if (state.t - state.lastDrop > 0.55) {
         state.lastDrop = state.t;
         spawnReward(state, 'cyan');
+        if (state.liveBalls < 40) addBalls(state, 36);
       }
     }
     if (state.liveBalls < 10) {
@@ -279,12 +280,24 @@
   }
 
   function spawnReward(state, kind) {
-    if (state.rewards.length >= 3) return;
+    if (state.rewards.length >= 4) return;
     var col = (Math.random() * CONFIG.COLS) | 0;
+    var x = (col + 0.5) * CONFIG.CELL;
+    var y = CONFIG.BADGE_ROW * CONFIG.CELL;
+    var cols = CONFIG.COLS;
+    for (var n = 0; n < 16; n++) {
+      var ri = (6 + Math.random() * 38) | 0;
+      var ci = (Math.random() * cols) | 0;
+      if (state.grid[ri * cols + ci] === CELL.OPEN) {
+        x = (ci + 0.5) * CONFIG.CELL;
+        y = (ri + 0.5) * CONFIG.CELL;
+        break;
+      }
+    }
     state.rewards.push({
       kind: kind,
-      x: (col + 0.5) * CONFIG.CELL,
-      y: CONFIG.BADGE_ROW * CONFIG.CELL,
+      x: x,
+      y: y,
       vy: CONFIG.BADGE_FALL_CELLS * CONFIG.CELL
     });
   }
@@ -405,7 +418,7 @@
   }
 
   function step(state, dt) {
-    if (state.won || state.lost) return;
+    if (state.lost) return;
     state.t += dt;
     state.liveBalls = activeBalls(state);
     state.dirty.length = 0;
@@ -513,16 +526,20 @@
       if (!ball || b.y > ball.y) ball = b;
     }
     var fieldBottom = CONFIG.FIELD_ROWS * CONFIG.CELL;
-    if (ball && ball.y > fieldBottom) {
-      movePaddle(state, ball.x, false);
-      return;
-    }
     var reward = null;
     for (var r = 0; r < state.rewards.length; r++) {
       var drop = state.rewards[r];
       if (!reward || drop.y > reward.y) reward = drop;
     }
-    if (reward && reward.y > fieldBottom * 0.35) {
+    if (reward && reward.y > state.paddle.y - 120) {
+      movePaddle(state, reward.x, false);
+      return;
+    }
+    if (ball && ball.y > fieldBottom) {
+      movePaddle(state, ball.x, false);
+      return;
+    }
+    if (reward) {
       movePaddle(state, reward.x, false);
       return;
     }
@@ -572,6 +589,7 @@
       yellowLeft: state.yellowLeft,
       balls: balls,
       safety: Math.ceil(state.safety),
+      drops: state.rewards.length,
       tunnel: tunnelPercent(state),
       hint: state.hint,
       mouths: runs,

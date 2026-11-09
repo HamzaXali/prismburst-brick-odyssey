@@ -38,6 +38,8 @@
       if (state.mark) state.mark(index);
       if (state.onBreak) state.onBreak(index, type === CELL.YELLOW ? 'yellow' : 'brick');
       ball.kink = (ball.kink + 1) | 0;
+      var row = (index / CONFIG.COLS) | 0;
+      if (row >= CONFIG.FIELD_ROWS - 6) ball.vy = Math.abs(ball.vy);
       if ((ball.kink & 3) === 0) {
         var vx = ball.vx * 0.82 - ball.vy * 0.42;
         var vy = ball.vy * 0.82 + ball.vx * 0.42;

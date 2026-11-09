@@ -57,13 +57,24 @@
       var y0 = r * size;
       var x0 = c * size;
       var yy, xx, row, p;
+      var shade = (type === CELL.BRICK || type === CELL.BORDER);
+      var rim = r === 0 || c === 0 || r === CONFIG.FIELD_ROWS - 1 || c === cols - 1;
       for (yy = 0; yy < size; yy++) {
         row = ((y0 + yy) * field.width + x0) * 4;
         for (xx = 0; xx < size; xx++) {
           p = row + xx * 4;
-          pix[p] = R;
-          pix[p + 1] = G;
-          pix[p + 2] = B;
+          var er = R, eg = G, eb = B;
+          if (shade && (xx === size - 1 || yy === size - 1)) {
+            er = (R * 0.72) | 0;
+            eg = (G * 0.72) | 0;
+            eb = (B * 0.72) | 0;
+          }
+          if (rim && (xx === 0 && c === 0 || xx === size - 1 && c === cols - 1 || yy === 0 && r === 0 || yy === size - 1 && r === CONFIG.FIELD_ROWS - 1)) {
+            er = 176; eg = 176; eb = 176;
+          }
+          pix[p] = er;
+          pix[p + 1] = eg;
+          pix[p + 2] = eb;
           pix[p + 3] = 255;
         }
       }
@@ -145,6 +156,14 @@
       ctx.fillStyle = CONFIG.PLAYFIELD;
       ctx.fillRect(0, CONFIG.FIELD_ROWS * CONFIG.CELL, CONFIG.CANVAS_W, CONFIG.CANVAS_H);
       ctx.drawImage(field, 0, 0);
+      var fw = CONFIG.COLS * CONFIG.CELL;
+      var fh = CONFIG.FIELD_ROWS * CONFIG.CELL;
+      ctx.strokeStyle = '#9A9A9A';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(1.5, 1.5, fw - 3, fh - 3);
+      ctx.strokeStyle = '#D0D0D0';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(3.5, 3.5, fw - 7, fh - 7);
       if (CONFIG.ROSE_ENABLED) {
         ctx.fillStyle = CONFIG.ROSE_COLOR;
         ctx.fillRect(0, CONFIG.CELL, CONFIG.CANVAS_W, CONFIG.CELL * 0.5);
@@ -182,8 +201,9 @@
       for (var b = 0; b < state.balls.length; b++) {
         var ball = state.balls[b];
         if (!ball.active) continue;
-        var d = ball.r * 2;
-        ctx.fillRect(ball.x - ball.r, ball.y - ball.r, d, d);
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, Math.max(2.2, ball.r), 0, Math.PI * 2);
+        ctx.fill();
       }
 
       for (var i = 0; i < state.rewards.length; i++) drawReward(state.rewards[i]);
@@ -228,7 +248,9 @@
       }
       var colors = { cyan: '#21C6DB', green: '#3DDC6A', orange: '#FF8A3D', pink: '#FF5AD9' };
       ctx.fillStyle = colors[reward.kind] || '#21C6DB';
-      ctx.fillRect(x, y, s, s);
+      ctx.beginPath();
+      ctx.arc(reward.x, reward.y, s * 0.5, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     return { draw: draw };

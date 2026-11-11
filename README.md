@@ -85,6 +85,7 @@ Put these files at the root of a public repository named `prismburst-brick-odyss
 from the Actions tab. `config.js`, `privacy-policy.html`, `privacy.html` and `delete-account.html` are deployed. The database script is not.
 The game will be at `https://<your-username>.github.io/prismburst-brick-odyssey/`.
 All paths are relative, so any repository name works.
+The Android Google sign-in bridge, privacy policy, and delete-account page are a separate Firebase Hosting site (`hosting/`, project `prismburst-brick-odyssey`). Deploy that with `firebase deploy --only hosting --project prismburst-brick-odyssey`. See [docs/FIREBASE-SETUP.md](docs/FIREBASE-SETUP.md).
 
 Phone test checklist: [docs/MOBILE-TESTING.md](docs/MOBILE-TESTING.md).
 

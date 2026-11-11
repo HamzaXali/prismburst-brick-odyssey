@@ -11,6 +11,7 @@ const sync = require('../js/save-sync');
 const profile = require('../js/profile');
 const secrets = require('../scripts/check-secrets');
 const copyWeb = require('../scripts/copy-web');
+const copyHosting = require('../scripts/copy-hosting');
 
 const root = path.join(__dirname, '..');
 const results = [];
@@ -186,7 +187,7 @@ try {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const shippedVersion = require('../package.json').version;
   record('service worker cache version matches the semver and precaches the game',
-    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/firebase-app-compat.js') && sw.includes('./lib/firebase-auth-compat.js') && sw.includes('./lib/firebase-firestore-compat.js') && sw.includes('./js/firebase-config.js') && sw.includes('isAuthBridge') && sw.includes('prismburst-v1.5.0-bridge3') && !sw.includes("'./auth-bridge.html'") && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.5') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0'));
+    /^\d+\.\d+\.\d+$/.test(shippedVersion) && sw.includes('prismburst-v' + shippedVersion) && sw.includes('./js/achievements.js') && !sw.includes('dense') && sw.includes('./js/ads.js') && sw.includes('./js/shop.js') && sw.includes('./lib/firebase-app-compat.js') && sw.includes('./lib/firebase-auth-compat.js') && sw.includes('./lib/firebase-firestore-compat.js') && sw.includes('./js/firebase-config.js') && sw.includes('isAuthBridge') && sw.includes('prismburst-v1.5.1-bridge3') && !sw.includes('prismburst-v1.5.0') && !sw.includes("'./auth-bridge.html'") && sw.includes('./js/profile.js') && sw.includes('./js/home.js') && sw.includes('./js/home-ui.js') && sw.includes('./config.js') && sw.includes('./privacy.html') && !sw.includes('prismburst-v1.4.5') && !sw.includes('prismburst-v1.4.4') && !sw.includes('prismburst-v1.4.3') && !sw.includes('prismburst-v1.4.2') && !sw.includes('prismburst-v1.4.1') && !sw.includes('prismburst-v1.4.0'));
   const menusJs = fs.readFileSync(path.join(root, 'js/menus.js'), 'utf8');
   record('the menu footer version matches the service worker', menusJs.includes("PB.VERSION = '" + shippedVersion + "'") && sw.includes('prismburst-v' + shippedVersion));
   record('service worker keeps Firebase/Google APIs network-only and skips OAuth returns', (sw.includes('googleapis') || sw.includes('firebaseio') || sw.includes('identitytoolkit')) && sw.includes("cache: 'no-store'") && sw.includes('code=') && sw.includes('access_token'));
@@ -264,6 +265,54 @@ try {
     && !authBridge.includes('signInWithPopup')
     && !authBridge.includes('result.user.getIdToken')
     && authBridge.indexOf('console.log') === -1);
+  const bridgeUrl = 'https://prismburst-brick-odyssey.firebaseapp.com/auth-bridge.html';
+  const cloudJsEarly = fs.readFileSync(path.join(root, 'js/cloud.js'), 'utf8');
+  record('auth-bridge redirect and the app probe URL are the Firebase Hosting page',
+    authBridge.includes("REDIRECT_URI = '" + bridgeUrl + "'")
+    && cloudJsEarly.includes("var HOSTED_ORIGIN = 'https://prismburst-brick-odyssey.firebaseapp.com'")
+    && cloudJsEarly.includes("var AUTH_BRIDGE_URL = HOSTED_ORIGIN + '/auth-bridge.html'")
+    && cloudJsEarly.includes('return AUTH_BRIDGE_URL')
+    && !cloudJsEarly.includes("PUBLIC_SITE + 'auth-bridge.html'")
+    && cloudJsEarly.includes('function probeAuthBridge')
+    && cloudJsEarly.includes('/Continue with Google/i.test(text)')
+    && cloudJsEarly.includes('function hostedPageUrl')
+    && cloudJsEarly.includes("file === 'privacy-policy.html'")
+    && cloudJsEarly.includes("file === 'delete-account.html'")
+    && authBridge.includes('Continue with Google'));
+  const firebaseJson = JSON.parse(fs.readFileSync(path.join(root, 'firebase.json'), 'utf8'));
+  const firebaseRc = JSON.parse(fs.readFileSync(path.join(root, '.firebaserc'), 'utf8'));
+  const authHeaderRule = (firebaseJson.hosting.headers || []).find(function (rule) { return rule.source === '/auth-bridge.html'; });
+  const cacheHeader = authHeaderRule && authHeaderRule.headers.find(function (header) { return header.key === 'Cache-Control'; });
+  const siteHeaderRule = (firebaseJson.hosting.headers || []).find(function (rule) { return rule.source === '**'; });
+  const siteHeaderText = ((siteHeaderRule && siteHeaderRule.headers) || []).map(function (header) { return header.key + ':' + header.value; }).join('\n');
+  record('firebase.json hosts only the static bridge folder on the free project',
+    firebaseJson.hosting && firebaseJson.hosting.public === 'hosting'
+    && !firebaseJson.functions
+    && !firebaseJson.hosting.rewrites
+    && !firebaseJson.hosting.cleanUrls
+    && firebaseRc.projects.default === 'prismburst-brick-odyssey'
+    && cacheHeader && cacheHeader.value === 'no-store'
+    && siteHeaderText.includes('X-Content-Type-Options:nosniff')
+    && siteHeaderText.includes('X-Frame-Options:DENY')
+    && siteHeaderText.includes('Referrer-Policy:no-referrer')
+    && (firebaseJson.hosting.predeploy || []).indexOf('node scripts/copy-hosting.js') >= 0);
+  const hostTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pb-host-'));
+  copyHosting.copyHosting(hostTmp);
+  const neededHost = ['auth-bridge.html', 'privacy-policy.html', 'privacy.html', 'delete-account.html', 'js/firebase-config.js', 'js/delete-core.js', 'js/delete-page.js', 'config.js', 'lib/firebase-app-compat.js', 'lib/firebase-auth-compat.js', 'lib/firebase-firestore-compat.js'];
+  const bannedHost = ['index.html', 'game.js', 'sw.js', 'levels.js', 'style.css', 'android', 'tests'];
+  const committedSame = neededHost.every(function (rel) {
+    return fs.readFileSync(path.join(root, 'hosting', rel)).equals(fs.readFileSync(path.join(hostTmp, rel)));
+  });
+  record('hosting folder is the bridge, legal pages, and the scripts they load',
+    neededHost.every(function (rel) { return fs.existsSync(path.join(hostTmp, rel)); })
+    && bannedHost.every(function (rel) { return !fs.existsSync(path.join(hostTmp, rel)); })
+    && committedSame
+    && fs.readFileSync(path.join(hostTmp, 'auth-bridge.html'), 'utf8').includes(bridgeUrl)
+    && !/supabase/i.test(fs.readFileSync(path.join(hostTmp, 'privacy-policy.html'), 'utf8'))
+    && !/supabase/i.test(fs.readFileSync(path.join(hostTmp, 'privacy.html'), 'utf8'))
+    && !/supabase/i.test(fs.readFileSync(path.join(hostTmp, 'delete-account.html'), 'utf8'))
+    && !/supabase/i.test(fs.readFileSync(path.join(hostTmp, 'auth-bridge.html'), 'utf8')));
+  fs.rmSync(hostTmp, { recursive: true, force: true });
 
     const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(name => !name.startsWith('.')).sort();
   record('Pages, the debug APK, and the release workflow are the only workflows', workflows.join(',') === 'android-debug.yml,android-release.yml,pages.yml');
@@ -369,7 +418,7 @@ try {
     emptyFailed);
   fs.rmSync(decodedPath, { force: true });
   record('release version, R8, and signing env come from package.json without printing secrets',
-    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 8 &&
+    /^\d+\.\d+\.\d+$/.test(pkg.version) && pkg.androidVersionCode === 10 &&
     appGradle.includes("new File(rootProject.projectDir.parentFile, 'package.json')") &&
     appGradle.includes('debuggable false') &&
     appGradle.includes('minifyEnabled true') &&
@@ -413,7 +462,7 @@ try {
     cloudJs.indexOf('bag[name]') < cloudJs.indexOf('registerPlugin(name)'));
   record('native open uses OpenUrl Intent fallback and diagnostic step codes',
     cloudJs.includes("nativePlugin('OpenUrl')") && cloudJs.includes('browserDiag') &&
-    cloudJs.includes("APP_VERSION = '1.5.0'") && cloudJs.includes('purgeNativeServiceWorker') &&
+    cloudJs.includes("APP_VERSION = '" + pkg.version + "'") && cloudJs.includes('purgeNativeServiceWorker') &&
     !cloudJs.includes('The system browser is unavailable'));
   record('nonce/state is checked on deep-link return and tokens are never logged',
     cloudJs.includes('readBridgeState') && cloudJs.includes('parsed.state !== expected.state') &&
@@ -421,9 +470,25 @@ try {
   record('network retries use capped exponential backoff',
     cloudJs.includes('function backoffDelay') && cloudJs.includes('withBackoff') &&
     cloudJs.includes('MAX_BACKOFF_MS') && cloudJs.includes('Cloud._test'));
+  const mainActivity = fs.readFileSync(path.join(root, 'android/app/src/main/java/com/prismburst/brickodyssey/MainActivity.java'), 'utf8');
+  const androidStyles = fs.readFileSync(path.join(root, 'android/app/src/main/res/values/styles.xml'), 'utf8');
   record('MainActivity registers OpenUrlPlugin before the bridge starts',
-    fs.readFileSync(path.join(root, 'android/app/src/main/java/com/prismburst/brickodyssey/MainActivity.java'), 'utf8').includes('registerPlugin(OpenUrlPlugin.class)') &&
+    mainActivity.includes('registerPlugin(OpenUrlPlugin.class)') &&
+    mainActivity.indexOf('registerPlugin(OpenUrlPlugin.class)') < mainActivity.indexOf('super.onCreate') &&
     fs.existsSync(path.join(root, 'android/app/src/main/java/com/prismburst/brickodyssey/OpenUrlPlugin.java')));
+  record('Android 15 edge-to-edge avoids deprecated bar colors and insets the canvas',
+    mainActivity.includes('EdgeToEdge.enable') &&
+    mainActivity.includes('SystemBarStyle.dark') &&
+    !mainActivity.includes('setStatusBarColor') &&
+    !mainActivity.includes('setNavigationBarColor') &&
+    !mainActivity.includes('LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES') &&
+    !mainActivity.includes('setDecorFitsSystemWindows') &&
+    !androidStyles.includes('statusBarColor') &&
+    !androidStyles.includes('navigationBarColor') &&
+    !androidStyles.includes('windowFullscreen') &&
+    fs.readFileSync(path.join(root, 'android/app/build.gradle'), 'utf8').includes('androidx.activity:activity:$androidxActivityVersion') &&
+    fs.readFileSync(path.join(root, 'style.css'), 'utf8').includes('safe-area-inset-top') &&
+    fs.readFileSync(path.join(root, 'style.css'), 'utf8').includes('safe-area-inset-bottom'));
   record('app build.gradle pins androidx.browser and variables declare the version',
     fs.readFileSync(path.join(root, 'android/app/build.gradle'), 'utf8').includes('androidx.browser:browser:$androidxBrowserVersion') &&
     fs.readFileSync(path.join(root, 'android/variables.gradle'), 'utf8').includes("androidxBrowserVersion = '1.9.0'"));

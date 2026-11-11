@@ -18,9 +18,11 @@
   var SAVE_KEY = Sync.SAVE_KEY;
   var META_KEY = 'prismburst.cloud.meta.v1';
   var AUTH_STATE_KEY = 'prismburst.auth.bridge.v1';
-  var APP_VERSION = '1.5.0';
+  var APP_VERSION = '1.5.1';
   var NATIVE_AUTH_URL = 'com.prismburst.brickodyssey://auth';
   var PUBLIC_SITE = 'https://hamzaxali.github.io/prismburst-brick-odyssey/';
+  var HOSTED_ORIGIN = 'https://prismburst-brick-odyssey.firebaseapp.com';
+  var AUTH_BRIDGE_URL = HOSTED_ORIGIN + '/auth-bridge.html';
   var DELETED_TEXT = 'Your account and its cloud save were deleted. Progress on this device was kept.';
   var RESET_COOLDOWN_MS = 30000;
   var MAX_BACKOFF_MS = 8000;
@@ -120,7 +122,15 @@
   var EXPECTED_BRIDGE_VERSION = '3';
 
   function authBridgeUrl() {
-    return PUBLIC_SITE + 'auth-bridge.html';
+    return AUTH_BRIDGE_URL;
+  }
+
+  function hostedPageUrl(name) {
+    var file = String(name || '').split('#')[0];
+    if (file === 'privacy-policy.html' || file === 'privacy.html' || file === 'delete-account.html') {
+      return HOSTED_ORIGIN + '/' + name;
+    }
+    return '';
   }
 
   function authBridgeOpenUrl(state, nonce) {
@@ -159,7 +169,7 @@
   }
 
 
-  /** HEAD/GET the live Pages bridge before opening Chrome. Avoids a raw GitHub 404 tab. */
+  /** GET the Firebase Hosting bridge before opening Chrome. A missing page must not open a dead tab. */
   function probeAuthBridge() {
     var url = authBridgeUrl() + '?probe=1';
     if (typeof fetch !== 'function') {
@@ -1462,11 +1472,12 @@
     openPage: function (rel) {
       var name = String(rel || '');
       if (!/^[a-z-]+\.html(#[a-z-]+)?$/.test(name)) return false;
+      var hosted = hostedPageUrl(name);
       if (isNativeApp()) {
-        openExternalUrl(PUBLIC_SITE + name).catch(function () { /* nothing to do */ });
+        openExternalUrl(hosted || (PUBLIC_SITE + name)).catch(function () { /* nothing to do */ });
         return true;
       }
-      try { window.open(name, '_blank', 'noopener'); } catch (e) { return false; }
+      try { window.open(hosted || name, '_blank', 'noopener'); } catch (e) { return false; }
       return true;
     },
 
@@ -1656,7 +1667,7 @@
         this.clearBridgeState();
         this.setError(friendlyError({
           code: 'auth/invalid-credential',
-          diag: diag + ' Clear Chrome site data for hamzaxali.github.io, then retry.'
+          diag: diag + ' Clear Chrome site data for prismburst-brick-odyssey.firebaseapp.com, then retry.'
         }, 'google'));
         return;
       }

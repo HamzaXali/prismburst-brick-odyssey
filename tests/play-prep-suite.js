@@ -43,7 +43,7 @@ function startServer() {
     await page.waitForFunction(() => window.PB && PB.Cloud && PB.Cloud.readySettled, null, { timeout: 20000 });
 
     const ver = await page.evaluate(() => PB.VERSION);
-    record('app version is 1.5.0', ver === '1.5.0', ver);
+    record('app version is 1.5.1', ver === '1.5.1', ver);
 
     await page.evaluate(() => {
       localStorage.setItem('prismburst.save.v1', JSON.stringify({ v: 1, coins: 15, unlocked: [1,0,0,0,0], levels: {}, owned: { ball: ['classic'], paddle: ['classic'] }, equipped: { ball: 'classic', paddle: 'classic' }, settings: { sound: true, vibration: true, shake: true }, daily: { last: null, streak: 0 }, missions: { date: null, list: [] }, stats: { bricks: 0, played: 0, cleared: 0 }, last: null }));
@@ -68,7 +68,9 @@ function startServer() {
     // Privacy + delete pages mention Firebase
     const privacy = await page.goto('http://127.0.0.1:' + port + '/privacy-policy.html');
     const privacyText = await page.textContent('body');
-    record('privacy policy names Firebase/Google', /Firebase/i.test(privacyText) && !/Supabase Auth/i.test(privacyText));
+    record('privacy policy names Firebase Hosting and the 11 November 2026 date',
+      /Firebase Hosting/i.test(privacyText) && /11 November 2026/.test(privacyText) &&
+      /Firestore/i.test(privacyText) && !/supabase/i.test(privacyText));
 
     await page.goto('http://127.0.0.1:' + port + '/delete-account.html');
     const delText = await page.textContent('body');

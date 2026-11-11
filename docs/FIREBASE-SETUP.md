@@ -46,7 +46,7 @@ Ali created the Firebase project:
 
 1. Project overview → **Add app** → Web (`</>`).
 2. Nickname: `prismburst-web`.
-3. You do **not** need Firebase Hosting for this game (GitHub Pages already hosts it).
+3. Firebase Hosting is used only for the Android Google auth bridge and the public privacy / delete-account pages. The game itself stays on GitHub Pages.
 4. Copy the `firebaseConfig` object fields into `js/firebase-config.js` (see list above).
 
 ## 3. Enable Email/Password and Google
@@ -64,8 +64,7 @@ Authentication → Settings → **Authorized domains** must include:
 
 - `hamzaxali.github.io`
 - `localhost`
-
-(Firebase usually adds `localhost` and your `*.firebaseapp.com` domain automatically.)
+- `prismburst-brick-odyssey.firebaseapp.com` (the Android auth bridge). Firebase usually adds this and `localhost` automatically.
 
 ## 5. Create Firestore (production mode, free)
 
@@ -82,7 +81,22 @@ Those rules allow each signed-in player to read/write only `profiles/{theirUid}`
 1. Commit / merge the filled `js/firebase-config.js` (or edit it on GitHub after this PR merges).
 2. Open the web game, try **Sign up** with email → check inbox for Firebase's verification mail.
 3. Try **Forgot password** → Firebase sends the reset mail for free.
-4. On Android, Google login opens `auth-bridge.html` in the system browser, then returns via `com.prismburst.brickodyssey://auth`.
+4. On Android, Google login opens `https://prismburst-brick-odyssey.firebaseapp.com/auth-bridge.html` in the system browser, then returns via `com.prismburst.brickodyssey://auth`. Do not point that URL at `github.io`.
+
+## 7. Deploy the auth bridge (Spark, free)
+
+From this repo, after `firebase login`:
+
+```
+firebase deploy --only hosting --project prismburst-brick-odyssey
+```
+
+That publishes only the `hosting/` folder (the bridge, privacy policy, and delete-account page). It does not deploy the game, and it does not need the Blaze plan.
+
+In Google Cloud Console, open the OAuth Web client whose id is `googleWebClientId` in `js/firebase-config.js` and add:
+
+- Authorized redirect URI: `https://prismburst-brick-odyssey.firebaseapp.com/auth-bridge.html`
+- Authorized JavaScript origin: `https://prismburst-brick-odyssey.firebaseapp.com`
 
 ## Security reminders
 

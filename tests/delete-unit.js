@@ -114,10 +114,26 @@ function fakeCtx(opts) {
       html.includes('firebase-app-compat.js') && html.includes('firebase-config.js') && !html.includes('supabase.min.js'));
     record('privacy and Play Store mention Firebase/Google not Supabase Auth as the live backend',
       /Firebase/i.test(privacy) && /Firebase/i.test(play) && !/Supabase Auth/i.test(privacy));
-    record('version is 1.5.0 / versionCode 8',
-      pkg.version === '1.5.0' && pkg.androidVersionCode === 8 &&
-      read('js/menus.js').includes("PB.VERSION = '1.5.0'") &&
-      read('sw.js').includes('prismburst-v1.5.0'));
+    record('version is 1.5.1 / versionCode 10',
+      pkg.version === '1.5.1' && pkg.androidVersionCode === 10 &&
+      read('js/menus.js').includes("PB.VERSION = '1.5.1'") &&
+      read('sw.js').includes('prismburst-v1.5.1'));
+    record('privacy policy names Firebase Hosting, Firestore, and the 11 November 2026 date',
+      privacy.includes('Last updated: 11 November 2026') &&
+      privacy.includes('Firebase Hosting') &&
+      privacy.includes('com.prismburst.brickodyssey') &&
+      privacy.includes('Firebase Authentication') &&
+      privacy.includes('Firestore') &&
+      privacy.includes('delete-account.html') &&
+      privacy.includes('hamzaxali44@gmail.com') &&
+      privacy.includes('https://github.com/HamzaXali/prismburst-brick-odyssey/issues') &&
+      !/supabase/i.test(privacy) &&
+      !/supabase/i.test(read('privacy.html')) &&
+      !/supabase/i.test(html) &&
+      !/supabase/i.test(read('auth-bridge.html')));
+    record('device and pixel-tunnel saves are never removed by delete or cloud auth',
+      !/removeItem\(\s*['"]prismburst\.save\.v1['"]\s*\)/.test(cloud) &&
+      !/removeItem\(\s*['"]prismburst\.pixel-tunnel\.v1['"]\s*\)/.test(cloud + read('js/delete-core.js')));
     record('device save key is never cleared by cloud auth paths',
       !cloud.includes("removeItem('prismburst.save.v1')") &&
       cloud.includes("prismburst.save.v1") === false ? false :

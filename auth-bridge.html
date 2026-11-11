@@ -27,7 +27,7 @@
   (function () {
     'use strict';
     var BRIDGE_VERSION = '3';
-    var REDIRECT_URI = 'https://hamzaxali.github.io/prismburst-brick-odyssey/auth-bridge.html';
+    var REDIRECT_URI = 'https://prismburst-brick-odyssey.firebaseapp.com/auth-bridge.html';
     var params = new URLSearchParams(location.search);
     var hashParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
     var state = params.get('state') || hashParams.get('state') || '';

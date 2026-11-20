@@ -8,10 +8,22 @@ html, body {
   font-family: "Trebuchet MS", "Segoe UI", Roboto, Arial, sans-serif;
 }
 body { position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 30%, #1d0f45 0%, #070a1f 70%); }
-#game { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+#game {
+  position: fixed;
+  top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  width: auto; height: auto; overflow: hidden;
+}
 #game canvas { display: block; touch-action: none; outline: none; }
 #loading {
   position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-sizing: border-box;
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   gap: 18px; font-weight: bold; letter-spacing: 6px; color: #9fe9ff; pointer-events: none;
 }
 .spinner {
@@ -24,6 +36,11 @@ body { position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 30%
 #pb-account[hidden], #pb-account [hidden] { display: none !important; }
 #pb-account {
   position: fixed; inset: 0; z-index: 30; overflow: auto; -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   touch-action: pan-y; overscroll-behavior: contain;
   background: rgba(5, 6, 26, 0.82);
   color: #e8fdff;
@@ -134,7 +151,12 @@ body { position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 30%
 
 #pb-confirm, #pb-migrate {
   position: fixed; inset: 0; z-index: 40; overflow: auto;
-  background: rgba(0, 0, 0, 0.55); padding-top: 12vh;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.55);
+  padding-top: calc(12vh + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
 }
 #pb-confirm[hidden], #pb-migrate[hidden] { display: none !important; }
 #pb-account .pb-modal { border-color: #ffd166; }
@@ -142,6 +164,11 @@ body { position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 30%
 /* Demo rewarded ad. Drawn locally. No remote images. */
 #pb-ad {
   position: fixed; inset: 0; z-index: 80; background: #05060f;
+  box-sizing: border-box;
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   display: flex; justify-content: center; touch-action: manipulation;
   font-family: "Trebuchet MS", "Segoe UI", Roboto, Arial, sans-serif; color: #fff;
 }

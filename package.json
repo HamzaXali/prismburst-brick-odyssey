@@ -1,7 +1,7 @@
 {
   "name": "prismburst-brick-odyssey",
-  "version": "1.5.0",
-  "androidVersionCode": 8,
+  "version": "1.5.1",
+  "androidVersionCode": 10,
   "description": "PRISMBURST \u2014 Brick Odyssey: a mobile-first neon-crystal brick-breaker (Phaser 3, static site, offline-ready).",
   "private": true,
   "license": "UNLICENSED",

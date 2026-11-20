@@ -830,6 +830,21 @@
     scene: [S[0], S[1], S[2], S[3], S[5], GameScene, S[6], S[4], S[7], S[8]].concat(PB.HomePopScene ? [PB.HomePopScene] : [])
   };
   PB.game = new Phaser.Game(config);
+  if (typeof ResizeObserver === 'function') {
+    var gameHost = document.getElementById('game');
+    if (gameHost) {
+      var lastHostW = 0;
+      var lastHostH = 0;
+      new ResizeObserver(function () {
+        var w = gameHost.clientWidth;
+        var h = gameHost.clientHeight;
+        if (w === lastHostW && h === lastHostH) return;
+        lastHostW = w;
+        lastHostH = h;
+        try { if (PB.game && PB.game.scale) PB.game.scale.refresh(); } catch (e) { /* keep playing */ }
+      }).observe(gameHost);
+    }
+  }
   if (PB.Account && PB.Account.attachInputGuard) PB.Account.attachInputGuard();
 
   // ---- page guards: no zoom, no context menu, no pull-to-refresh

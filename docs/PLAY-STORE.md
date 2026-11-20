@@ -6,11 +6,11 @@ Public links used below:
 
 | What | URL |
 | --- | --- |
-| Privacy policy | `https://hamzaxali.github.io/prismburst-brick-odyssey/privacy-policy.html` |
-| Delete account page | `https://hamzaxali.github.io/prismburst-brick-odyssey/delete-account.html` |
+| Privacy policy | `https://prismburst-brick-odyssey.firebaseapp.com/privacy-policy.html` |
+| Delete account page | `https://prismburst-brick-odyssey.firebaseapp.com/delete-account.html` |
 | Web game | `https://hamzaxali.github.io/prismburst-brick-odyssey/` |
 
-These pages go live only after this PR is merged and the Pages workflow finishes. **NOT VERIFIED** until then.
+The privacy and delete-account pages are served from Firebase Hosting. They go live after `firebase deploy --only hosting --project prismburst-brick-odyssey` (see `docs/FIREBASE-SETUP.md`). The web game still deploys with the Pages workflow. **NOT VERIFIED** until then.
 
 ---
 

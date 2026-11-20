@@ -14,7 +14,7 @@ const ROOT_FILES = [
   'index.html', 'style.css', 'game.js', 'levels.js', 'sw.js',
   'manifest.webmanifest', 'config.js', 'privacy.html', 'privacy-policy.html', 'delete-account.html', '.nojekyll'
 ];
-const DIRS = ['js', 'lib', 'icons'];
+const DIRS = ['js', 'lib', 'icons', 'hosting'];
 const SKIP_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico']);
 const JWT_RE = /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g;
 const SECRET_KEY_RE = /sb_secret_[A-Za-z0-9]{8,}/;

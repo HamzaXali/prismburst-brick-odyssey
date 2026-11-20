@@ -594,6 +594,9 @@
           this.client = firebase.app();
         }
         this.auth = firebase.auth();
+        // The popup resolver otherwise loads gapi and a hidden auth iframe
+        // during startup. Web Google sign-in still initializes it on click.
+        deferPopupResolver(this.auth);
         this.db = firebase.firestore();
         this._authUnsub = this.auth.onAuthStateChanged(function (user) {
           setTimeout(function () { self.handleAuthUser(user); }, 0);
@@ -1728,6 +1731,53 @@
       Cloud.setError(friendlyError(reason));
     }
   });
+
+  // Don't open the Google iframe helper until a web popup sign-in asks for it.
+  function deferPopupResolver(auth) {
+    var delegate = auth && (auth._delegate || auth);
+    var resolver = delegate && delegate._popupRedirectResolver;
+    if (!resolver) return;
+    if (resolver.browserResolver) {
+      try { resolver.browserResolver._shouldInitProactively = false; } catch (e) { /* on demand */ }
+    }
+    if (resolver.cordovaResolver) {
+      try { resolver.cordovaResolver._shouldInitProactively = false; } catch (e2) { /* on demand */ }
+    }
+    try {
+      Object.defineProperty(resolver, '_shouldInitProactively', {
+        configurable: true,
+        get: function () { return false; }
+      });
+    } catch (e3) {
+      try { resolver._shouldInitProactively = false; } catch (e4) { /* on demand */ }
+    }
+  }
+
+  // Firebase Auth loads https://apis.google.com/js/api.js for that iframe.
+  // While offline the request is a console error and is not part of the
+  // Android Custom Tab flow, so drop the tag and fail the loader.
+  (function blockGapiWhileOffline() {
+    if (typeof Node === 'undefined' || !Node.prototype || Node.prototype.appendChild.__pbGapiGuard) return;
+    var appendChild = Node.prototype.appendChild;
+    function isGapiScript(node) {
+      if (!node || String(node.tagName || '').toLowerCase() !== 'script') return false;
+      var src = '';
+      try { src = node.getAttribute('src') || node.src || ''; } catch (e) { src = ''; }
+      return src.indexOf('apis.google.com/js/api.js') !== -1;
+    }
+    function guarded(node) {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false && isGapiScript(node)) {
+        var fail = node.onerror;
+        setTimeout(function () {
+          try { if (typeof fail === 'function') fail(new Event('error')); } catch (e) { /* keep playing */ }
+        }, 0);
+        return node;
+      }
+      return appendChild.call(this, node);
+    }
+    guarded.__pbGapiGuard = true;
+    Node.prototype.appendChild = guarded;
+  })();
 
   // Expose helpers for unit tests (no secrets)
   Cloud._test = {

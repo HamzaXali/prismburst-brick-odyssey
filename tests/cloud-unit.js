@@ -279,6 +279,14 @@ try {
     && cloudJsEarly.includes("file === 'privacy-policy.html'")
     && cloudJsEarly.includes("file === 'delete-account.html'")
     && authBridge.includes('Continue with Google'));
+  record('offline startup does not request the Google gapi script',
+    cloudJsEarly.includes('apis.google.com/js/api.js')
+    && cloudJsEarly.includes('navigator.onLine === false')
+    && cloudJsEarly.includes('function deferPopupResolver')
+    && cloudJsEarly.includes("_shouldInitProactively', {")
+    && cloudJsEarly.includes('deferPopupResolver(this.auth)')
+    && cloudJsEarly.indexOf('this.auth = firebase.auth()') < cloudJsEarly.indexOf('deferPopupResolver(this.auth)')
+    && cloudJsEarly.indexOf('blockGapiWhileOffline') < cloudJsEarly.indexOf('Cloud.init()'));
   const firebaseJson = JSON.parse(fs.readFileSync(path.join(root, 'firebase.json'), 'utf8'));
   const firebaseRc = JSON.parse(fs.readFileSync(path.join(root, '.firebaserc'), 'utf8'));
   const authHeaderRule = (firebaseJson.hosting.headers || []).find(function (rule) { return rule.source === '/auth-bridge.html'; });
